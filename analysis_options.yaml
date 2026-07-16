@@ -1,0 +1,6 @@
+# Activates the recommended Flutter lints. See the analyze command:
+#   flutter analyze
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:

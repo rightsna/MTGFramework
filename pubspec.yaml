@@ -1,0 +1,38 @@
+name: framework
+description: "Shared building blocks for the MTG tools and editors. Currently the reusable Image Editor (canvas + crop / flood-alpha / resize / eraser / undo) and its ImageOps helpers, vendored here so every project references one copy."
+publish_to: 'none'
+version: 0.2.0
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Image decode/encode/resize used by the editor (ImageOps wraps it).
+  image: ^4.5.4
+
+  # Gemini image generation service (GeminiImageService).
+  http: ^1.2.0
+  # MultipartFile contentType(MediaType) — OpenAI 이미지 편집 업로드 타입 지정.
+  http_parser: ^4.0.0
+
+  # AiConfigStore.appSupport() resolves the app-support dir for desktop tools.
+  path_provider: ^2.1.4
+
+  # Store-publishing kit: ChangeNotifier state (store-shot controller) + native
+  # file open/save dialogs used by the app-icon / screenshot / graphic editors.
+  provider: ^6.1.2
+  file_selector: ^1.1.0
+
+  # Storyboard kit: preview playback of generated clips.
+  video_player: ^2.9.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
