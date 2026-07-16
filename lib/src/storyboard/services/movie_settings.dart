@@ -1,20 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:framework/framework.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Where screenshots (start/end frames) are generated.
-enum ImageBackend {
-  gemini('Gemini (나노바나나)'),
-  openai('OpenAI (GPT Image)'),
-  serviceApi('자체 서버 (service-api)');
-
-  const ImageBackend(this.label);
-  final String label;
-}
-
-/// Where videos are generated.
+/// Where videos are generated. (스크린샷=시작·끝 프레임은 자체 서버 전용 — 외부 키 생성은 걷어냄.)
 enum VideoBackend {
   veo('Veo'),
   serviceApi('자체 서버 (service-api)');
@@ -23,8 +12,9 @@ enum VideoBackend {
   final String label;
 }
 
-/// Storyboard Maker settings: which backend generates images vs videos, plus the
-/// keys/URL they need. Gemini image generation and Veo both use [geminiKey].
+/// Storyboard Maker settings: 영상 백엔드 옵션 + 키/URL.
+/// 스크린샷(이미지)은 자체 서버(service-api)로만 만든다 — Gemini/OpenAI 이미지 생성은 제거됨.
+/// [geminiKey]는 이제 Veo 전용.
 /// 영상 비율(Veo 옵션).
 enum VideoAspect {
   landscape('16:9', '16:9 (가로)'),
@@ -80,8 +70,6 @@ VideoRes _readVideoRes(Map<String, dynamic> j) {
 const String kServerDomain = 'https://camera-doctrine-galleria.ngrok-free.dev';
 
 class MovieSettings {
-  final ImageBackend imageBackend;
-  final AiAspectRatio imageAspect; // Gemini/OpenAI 이미지 생성 비율
   final VideoBackend videoBackend;
   final String veoModel; // Veo 모델 id (3.1 / Fast / Lite)
   final VideoAspect videoAspect;
@@ -91,9 +79,9 @@ class MovieSettings {
   final int inspectorTab; // 인스펙터 마지막 선택 탭(0=장면, 1=영상, 2=공통)
   final int videoDurationSeconds; // 4 | 6 | 8
   final String videoNegativePrompt; // 영상 네거티브 프롬프트
-  final String geminiKey;
-  final String openaiKey;
-  final String civitaiToken; // civitai LoRA 다운로드용 API 토큰(있으면 civitai URL에 자동 부착)
+  final String geminiKey; // Veo 전용
+  final String
+  civitaiToken; // civitai LoRA 다운로드용 API 토큰(있으면 civitai URL에 자동 부착)
   final String elevenKey; // 일레븐랩스 TTS(대사 음성) API 키
   final String elevenVoiceId; // 기본(내레이션·보이스 없는 화자) 보이스 id
   final String elevenVoiceName; // 기본 보이스 이름(라벨)
@@ -104,8 +92,6 @@ class MovieSettings {
       serviceApiUrl.trim().isEmpty ? kServerDomain : serviceApiUrl.trim();
 
   const MovieSettings({
-    this.imageBackend = ImageBackend.serviceApi,
-    this.imageAspect = AiAspectRatio.square,
     this.videoBackend = VideoBackend.serviceApi,
     this.veoModel = 'veo-3.1-generate-preview',
     this.videoAspect = VideoAspect.landscape,
@@ -116,7 +102,6 @@ class MovieSettings {
     this.videoDurationSeconds = 8,
     this.videoNegativePrompt = '',
     this.geminiKey = '',
-    this.openaiKey = '',
     this.civitaiToken = '',
     this.elevenKey = '',
     this.elevenVoiceId = '',
@@ -125,8 +110,6 @@ class MovieSettings {
   });
 
   MovieSettings copyWith({
-    ImageBackend? imageBackend,
-    AiAspectRatio? imageAspect,
     VideoBackend? videoBackend,
     String? veoModel,
     VideoAspect? videoAspect,
@@ -137,91 +120,74 @@ class MovieSettings {
     int? videoDurationSeconds,
     String? videoNegativePrompt,
     String? geminiKey,
-    String? openaiKey,
     String? civitaiToken,
     String? elevenKey,
     String? elevenVoiceId,
     String? elevenVoiceName,
     String? serviceApiUrl,
-  }) =>
-      MovieSettings(
-        imageBackend: imageBackend ?? this.imageBackend,
-        imageAspect: imageAspect ?? this.imageAspect,
-        videoBackend: videoBackend ?? this.videoBackend,
-        veoModel: veoModel ?? this.veoModel,
-        videoAspect: videoAspect ?? this.videoAspect,
-        videoResolution: videoResolution ?? this.videoResolution,
-        videoRes: videoRes ?? this.videoRes,
-        videoSeconds: videoSeconds ?? this.videoSeconds,
-        inspectorTab: inspectorTab ?? this.inspectorTab,
-        videoDurationSeconds: videoDurationSeconds ?? this.videoDurationSeconds,
-        videoNegativePrompt: videoNegativePrompt ?? this.videoNegativePrompt,
-        geminiKey: geminiKey ?? this.geminiKey,
-        openaiKey: openaiKey ?? this.openaiKey,
-        civitaiToken: civitaiToken ?? this.civitaiToken,
-        elevenKey: elevenKey ?? this.elevenKey,
-        elevenVoiceId: elevenVoiceId ?? this.elevenVoiceId,
-        elevenVoiceName: elevenVoiceName ?? this.elevenVoiceName,
-        serviceApiUrl: serviceApiUrl ?? this.serviceApiUrl,
-      );
+  }) => MovieSettings(
+    videoBackend: videoBackend ?? this.videoBackend,
+    veoModel: veoModel ?? this.veoModel,
+    videoAspect: videoAspect ?? this.videoAspect,
+    videoResolution: videoResolution ?? this.videoResolution,
+    videoRes: videoRes ?? this.videoRes,
+    videoSeconds: videoSeconds ?? this.videoSeconds,
+    inspectorTab: inspectorTab ?? this.inspectorTab,
+    videoDurationSeconds: videoDurationSeconds ?? this.videoDurationSeconds,
+    videoNegativePrompt: videoNegativePrompt ?? this.videoNegativePrompt,
+    geminiKey: geminiKey ?? this.geminiKey,
+    civitaiToken: civitaiToken ?? this.civitaiToken,
+    elevenKey: elevenKey ?? this.elevenKey,
+    elevenVoiceId: elevenVoiceId ?? this.elevenVoiceId,
+    elevenVoiceName: elevenVoiceName ?? this.elevenVoiceName,
+    serviceApiUrl: serviceApiUrl ?? this.serviceApiUrl,
+  );
 
   Map<String, dynamic> toJson() => {
-        'imageBackend': imageBackend.name,
-        'imageAspect': imageAspect.name,
-        'videoBackend': videoBackend.name,
-        'veoModel': veoModel,
-        'videoAspect': videoAspect.name,
-        'videoResolution': videoResolution.name,
-        'videoRes': videoRes.name,
-        'videoSeconds': videoSeconds,
-        'inspectorTab': inspectorTab,
-        'videoDurationSeconds': videoDurationSeconds,
-        'videoNegativePrompt': videoNegativePrompt,
-        'geminiKey': geminiKey,
-        'openaiKey': openaiKey,
-        'civitaiToken': civitaiToken,
-        'elevenKey': elevenKey,
-        'elevenVoiceId': elevenVoiceId,
-        'elevenVoiceName': elevenVoiceName,
-        'serverUrl': serviceApiUrl, // 새 키 — 옛 'serviceApiUrl'(localhost 저장분)은 무시
-      };
+    'videoBackend': videoBackend.name,
+    'veoModel': veoModel,
+    'videoAspect': videoAspect.name,
+    'videoResolution': videoResolution.name,
+    'videoRes': videoRes.name,
+    'videoSeconds': videoSeconds,
+    'inspectorTab': inspectorTab,
+    'videoDurationSeconds': videoDurationSeconds,
+    'videoNegativePrompt': videoNegativePrompt,
+    'geminiKey': geminiKey,
+    'civitaiToken': civitaiToken,
+    'elevenKey': elevenKey,
+    'elevenVoiceId': elevenVoiceId,
+    'elevenVoiceName': elevenVoiceName,
+    'serverUrl': serviceApiUrl, // 새 키 — 옛 'serviceApiUrl'(localhost 저장분)은 무시
+  };
 
   factory MovieSettings.fromJson(Map<String, dynamic> j) => MovieSettings(
-        imageBackend: ImageBackend.values.firstWhere(
-          (e) => e.name == j['imageBackend'],
-          orElse: () => ImageBackend.serviceApi,
-        ),
-        imageAspect: AiAspectRatio.values.firstWhere(
-          (e) => e.name == j['imageAspect'],
-          orElse: () => AiAspectRatio.square,
-        ),
-        videoBackend: VideoBackend.values.firstWhere(
-          (e) => e.name == j['videoBackend'],
-          orElse: () => VideoBackend.serviceApi,
-        ),
-        veoModel: (j['veoModel'] as String?) ?? 'veo-3.1-generate-preview',
-        videoAspect: VideoAspect.values.firstWhere(
-          (e) => e.name == j['videoAspect'],
-          orElse: () => VideoAspect.landscape,
-        ),
-        videoResolution: VideoResolution.values.firstWhere(
-          (e) => e.name == j['videoResolution'],
-          orElse: () => VideoResolution.hd720,
-        ),
-        videoRes: _readVideoRes(j),
-        videoSeconds: (j['videoSeconds'] as int?) ?? 5,
-        inspectorTab: (j['inspectorTab'] as int?) ?? 0,
-        videoDurationSeconds: (j['videoDurationSeconds'] as int?) ?? 8,
-        videoNegativePrompt: (j['videoNegativePrompt'] as String?) ?? '',
-        geminiKey: (j['geminiKey'] as String?) ?? '',
-        openaiKey: (j['openaiKey'] as String?) ?? '',
-        civitaiToken: (j['civitaiToken'] as String?) ?? '',
-        elevenKey: (j['elevenKey'] as String?) ?? '',
-        elevenVoiceId: (j['elevenVoiceId'] as String?) ?? '',
-        elevenVoiceName: (j['elevenVoiceName'] as String?) ?? '',
-        // 새 키만 읽는다(옛 'serviceApiUrl'은 무시 → 기존 설치도 도메인 디폴트로 시작).
-        serviceApiUrl: (j['serverUrl'] as String?) ?? '',
-      );
+    videoBackend: VideoBackend.values.firstWhere(
+      (e) => e.name == j['videoBackend'],
+      orElse: () => VideoBackend.serviceApi,
+    ),
+    veoModel: (j['veoModel'] as String?) ?? 'veo-3.1-generate-preview',
+    videoAspect: VideoAspect.values.firstWhere(
+      (e) => e.name == j['videoAspect'],
+      orElse: () => VideoAspect.landscape,
+    ),
+    videoResolution: VideoResolution.values.firstWhere(
+      (e) => e.name == j['videoResolution'],
+      orElse: () => VideoResolution.hd720,
+    ),
+    videoRes: _readVideoRes(j),
+    videoSeconds: (j['videoSeconds'] as int?) ?? 5,
+    inspectorTab: (j['inspectorTab'] as int?) ?? 0,
+    videoDurationSeconds: (j['videoDurationSeconds'] as int?) ?? 8,
+    videoNegativePrompt: (j['videoNegativePrompt'] as String?) ?? '',
+    geminiKey: (j['geminiKey'] as String?) ?? '',
+    civitaiToken: (j['civitaiToken'] as String?) ?? '',
+    elevenKey: (j['elevenKey'] as String?) ?? '',
+    elevenVoiceId: (j['elevenVoiceId'] as String?) ?? '',
+    elevenVoiceName: (j['elevenVoiceName'] as String?) ?? '',
+    // 새 키만 읽는다(옛 'serviceApiUrl'은 무시 → 기존 설치도 도메인 디폴트로 시작).
+    serviceApiUrl: (j['serverUrl'] as String?) ?? '',
+  );
 }
 
 /// Persists [MovieSettings] to the app support folder (movie_settings.json).
@@ -238,7 +204,8 @@ class MovieSettingsStore {
       final raw = await f.readAsString();
       if (raw.trim().isEmpty) return const MovieSettings();
       return MovieSettings.fromJson(
-          (jsonDecode(raw) as Map).cast<String, dynamic>());
+        (jsonDecode(raw) as Map).cast<String, dynamic>(),
+      );
     } catch (_) {
       return const MovieSettings();
     }

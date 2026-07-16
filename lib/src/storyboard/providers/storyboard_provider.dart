@@ -83,34 +83,26 @@ class StoryboardProvider extends ChangeNotifier {
 
   // ───────── 백엔드별 생성 준비 상태(버튼 활성/비활성 판단) ─────────
 
-  /// 이미지(시작/끝장면) 생성 가능 여부 — 선택된 이미지 백엔드 기준.
-  bool get imageReady => switch (_settings.imageBackend) {
-        ImageBackend.serviceApi => _apiStatus.reachable,
-        ImageBackend.gemini => _settings.geminiKey.trim().isNotEmpty,
-        ImageBackend.openai => _settings.openaiKey.trim().isNotEmpty,
-      };
+  /// 이미지(시작/끝장면) 생성 가능 여부 — 자체 서버(service-api) 전용.
+  bool get imageReady => _apiStatus.reachable;
 
-  String? get imageBlockReason => imageReady
+  String? get imageBlockReason =>
+      imageReady ? null : '서버에 연결되지 않았습니다 (상단·설정에서 확인)';
+
+  /// 영상 생성 가능 여부 — **백엔드별로** 판단한다(생성 버튼이 백엔드를 직접 고르므로).
+  /// [b] 생략 시 설정의 기본 백엔드 기준.
+  bool videoReadyOf(VideoBackend b) => switch (b) {
+    VideoBackend.serviceApi => _apiStatus.reachable && _apiStatus.videoReady,
+    VideoBackend.veo => _settings.geminiKey.trim().isNotEmpty,
+  };
+
+  String? videoBlockReasonOf(VideoBackend b) => videoReadyOf(b)
       ? null
-      : switch (_settings.imageBackend) {
-          ImageBackend.serviceApi => '서버에 연결되지 않았습니다 (상단·설정에서 확인)',
-          ImageBackend.gemini => 'Gemini API 키가 없습니다 (설정)',
-          ImageBackend.openai => 'OpenAI API 키가 없습니다 (설정)',
-        };
-
-  /// 영상 생성 가능 여부 — 선택된 영상 백엔드 기준.
-  bool get videoReady => switch (_settings.videoBackend) {
-        VideoBackend.serviceApi =>
-          _apiStatus.reachable && _apiStatus.videoReady,
-        VideoBackend.veo => _settings.geminiKey.trim().isNotEmpty,
-      };
-
-  String? get videoBlockReason => videoReady
-      ? null
-      : switch (_settings.videoBackend) {
-          VideoBackend.serviceApi => _apiStatus.reachable
-              ? '영상 워크플로(video-ltx)가 서버에 없습니다'
-              : '서버에 연결되지 않았습니다 (상단·설정에서 확인)',
+      : switch (b) {
+          VideoBackend.serviceApi =>
+            _apiStatus.reachable
+                ? '영상 워크플로(video-ltx)가 서버에 없습니다'
+                : '서버에 연결되지 않았습니다 (상단·설정에서 확인)',
           VideoBackend.veo => 'Veo용 Gemini API 키가 없습니다 (설정)',
         };
 
@@ -119,13 +111,12 @@ class StoryboardProvider extends ChangeNotifier {
   String? get bgmBlockReason => bgmReady
       ? null
       : _apiStatus.reachable
-          ? '배경음 워크플로(bgm)가 서버에 없습니다'
-          : '서버에 연결되지 않았습니다 (상단·설정에서 확인)';
+      ? '배경음 워크플로(bgm)가 서버에 없습니다'
+      : '서버에 연결되지 않았습니다 (상단·설정에서 확인)';
 
   /// 대사 음성(일레븐랩스 TTS)은 외부 API — 키만 있으면 가능(서버 연결과 무관).
   bool get voiceReady => _settings.elevenKey.trim().isNotEmpty;
-  String? get voiceBlockReason =>
-      voiceReady ? null : '일레븐랩스 API 키가 없습니다 (설정)';
+  String? get voiceBlockReason => voiceReady ? null : '일레븐랩스 API 키가 없습니다 (설정)';
 
   StoryScene? get selectedScene {
     for (final s in _scenes) {
@@ -157,7 +148,8 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
-  TextEditingController sceneTitleCtrl(String sceneId) => _sceneTitles[sceneId]!;
+  TextEditingController sceneTitleCtrl(String sceneId) =>
+      _sceneTitles[sceneId]!;
   TextEditingController titleCtrl(String shotId) => _shotTitles[shotId]!;
   TextEditingController noteCtrl(String shotId) => _notes[shotId]!;
   TextEditingController startCtrl(String clipId) => _startPrompts[clipId]!;
@@ -190,17 +182,21 @@ class StoryboardProvider extends ChangeNotifier {
       }
     }
     final firstScene = scenes.isNotEmpty ? scenes.first : null;
-    final firstShot =
-        (firstScene != null && firstScene.shots.isNotEmpty) ? firstScene.shots.first : null;
+    final firstShot = (firstScene != null && firstScene.shots.isNotEmpty)
+        ? firstScene.shots.first
+        : null;
     _selectedSceneId = firstScene?.id;
     _selectedShotId = firstShot?.id;
-    _selectedClipId =
-        (firstShot != null && firstShot.clips.isNotEmpty) ? firstShot.clips.first.id : null;
+    _selectedClipId = (firstShot != null && firstShot.clips.isNotEmpty)
+        ? firstShot.clips.first.id
+        : null;
     _savePath = path;
     notifyListeners();
     checkConnection();
     _statusTimer ??= Timer.periodic(
-        const Duration(seconds: 15), (_) => checkConnection());
+      const Duration(seconds: 15),
+      (_) => checkConnection(),
+    );
   }
 
   Future<void> checkConnection() async {
@@ -305,11 +301,13 @@ class StoryboardProvider extends ChangeNotifier {
   void _selectSceneInternal(String? id) {
     _selectedSceneId = id;
     final scene = selectedScene;
-    final firstShot =
-        (scene != null && scene.shots.isNotEmpty) ? scene.shots.first : null;
+    final firstShot = (scene != null && scene.shots.isNotEmpty)
+        ? scene.shots.first
+        : null;
     _selectedShotId = firstShot?.id;
-    _selectedClipId =
-        (firstShot != null && firstShot.clips.isNotEmpty) ? firstShot.clips.first.id : null;
+    _selectedClipId = (firstShot != null && firstShot.clips.isNotEmpty)
+        ? firstShot.clips.first.id
+        : null;
   }
 
   // ───────── 샷(비트) 추가/삭제/선택 ─────────
@@ -340,8 +338,9 @@ class StoryboardProvider extends ChangeNotifier {
     if (wasSelected) {
       final next = scene.shots.isNotEmpty ? scene.shots.last : null;
       _selectedShotId = next?.id;
-      _selectedClipId =
-          (next != null && next.clips.isNotEmpty) ? next.clips.first.id : null;
+      _selectedClipId = (next != null && next.clips.isNotEmpty)
+          ? next.clips.first.id
+          : null;
     }
     notifyListeners();
     save();
@@ -465,8 +464,9 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final res = await ElevenLabsService(_settings.elevenKey)
-          .generateSpeech(voiceId: voiceId, text: d.text.trim());
+      final res = await ElevenLabsService(
+        _settings.elevenKey,
+      ).generateSpeech(voiceId: voiceId, text: d.text.trim());
       final f = File('$projectDirPath/${shot.id}_voice.mp3');
       await f.writeAsBytes(res.bytes);
       d.voicePath = f.path;
@@ -506,7 +506,13 @@ class StoryboardProvider extends ChangeNotifier {
         GenMode.videoLow => _vprompts[clipId],
       };
 
-  Future<void> gen(VideoClip clip, GenMode mode) async {
+  /// [backend] 영상 생성에만 의미 있음 — 어느 백엔드로 뽑을지 호출 시점에 고른다.
+  /// null이면 설정의 기본 백엔드. (결과 슬롯은 하나라 백엔드를 바꿔 다시 뽑으면 덮어쓴다.)
+  Future<void> gen(
+    VideoClip clip,
+    GenMode mode, {
+    VideoBackend? backend,
+  }) async {
     final raw = _promptCtrlFor(clip.id, mode)?.text.trim() ?? '';
     final prompt = _composePrompt(clip, raw);
     if (prompt.isEmpty) {
@@ -517,7 +523,7 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final bytes = await _generateBytes(clip, mode, prompt);
+      final bytes = await _generateBytes(clip, mode, prompt, backend);
       final ext = _extFor(bytes, mode);
       final name = switch (mode) {
         GenMode.imageStart => '${clip.id}_start',
@@ -562,8 +568,9 @@ class StoryboardProvider extends ChangeNotifier {
     try {
       final bytes = await picked.readAsBytes();
       final ext = _extFor(bytes, mode);
-      final name =
-          mode == GenMode.imageStart ? '${clip.id}_start' : '${clip.id}_end';
+      final name = mode == GenMode.imageStart
+          ? '${clip.id}_start'
+          : '${clip.id}_end';
       final f = File('$projectDirPath/$name.$ext');
       await f.writeAsBytes(bytes);
       await FileImage(f).evict();
@@ -584,44 +591,34 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 설정된 백엔드로 라우팅해 바이트를 받는다. (여기 도달하는 영상 모드는 videoLow=생성뿐)
+  /// 백엔드로 라우팅해 바이트를 받는다. (여기 도달하는 영상 모드는 videoLow=생성뿐)
+  /// 이미지(시작/끝 프레임)는 자체 서버 전용 — 참조 인물이 있으면 FireRed(/edit), 없으면 /image.
+  /// [backend]는 영상에만 의미 있음. 없으면 설정의 기본 영상 백엔드.
   Future<Uint8List> _generateBytes(
-      VideoClip clip, GenMode mode, String prompt) async {
+    VideoClip clip,
+    GenMode mode,
+    String prompt, [
+    VideoBackend? backend,
+  ]) async {
     if (!mode.isVideo) {
-      switch (_settings.imageBackend) {
-        case ImageBackend.gemini:
-          return GeminiImageService().generate(
-            apiKey: _settings.geminiKey,
-            model: AiProvider.gemini.defaultModel,
-            prompt: prompt,
-            aspectRatio: _settings.imageAspect.ratio,
-          );
-        case ImageBackend.openai:
-          return OpenAiImageService().generate(
-            apiKey: _settings.openaiKey,
-            model: AiProvider.openai.defaultModel,
-            prompt: prompt,
-            aspectRatio: _settings.imageAspect.ratio,
-          );
-        case ImageBackend.serviceApi:
-          final refs = await _refPhotoBytesList(clip);
-          if (refs.isNotEmpty) {
-            final who = clip.refCharacterIds
-                .map((id) => characterById(id)?.name)
-                .whereType<String>()
-                .where((n) => n.isNotEmpty)
-                .join(', ');
-            final instruction =
-                '아래 참조 인물${who.isEmpty ? '' : '($who)'}을(를) 다음 장면에 자연스럽게 배치하라. '
-                '각 인물의 얼굴·헤어스타일·의상 등 정체성은 그대로 유지할 것. 장면: $prompt';
-            return ApiService(_settings.effectiveServiceUrl)
-                .generateImageWithRefs(references: refs, prompt: instruction);
-          }
-          return ApiService(_settings.effectiveServiceUrl).generateImage(prompt);
+      final refs = await _refPhotoBytesList(clip);
+      if (refs.isNotEmpty) {
+        final who = clip.refCharacterIds
+            .map((id) => characterById(id)?.name)
+            .whereType<String>()
+            .where((n) => n.isNotEmpty)
+            .join(', ');
+        final instruction =
+            '아래 참조 인물${who.isEmpty ? '' : '($who)'}을(를) 다음 장면에 자연스럽게 배치하라. '
+            '각 인물의 얼굴·헤어스타일·의상 등 정체성은 그대로 유지할 것. 장면: $prompt';
+        return ApiService(
+          _settings.effectiveServiceUrl,
+        ).generateImageWithRefs(references: refs, prompt: instruction);
       }
+      return ApiService(_settings.effectiveServiceUrl).generateImage(prompt);
     }
     // 영상 생성(저) = FE2V: 시작·끝 두 프레임이 입력(둘 다 필수).
-    switch (_settings.videoBackend) {
+    switch (backend ?? _settings.videoBackend) {
       case VideoBackend.veo:
         final start = await _startFrame(clip);
         final end = await _endFrame(clip);
@@ -788,8 +785,9 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final bytes = await ApiService(_settings.effectiveServiceUrl)
-          .generateBgm(prompt: prompt, seconds: sc.bgmSeconds);
+      final bytes = await ApiService(
+        _settings.effectiveServiceUrl,
+      ).generateBgm(prompt: prompt, seconds: sc.bgmSeconds);
       final f = File('$projectDirPath/${sc.id}_bgm.mp3');
       await f.writeAsBytes(bytes);
       sc.bgmPath = f.path;
@@ -821,7 +819,9 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<({List<int> bytes, String mimeType})?> _startFrame(VideoClip clip) async {
+  Future<({List<int> bytes, String mimeType})?> _startFrame(
+    VideoClip clip,
+  ) async {
     final path = clip.startImagePath;
     if (path == null) return null;
     final f = File(path);
@@ -829,7 +829,9 @@ class StoryboardProvider extends ChangeNotifier {
     return (bytes: await f.readAsBytes(), mimeType: 'image/png');
   }
 
-  Future<({List<int> bytes, String mimeType})?> _endFrame(VideoClip clip) async {
+  Future<({List<int> bytes, String mimeType})?> _endFrame(
+    VideoClip clip,
+  ) async {
     final path = clip.endImagePath;
     if (path == null) return null;
     final f = File(path);
@@ -896,7 +898,8 @@ class StoryboardProvider extends ChangeNotifier {
 
   String _extFor(Uint8List b, GenMode mode) {
     if (!mode.isVideo) return 'png';
-    final isWebp = b.length > 12 &&
+    final isWebp =
+        b.length > 12 &&
         b[0] == 0x52 &&
         b[1] == 0x49 &&
         b[2] == 0x46 &&
@@ -913,6 +916,25 @@ class StoryboardProvider extends ChangeNotifier {
       await Process.run('open', [path]);
     } catch (e) {
       messenger?.call('열기 실패: $e');
+    }
+  }
+
+  /// 파일이 저장된 폴더를 Finder에서 연다(해당 파일이 선택된 채로).
+  /// 프로젝트 폴더가 샌드박스 컨테이너 깊숙이 있어 손으로 찾기 어려우므로 필요하다.
+  Future<void> revealInFinder(String path) async {
+    try {
+      await Process.run('open', ['-R', path]);
+    } catch (e) {
+      messenger?.call('폴더 열기 실패: $e');
+    }
+  }
+
+  /// 프로젝트 폴더 자체를 Finder에서 연다(생성물이 하나도 없어도 열린다).
+  Future<void> openProjectFolder() async {
+    try {
+      await Process.run('open', [projectDirPath]);
+    } catch (e) {
+      messenger?.call('폴더 열기 실패: $e');
     }
   }
 

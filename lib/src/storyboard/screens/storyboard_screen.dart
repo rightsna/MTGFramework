@@ -124,6 +124,11 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
             actions: [
               const _ConnStatus(),
               IconButton(
+                tooltip: '프로젝트 폴더 열기 (생성된 영상·이미지·음성이 저장되는 곳)',
+                icon: const Icon(Icons.folder_open_outlined),
+                onPressed: _provider.openProjectFolder,
+              ),
+              IconButton(
                 tooltip: '설정 · 서버 연결',
                 icon: const Icon(Icons.settings_outlined),
                 onPressed: () async {

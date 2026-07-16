@@ -203,6 +203,14 @@ class _BgmPlayerBox extends StatelessWidget {
                 label: const Text('열기'),
               ),
               TextButton.icon(
+                onPressed: () => p.revealInFinder(path),
+                style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                icon: const Icon(Icons.folder_open_outlined, size: 16),
+                label: const Text('폴더'),
+              ),
+              TextButton.icon(
                 onPressed: () => p.exportFile(path),
                 style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,

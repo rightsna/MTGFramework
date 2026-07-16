@@ -25,8 +25,11 @@ class InspectorPanel extends StatefulWidget {
 
 class _InspectorPanelState extends State<InspectorPanel>
     with SingleTickerProviderStateMixin {
-  late final TabController _tab =
-      TabController(length: 2, vsync: this, initialIndex: 1); // 기본 '배경음'
+  late final TabController _tab = TabController(
+    length: 2,
+    vsync: this,
+    initialIndex: 1,
+  ); // 기본 '배경음'
 
   @override
   void dispose() {
@@ -58,10 +61,7 @@ class _InspectorPanelState extends State<InspectorPanel>
               animation: _tab,
               builder: (context, _) => IndexedStack(
                 index: _tab.index,
-                children: const [
-                  _GeneralTab(),
-                  _BgmTab(),
-                ],
+                children: const [_GeneralTab(), _BgmTab()],
               ),
             ),
           ),
@@ -80,8 +80,8 @@ class _GeneralTab extends StatelessWidget {
     final p = StoryboardScope.of(context);
     if (p.selectedScene == null) {
       return const Center(
-          child:
-              Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)));
+        child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
+      );
     }
     return const Center(
       child: Column(
@@ -111,8 +111,7 @@ class _ShotInfoTab extends StatelessWidget {
           children: [
             Icon(Icons.touch_app_outlined, color: Colors.white24, size: 40),
             SizedBox(height: 10),
-            Text('왼쪽에서 샷을 선택하세요',
-                style: TextStyle(color: Colors.white38)),
+            Text('왼쪽에서 샷을 선택하세요', style: TextStyle(color: Colors.white38)),
           ],
         ),
       );
@@ -128,15 +127,20 @@ class _ShotInfoTab extends StatelessWidget {
                 width: 10,
                 height: 10,
                 decoration: const BoxDecoration(
-                    color: accent2, shape: BoxShape.circle),
+                  color: accent2,
+                  shape: BoxShape.circle,
+                ),
               ),
               const SizedBox(width: 8),
-              Text('SHOT ${p.shots.indexOf(shot) + 1}',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.0,
-                      color: Color(0xAAFFFFFF))),
+              Text(
+                'SHOT ${p.shots.indexOf(shot) + 1}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.0,
+                  color: Color(0xAAFFFFFF),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -173,8 +177,8 @@ class _BgmTab extends StatelessWidget {
     final p = StoryboardScope.of(context);
     if (p.selectedScene == null) {
       return const Center(
-          child:
-              Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)));
+        child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
+      );
     }
     return const SingleChildScrollView(child: BgmSection());
   }
@@ -305,11 +309,16 @@ class _NoClip extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.movie_filter_outlined,
-                color: Colors.white24, size: 40),
+            const Icon(
+              Icons.movie_filter_outlined,
+              color: Colors.white24,
+              size: 40,
+            ),
             const SizedBox(height: 10),
-            const Text('이 샷에 클립이 없습니다',
-                style: TextStyle(color: Colors.white38)),
+            const Text(
+              '이 샷에 클립이 없습니다',
+              style: TextStyle(color: Colors.white38),
+            ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () => p.addClip(shot),
@@ -347,9 +356,11 @@ class _CenterNote extends StatelessWidget {
           Text(title, style: const TextStyle(color: Colors.white38)),
           if (subtitle != null) ...[
             const SizedBox(height: 6),
-            Text(subtitle!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: Colors.white24)),
+            Text(
+              subtitle!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, color: Colors.white24),
+            ),
           ],
         ],
       ),
@@ -382,13 +393,18 @@ class _DialogueSummary extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.record_voice_over_outlined,
-                size: 16, color: _voice),
+            const Icon(
+              Icons.record_voice_over_outlined,
+              size: 16,
+              color: _voice,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: d == null
-                  ? const Text('대사 추가 (없으면 무음 샷)',
-                      style: TextStyle(fontSize: 12, color: _voice))
+                  ? const Text(
+                      '대사 추가 (없으면 무음 샷)',
+                      style: TextStyle(fontSize: 12, color: _voice),
+                    )
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -397,19 +413,22 @@ class _DialogueSummary extends StatelessWidget {
                           d.speakerId == null
                               ? '내레이션'
                               : ((speaker?.name.trim().isNotEmpty ?? false)
-                                  ? speaker!.name.trim()
-                                  : '(이름 없음)'),
+                                    ? speaker!.name.trim()
+                                    : '(이름 없음)'),
                           style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: _voice),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: _voice,
+                          ),
                         ),
                         Text(
                           d.text.trim().isEmpty ? '(대사 없음)' : d.text.trim(),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 12, color: Color(0xCCFFFFFF)),
+                            fontSize: 12,
+                            color: Color(0xCCFFFFFF),
+                          ),
                         ),
                       ],
                     ),
@@ -417,8 +436,10 @@ class _DialogueSummary extends StatelessWidget {
             if (d?.hasVoice ?? false) ...[
               const Icon(Icons.graphic_eq, size: 13, color: accent2),
               const SizedBox(width: 3),
-              Text(_fmt(d!.voiceSeconds),
-                  style: const TextStyle(fontSize: 10, color: accent2)),
+              Text(
+                _fmt(d!.voiceSeconds),
+                style: const TextStyle(fontSize: 10, color: accent2),
+              ),
             ],
             const SizedBox(width: 4),
             const Icon(Icons.edit_outlined, size: 14, color: Colors.white38),
@@ -527,14 +548,20 @@ class _StatusChoice extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(statusIcon(status),
-                size: 12, color: selected ? c : Colors.white38),
+            Icon(
+              statusIcon(status),
+              size: 12,
+              color: selected ? c : Colors.white38,
+            ),
             const SizedBox(width: 4),
-            Text(status.label,
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? c : Colors.white54)),
+            Text(
+              status.label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? c : Colors.white54,
+              ),
+            ),
           ],
         ),
       ),
@@ -567,15 +594,20 @@ class _ShotNote extends StatelessWidget {
             children: [
               const Icon(Icons.sticky_note_2_outlined, size: 15, color: _amber),
               const SizedBox(width: 6),
-              const Text('메모 · 특이사항',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                      color: _amber)),
+              const Text(
+                '메모 · 특이사항',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: _amber,
+                ),
+              ),
               const Spacer(),
-              const Text('생성에 안 쓰임',
-                  style: TextStyle(fontSize: 10, color: Colors.white38)),
+              const Text(
+                '생성에 안 쓰임',
+                style: TextStyle(fontSize: 10, color: Colors.white38),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -623,29 +655,41 @@ class _RefCharacterPicker extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.face_retouching_natural,
-                  size: 16, color: accent2),
+              const Icon(
+                Icons.face_retouching_natural,
+                size: 16,
+                color: accent2,
+              ),
               const SizedBox(width: 6),
-              const Text('인물 참조',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                      color: accent2)),
+              const Text(
+                '인물 참조',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: accent2,
+                ),
+              ),
               const Spacer(),
-              Text('${sel.length}/3',
-                  style: const TextStyle(fontSize: 11, color: Colors.white38)),
+              Text(
+                '${sel.length}/3',
+                style: const TextStyle(fontSize: 11, color: Colors.white38),
+              ),
             ],
           ),
           if (chars.isNotEmpty) ...[
             const SizedBox(height: 3),
-            const Text('각 인물의 대표이미지를 레퍼런스로 사용합니다 · 대표는 인물 관리에서 변경',
-                style: TextStyle(fontSize: 11, color: Colors.white38)),
+            const Text(
+              '각 인물의 대표이미지를 레퍼런스로 사용합니다 · 대표는 인물 관리에서 변경',
+              style: TextStyle(fontSize: 11, color: Colors.white38),
+            ),
           ],
           const SizedBox(height: 8),
           if (chars.isEmpty)
-            const Text('인물 관리에서 인물을 먼저 추가하세요',
-                style: TextStyle(fontSize: 11, color: Colors.white38))
+            const Text(
+              '인물 관리에서 인물을 먼저 추가하세요',
+              style: TextStyle(fontSize: 11, color: Colors.white38),
+            )
           else
             Wrap(
               spacing: 8,
@@ -663,8 +707,10 @@ class _RefCharacterPicker extends StatelessWidget {
             ),
           if (sel.isNotEmpty) ...[
             const SizedBox(height: 6),
-            const Text('선택 인물들 대표사진을 레퍼런스로 정체성 유지 생성 (FireRed 멀티)',
-                style: TextStyle(fontSize: 11, color: Colors.white38)),
+            const Text(
+              '선택 인물들 대표사진을 레퍼런스로 정체성 유지 생성 (FireRed 멀티)',
+              style: TextStyle(fontSize: 11, color: Colors.white38),
+            ),
           ],
         ],
       ),
@@ -707,9 +753,11 @@ class _SecondsFieldState extends State<_SecondsField> {
         ),
         SizedBox(
           width: 40,
-          child: Text('${_val.round()}초',
-              textAlign: TextAlign.end,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
+          child: Text(
+            '${_val.round()}초',
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
         ),
       ],
     );
@@ -726,10 +774,13 @@ class _LoraField extends StatefulWidget {
 
 class _LoraFieldState extends State<_LoraField> {
   late final TextEditingController _url = TextEditingController(
-      text: StoryboardScope.read(context).selectedScene?.loraUrl ?? '');
+    text: StoryboardScope.read(context).selectedScene?.loraUrl ?? '',
+  );
   late double _strength =
-      (StoryboardScope.read(context).selectedScene?.loraStrength ?? 0.8)
-          .clamp(0.0, 1.5);
+      (StoryboardScope.read(context).selectedScene?.loraStrength ?? 0.8).clamp(
+        0.0,
+        1.5,
+      );
 
   @override
   void dispose() {
@@ -787,9 +838,11 @@ class _LoraFieldState extends State<_LoraField> {
             ),
             SizedBox(
               width: 30,
-              child: Text(_strength.toStringAsFixed(1),
-                  textAlign: TextAlign.end,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              child: Text(
+                _strength.toStringAsFixed(1),
+                textAlign: TextAlign.end,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
           ],
         ),
@@ -851,25 +904,44 @@ class _VideoTab extends StatelessWidget {
                 _SectionLabel('프롬프트'),
                 const SizedBox(height: 6),
                 _PromptField(
-                    controller: p.videoCtrl(c.id), hint: '움직임/카메라 등 영상 묘사'),
+                  controller: p.videoCtrl(c.id),
+                  hint: '움직임/카메라 등 영상 묘사',
+                ),
                 const SizedBox(height: 14),
                 _SectionLabel('길이 (초 · 이 클립)'),
                 const SizedBox(height: 6),
                 _SecondsField(key: ValueKey('sec_${c.id}')),
                 const SizedBox(height: 14),
                 _OutputBlock(
-                    title: '미리보기',
-                    path: c.videoPath,
-                    busyKey: p.busyKey(c.id, GenMode.videoLow),
-                    isVideo: true),
+                  title: '미리보기',
+                  path: c.videoPath,
+                  busyKey: p.busyKey(c.id, GenMode.videoLow),
+                  isVideo: true,
+                ),
                 const SizedBox(height: 10),
+                // 백엔드를 버튼에서 직접 고른다(설정 안 들어가도 됨).
+                // 결과 슬롯은 하나라 다른 백엔드로 다시 뽑으면 덮어쓴다.
                 _GenButton(
-                  label: '영상 생성',
+                  label: 'Veo로 생성',
+                  icon: Icons.auto_awesome_outlined,
+                  busyKey: p.busyKey(c.id, GenMode.videoLow),
+                  onGen: () =>
+                      p.gen(c, GenMode.videoLow, backend: VideoBackend.veo),
+                  enabled: p.videoReadyOf(VideoBackend.veo),
+                  disabledHint: p.videoBlockReasonOf(VideoBackend.veo),
+                ),
+                const SizedBox(height: 8),
+                _GenButton(
+                  label: '자체 서버로 생성',
                   icon: Icons.movie_outlined,
                   busyKey: p.busyKey(c.id, GenMode.videoLow),
-                  onGen: () => p.gen(c, GenMode.videoLow),
-                  enabled: p.videoReady,
-                  disabledHint: p.videoBlockReason,
+                  onGen: () => p.gen(
+                    c,
+                    GenMode.videoLow,
+                    backend: VideoBackend.serviceApi,
+                  ),
+                  enabled: p.videoReadyOf(VideoBackend.serviceApi),
+                  disabledHint: p.videoBlockReasonOf(VideoBackend.serviceApi),
                 ),
               ],
             ),
@@ -899,8 +971,10 @@ class _CommonTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('이 프로젝트의 모든 클립 생성에 함께 붙습니다.',
-                    style: TextStyle(fontSize: 11, color: Colors.white38)),
+                const Text(
+                  '이 프로젝트의 모든 클립 생성에 함께 붙습니다.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38),
+                ),
                 const SizedBox(height: 8),
                 _ProjectCommonField(key: ValueKey('proj_${p.savePath}')),
               ],
@@ -913,20 +987,26 @@ class _CommonTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('이 씬의 모든 클립 생성에 함께 붙습니다.',
-                    style: TextStyle(fontSize: 11, color: Colors.white38)),
+                const Text(
+                  '이 씬의 모든 클립 생성에 함께 붙습니다.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38),
+                ),
                 const SizedBox(height: 8),
                 if (sc == null)
-                  const Text('씬을 선택하세요',
-                      style: TextStyle(color: Colors.white38))
+                  const Text(
+                    '씬을 선택하세요',
+                    style: TextStyle(color: Colors.white38),
+                  )
                 else
                   _SceneCommonField(key: ValueKey('common_${sc.id}')),
               ],
             ),
           ),
           const SizedBox(height: 14),
-          const Text('생성 시 [프로젝트] + [씬] + [클립] 순으로 합쳐집니다.',
-              style: TextStyle(fontSize: 11, color: Colors.white30)),
+          const Text(
+            '생성 시 [프로젝트] + [씬] + [클립] 순으로 합쳐집니다.',
+            style: TextStyle(fontSize: 11, color: Colors.white30),
+          ),
         ],
       ),
     );
@@ -942,7 +1022,8 @@ class _ProjectCommonField extends StatefulWidget {
 
 class _ProjectCommonFieldState extends State<_ProjectCommonField> {
   late final TextEditingController _ctrl = TextEditingController(
-      text: StoryboardScope.read(context).projectCommonPrompt);
+    text: StoryboardScope.read(context).projectCommonPrompt,
+  );
 
   @override
   void dispose() {
@@ -979,7 +1060,8 @@ class _SceneCommonField extends StatefulWidget {
 
 class _SceneCommonFieldState extends State<_SceneCommonField> {
   late final TextEditingController _ctrl = TextEditingController(
-      text: StoryboardScope.read(context).selectedScene?.commonPrompt ?? '');
+    text: StoryboardScope.read(context).selectedScene?.commonPrompt ?? '',
+  );
 
   @override
   void dispose() {
@@ -1095,7 +1177,8 @@ class _GroupCard extends StatelessWidget {
         color: const Color(0x08FFFFFF),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-            color: lit ? const Color(0x335BD1C0) : const Color(0x1AFFFFFF)),
+          color: lit ? const Color(0x335BD1C0) : const Color(0x1AFFFFFF),
+        ),
       ),
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       child: Column(
@@ -1105,9 +1188,13 @@ class _GroupCard extends StatelessWidget {
             children: [
               Icon(icon, size: 17, color: accent2),
               const SizedBox(width: 7),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w800)),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const Spacer(),
               if (done != null) _DoneBadge(done: done!),
             ],
@@ -1133,14 +1220,20 @@ class _DoneBadge extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(done ? Icons.check_circle : Icons.circle_outlined,
-            size: 14, color: done ? accent2 : Colors.white24),
+        Icon(
+          done ? Icons.check_circle : Icons.circle_outlined,
+          size: 14,
+          color: done ? accent2 : Colors.white24,
+        ),
         const SizedBox(width: 4),
-        Text(done ? '생성됨' : '미생성',
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: done ? accent2 : Colors.white38)),
+        Text(
+          done ? '생성됨' : '미생성',
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: done ? accent2 : Colors.white38,
+          ),
+        ),
       ],
     );
   }
@@ -1152,12 +1245,15 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(text.toUpperCase(),
-        style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.8,
-            color: accent2));
+    return Text(
+      text.toUpperCase(),
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
+        color: accent2,
+      ),
+    );
   }
 }
 
@@ -1252,16 +1348,27 @@ class _OutputBlock extends StatelessWidget {
               TextButton.icon(
                 onPressed: () => p.openFile(path!),
                 style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 icon: const Icon(Icons.open_in_new, size: 15),
                 label: const Text('열기'),
               ),
               TextButton.icon(
+                onPressed: () => p.revealInFinder(path!),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                icon: const Icon(Icons.folder_open_outlined, size: 16),
+                label: const Text('폴더'),
+              ),
+              TextButton.icon(
                 onPressed: () => p.exportFile(path!),
                 style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 icon: const Icon(Icons.download_outlined, size: 16),
                 label: const Text('내보내기'),
               ),
