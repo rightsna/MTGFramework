@@ -546,6 +546,115 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
+  // ───────── 씬 일괄 영상 생성 ─────────
+  // (계획 타입 SceneVideoPlan / BlockedShot은 이 파일 맨 아래에 있다.)
+
+  bool _batchRunning = false;
+  bool _batchCancel = false;
+  int _batchDone = 0;
+  int _batchTotal = 0;
+
+  bool get batchRunning => _batchRunning;
+  int get batchDone => _batchDone;
+  int get batchTotal => _batchTotal;
+
+  /// 진행 중인 일괄 생성을 멈춘다 — 지금 돌고 있는 샷 하나는 끝까지 가고 그 다음부터 중단.
+  /// (서버에 이미 올린 작업을 중간에 버리면 GPU 시간만 날린다.)
+  void cancelBatch() {
+    if (_batchRunning) _batchCancel = true;
+    notifyListeners();
+  }
+
+  /// 선택 씬의 샷을 훑어 일괄 영상 생성 계획을 세운다 — **생성 전에 미리 보여주기 위한 것**이라
+  /// 부수효과가 없다. [skipExisting]이면 이미 영상이 있는 샷은 건너뛸 목록으로 뺀다.
+  ///
+  /// FE2V는 시작·끝 프레임이 둘 다 있어야 하고 프롬프트도 필요하다 — 하나라도 없으면
+  /// 그 샷은 [blocked]로 가고, 호출부는 경고로 띄운다.
+  SceneVideoPlan sceneVideoPlan({required bool skipExisting}) {
+    final scene = selectedScene;
+    if (scene == null) return const SceneVideoPlan([], [], []);
+    final ready = <Shot>[];
+    final blocked = <BlockedShot>[];
+    final skipped = <Shot>[];
+    for (final beat in scene.dialogues) {
+      for (final shot in beat.shots) {
+        if (skipExisting && shot.videoPath != null) {
+          skipped.add(shot);
+          continue;
+        }
+        final missing = <String>[];
+        if (!_hasFile(shot.startImagePath)) missing.add('시작장면');
+        if (!_hasFile(shot.endImagePath)) missing.add('끝장면');
+        final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
+            shot.videoPrompt;
+        if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
+        if (missing.isEmpty) {
+          ready.add(shot);
+        } else {
+          blocked.add(BlockedShot(shot, shotLabel(shot), missing));
+        }
+      }
+    }
+    return SceneVideoPlan(ready, blocked, skipped);
+  }
+
+  bool _hasFile(String? path) =>
+      path != null && path.isNotEmpty && File(path).existsSync();
+
+  /// 사람이 알아볼 샷 이름 — 제목이 없으면 씬 안에서 몇 번째 샷인지로 부른다.
+  String shotLabel(Shot shot) {
+    if (shot.title.trim().isNotEmpty) return shot.title.trim();
+    final scene = sceneOf(shot);
+    if (scene == null) return '샷';
+    var n = 0;
+    for (final beat in scene.dialogues) {
+      for (final s in beat.shots) {
+        n++;
+        if (identical(s, shot)) return '샷 $n';
+      }
+    }
+    return '샷';
+  }
+
+  /// 선택 씬의 영상을 한 번에 만든다. [skipExisting]이면 이미 영상이 있는 샷은 넘긴다
+  /// (기본은 덮어쓰기 — 다시 뽑는 게 보통이라).
+  ///
+  /// 준비가 안 된 샷은 [sceneVideoPlan]이 걸러내므로 여기서는 생성 가능한 것만 돈다.
+  /// **한 번에 하나씩** 돌린다 — 서버 GPU가 하나뿐이라 동시에 던져봐야 큐에서 밀린다.
+  Future<void> genSceneVideos({required bool skipExisting}) async {
+    if (_batchRunning) return;
+    final plan = sceneVideoPlan(skipExisting: skipExisting);
+    if (plan.ready.isEmpty) {
+      messenger?.call('생성할 샷이 없습니다');
+      return;
+    }
+    _batchRunning = true;
+    _batchCancel = false;
+    _batchDone = 0;
+    _batchTotal = plan.ready.length;
+    notifyListeners();
+    try {
+      for (final shot in plan.ready) {
+        if (_batchCancel) break;
+        messenger?.call(
+          '[${_batchDone + 1}/$_batchTotal] ${shotLabel(shot)} 영상 생성 중…',
+        );
+        await gen(shot, GenMode.videoLow);
+        _batchDone++;
+        notifyListeners();
+      }
+      messenger?.call(
+        _batchCancel
+            ? '일괄 생성을 멈췄습니다 ($_batchDone/$_batchTotal 완료)'
+            : '영상 $_batchDone개 생성 완료',
+      );
+    } finally {
+      _batchRunning = false;
+      _batchCancel = false;
+      notifyListeners();
+    }
+  }
+
   // ───────── 생성(샷) ─────────
 
   TextEditingController? _promptCtrlFor(String shotId, GenMode mode) =>
@@ -963,6 +1072,17 @@ class StoryboardProvider extends ChangeNotifier {
     await save();
   }
 
+  /// 트림 결과를 반영한다 — 파일은 이미 [VideoEdit.trim]이 덮어썼고, 여기서는 상태만 맞춘다.
+  /// 잘린 만큼 샷 길이도 줄어드니 [Shot.videoSeconds]를 실제 길이로 맞춘다(1~15 정수 모델이라
+  /// 반올림된다). 미리보기는 경로가 같으므로 _ver을 올려 캐시를 무효화해야 갱신된다.
+  Future<void> applyTrim(Shot shot, double seconds) async {
+    shot.videoSeconds = seconds.round().clamp(1, 15);
+    final k = busyKey(shot.id, GenMode.videoLow);
+    _ver[k] = (_ver[k] ?? 0) + 1;
+    notifyListeners();
+    await save();
+  }
+
   /// 선택 씬의 **생성물 전부**(모든 샷의 시작·끝 프레임 + 영상, 씬 배경음, 대사 음성)를 지운다.
   /// 프롬프트·제목·구조는 그대로 두고 미디어만 비운다 — 다시 뽑기 전 초기화용.
   /// 지운 개수를 돌려준다.
@@ -1208,4 +1328,30 @@ class StoryboardScope extends InheritedNotifier<StoryboardProvider> {
     assert(scope != null, 'StoryboardScope를 찾을 수 없습니다');
     return scope!.notifier!;
   }
+}
+
+/// 씬 일괄 영상 생성 계획 — [StoryboardProvider.sceneVideoPlan]이 돌려준다.
+/// 생성을 누르기 **전에** 무엇이 돌고 무엇이 빠지는지 보여주기 위한 스냅샷이다.
+class SceneVideoPlan {
+  const SceneVideoPlan(this.ready, this.blocked, this.skipped);
+
+  /// 지금 바로 생성 가능한 샷들.
+  final List<Shot> ready;
+
+  /// 재료가 모자라 못 도는 샷들 — 경고로 띄운다.
+  final List<BlockedShot> blocked;
+
+  /// 이미 영상이 있어 건너뛸 샷들(건너뛰기 토글이 켜졌을 때만 채워진다).
+  final List<Shot> skipped;
+
+  bool get isEmpty => ready.isEmpty && blocked.isEmpty && skipped.isEmpty;
+}
+
+/// 재료가 빠져 생성할 수 없는 샷 하나와 그 이유.
+class BlockedShot {
+  const BlockedShot(this.shot, this.label, this.missing);
+
+  final Shot shot;
+  final String label; // '샷 3' 처럼 사람이 알아볼 이름
+  final List<String> missing; // 예: ['끝장면', '영상 프롬프트']
 }
