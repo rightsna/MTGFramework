@@ -1,11 +1,11 @@
 import 'package:framework/src/storyboard/models/character.dart';
-import 'package:framework/src/storyboard/models/clip.dart';
-import 'package:framework/src/storyboard/models/dialogue.dart';
 import 'package:framework/src/storyboard/models/shot.dart';
+import 'package:framework/src/storyboard/models/dialogue.dart';
+import 'package:framework/src/storyboard/models/dialogue_beat.dart';
 import 'package:framework/src/storyboard/models/story_scene.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// `scene<N>.json` 직렬화 검증. 씬 = 샷들의 나열, 각 샷 = 대사(0/1) + 클립들.
+/// `scene<N>.json` 직렬화 검증. 씬 = 대사들의 나열, 각 대사 = 대사(0/1) + 샷들.
 /// 자기설명적이고, 미디어는 파일명(상대)만 담기며, 왕복 후 값이 보존되고, 구버전도 마이그레이션되는지.
 void main() {
   const dir = '/proj/abc';
@@ -19,21 +19,21 @@ void main() {
         bgmPrompt: 'cinematic, ambient, calm, piano',
         bgmSeconds: 45,
         bgmPath: '$dir/scene_1_bgm.mp3',
-        shots: [
-          // 대사 있는 샷 — 클립 2개(첫 클립 립싱크 + 컷어웨이).
-          Shot(
+        dialogues: [
+          // 대사 있는 대사 — 샷 2개(첫 샷 립싱크 + 컷어웨이).
+          DialogueBeat(
             id: 'shot_1',
             title: '첫 컷',
             note: '역광 주의 · 클라 요청으로 톤 어둡게',
-            status: ShotStatus.review,
+            status: BeatStatus.review,
             dialogue: Dialogue(
               speakerId: 'char_miles',
               text: '형사님, 그 밤에 무슨 일이 있었죠?',
               voicePath: '$dir/shot_1_voice.mp3',
               voiceSeconds: 5.4,
             ),
-            clips: [
-              VideoClip(
+            shots: [
+              Shot(
                 id: 'clip_1',
                 refCharacterIds: ['char_miles'],
                 startPrompt: '마일스 입을 뗀다, 클로즈업',
@@ -44,7 +44,7 @@ void main() {
                 endImagePath: '$dir/clip_1_end.png',
                 videoPath: '$dir/clip_1_vlow.mp4',
               ),
-              VideoClip(
+              Shot(
                 id: 'clip_2',
                 refCharacterIds: ['char_sheriff'],
                 startPrompt: '보안관 무표정 리액션',
@@ -52,30 +52,30 @@ void main() {
               ),
             ],
           ),
-          // 무음 샷(대사 없음) — establishing 클립 1개.
-          Shot(
+          // 무음 대사(대사 없음) — establishing 샷 1개.
+          DialogueBeat(
             id: 'shot_2',
-            clips: [VideoClip(id: 'clip_3', startPrompt: '모텔 외경')],
+            shots: [Shot(id: 'clip_3', startPrompt: '모텔 외경')],
           ),
         ],
       );
 
-  test('JSON은 샷 나열 + 각 샷=대사(0/1)+클립들 + 미디어는 파일명(상대)만', () {
+  test('JSON은 대사 나열 + 각 대사=대사(0/1)+샷들 + 미디어는 파일명(상대)만', () {
     final j = sampleScene().toJson();
 
     expect(j.keys,
-        containsAll(['id', 'title', 'commonPrompt', 'shots', 'bgm', 'lora']));
+        containsAll(['id', 'title', 'commonPrompt', 'dialogues', 'bgm', 'lora']));
     expect(j['bgm'], {
       'prompt': 'cinematic, ambient, calm, piano',
       'seconds': 45,
       'file': 'scene_1_bgm.mp3',
     });
 
-    final shots = j['shots'] as List;
-    expect(shots.length, 2);
+    final dialogues = j['dialogues'] as List;
+    expect(dialogues.length, 2);
 
-    // 샷1: 상태·메모·대사 + 클립 2개.
-    final s1 = shots.first as Map;
+    // 대사1: 상태·메모·대사 + 샷 2개.
+    final s1 = dialogues.first as Map;
     expect(s1['status'], 'review');
     expect(s1['note'], '역광 주의 · 클라 요청으로 톤 어둡게');
     expect(s1['dialogue'], {
@@ -83,10 +83,10 @@ void main() {
       'text': '형사님, 그 밤에 무슨 일이 있었죠?',
       'voice': {'file': 'shot_1_voice.mp3', 'seconds': 5.4},
     });
-    final clips1 = s1['clips'] as List;
+    final clips1 = s1['shots'] as List;
     expect(clips1.length, 2);
     final c1 = clips1.first as Map;
-    // 클립엔 status/note 없음(샷 소유).
+    // 샷엔 status/note 없음(대사 소유).
     expect(c1.containsKey('status'), isFalse);
     expect(c1['refCharacters'], ['char_miles']);
     expect(c1['startScene'], {'prompt': '마일스 입을 뗀다, 클로즈업', 'image': 'clip_1_start.png'});
@@ -97,9 +97,9 @@ void main() {
     });
 
     // 샷2: 무음(dialogue=null).
-    final s2 = shots[1] as Map;
+    final s2 = dialogues[1] as Map;
     expect(s2['dialogue'], isNull);
-    expect((s2['clips'] as List).length, 1);
+    expect((s2['shots'] as List).length, 1);
 
     // 절대경로 없음.
     expect(j.toString(), isNot(contains('/proj/abc')));
@@ -112,10 +112,10 @@ void main() {
     expect(after.commonPrompt, '세로 9:16, 애니풍');
     expect(after.loraUrl, 'https://civitai.com/x');
     expect(after.bgmPath, '$dir/scene_1_bgm.mp3');
-    expect(after.shots.length, 2);
+    expect(after.dialogues.length, 2);
 
-    final s1 = after.shots.first;
-    expect(s1.status, ShotStatus.review);
+    final s1 = after.dialogues.first;
+    expect(s1.status, BeatStatus.review);
     expect(s1.note, '역광 주의 · 클라 요청으로 톤 어둡게');
     expect(s1.hasDialogue, isTrue);
     expect(s1.dialogue!.speakerId, 'char_miles');
@@ -123,33 +123,36 @@ void main() {
     expect(s1.dialogue!.voicePath, '$dir/shot_1_voice.mp3');
     expect(s1.dialogue!.voiceSeconds, 5.4);
     expect(s1.dialogue!.hasVoice, isTrue);
-    // 샷 길이 = 대사 음성 길이(5.4). 클립 길이 합은 3+3=6이지만 대사가 있으면 대사가 기준.
-    expect(s1.seconds, 5.4);
-    expect(s1.clipSeconds, 6);
+    // 실제 길이 = 샷 길이 합(3+3=6). 재생되는 건 영상이고 음성은 그 위에 얹히는 트랙.
+    expect(s1.seconds, 6.0);
+    expect(s1.shotSeconds, 6);
+    // 음성 길이(5.4)는 샷들이 덮어야 할 '목표'. 차이 0.6s = 음성 뒤 여백.
+    expect(s1.targetSeconds, 5.4);
+    expect(s1.coverageGap, closeTo(0.6, 1e-9));
 
-    expect(s1.clips.length, 2);
-    final c1 = s1.clips.first;
+    expect(s1.shots.length, 2);
+    final c1 = s1.shots.first;
     expect(c1.refCharacterIds, ['char_miles']);
     expect(c1.endImagePath, '$dir/clip_1_end.png');
     expect(c1.startImagePath, '$dir/clip_1_start.png');
     expect(c1.videoPath, '$dir/clip_1_vlow.mp4');
 
-    // 무음 샷: 대사 없음 → 길이는 클립 길이 합.
-    final s2 = after.shots[1];
+    // 무음 대사: 대사 없음 → 길이는 샷 길이 합.
+    final s2 = after.dialogues[1];
     expect(s2.hasDialogue, isFalse);
     expect(s2.dialogue, isNull);
-    expect(s2.seconds, s2.clipSeconds.toDouble());
+    expect(s2.seconds, s2.shotSeconds.toDouble());
 
-    // 씬 전체 길이 = 각 샷 길이 합(5.4 + 무음샷 클립합).
-    expect(after.totalSeconds, 5.4 + s2.clipSeconds);
-    expect(after.clipCount, 3);
+    // 씬 전체 길이 = 각 대사의 실제 길이(샷 합) 합 — 음성 길이(5.4)가 아니라 영상 기준.
+    expect(after.totalSeconds, s1.shotSeconds + s2.shotSeconds);
+    expect(after.shotCount, 3);
   });
 
   test('폴더가 이동해도 미디어 경로가 새 dir 기준으로 복원된다', () {
     final moved = StoryScene.fromJson(sampleScene().toJson(), '/new/home');
     expect(moved.bgmPath, '/new/home/scene_1_bgm.mp3');
-    expect(moved.shots.first.dialogue!.voicePath, '/new/home/shot_1_voice.mp3');
-    expect(moved.shots.first.clips.first.startImagePath,
+    expect(moved.dialogues.first.dialogue!.voicePath, '/new/home/shot_1_voice.mp3');
+    expect(moved.dialogues.first.shots.first.startImagePath,
         '/new/home/clip_1_start.png');
   });
 
@@ -180,53 +183,33 @@ void main() {
     expect(narr.hasVoice, isFalse);
   });
 
-  test('구버전(평면 클립 리스트) → 클립 1개짜리 무음 샷들로 마이그레이션', () {
-    // 옛 스키마: 씬이 `shots`(또는 `clips`) = flat 영상 단위 리스트. 대사/샷 개념 없음.
-    final legacy = {
-      'id': 'scene_old',
-      'title': '옛씬',
-      'loraUrl': 'u',
-      'bgmPrompt': 'lofi',
-      'shots': [
-        {
-          'id': 'oldclip_1',
-          'status': 'done', // 옛 클립의 상태 → 샷으로 끌어올림
-          'note': '옛 메모',
-          'prompt': '옛 프롬프트', // 구버전 단일 prompt
-          'startImagePath': '/old/place/oldclip_1_start.png',
-        }
-      ],
-    };
-    final sc = StoryScene.fromJson(legacy, dir);
-    expect(sc.loraUrl, 'u');
-    expect(sc.bgmPrompt, 'lofi');
-    expect(sc.shots.length, 1);
+  test('빠진 키는 기본값으로 — 씬/대사 최소 JSON', () {
+    // 구스키마 폴백은 제거됐다(데이터는 정본 스키마로 마이그레이션 완료).
+    // 키가 아예 없을 때 터지지 않고 기본값으로 읽히는지만 본다.
+    final sc = StoryScene.fromJson({'id': 'scene_min'}, dir);
+    expect(sc.dialogues, isEmpty);
+    expect(sc.loraStrength, 0.8);
+    expect(sc.bgmSeconds, 30);
+    expect(sc.bgmPath, isNull);
 
-    final shot = sc.shots.single;
-    expect(shot.dialogue, isNull); // 무음 샷
-    expect(shot.status, ShotStatus.done); // 옛 클립 status → 샷
-    expect(shot.note, '옛 메모');
-    expect(shot.clips.length, 1);
-
-    final clip = shot.clips.single;
-    expect(clip.startPrompt, '옛 프롬프트'); // prompt → startPrompt
-    expect(clip.startImagePath, '$dir/oldclip_1_start.png');
-    expect(clip.endImagePath, isNull); // 끝 데이터 없음
+    final beat = DialogueBeat.fromJson({'id': 'b_min'}, dir);
+    expect(beat.shots, isEmpty);
+    expect(beat.dialogue, isNull);
+    expect(beat.status, BeatStatus.ready);
   });
 
-  test('새 샷 기본값 + 끝장면(클립) 왕복', () {
-    expect(Shot(id: 'x').hasDialogue, isFalse);
-    expect(Shot(id: 'x').status, ShotStatus.ready);
+  test('새 대사 기본값 + 끝장면(샷) 왕복', () {
+    expect(DialogueBeat(id: 'x').hasDialogue, isFalse);
+    expect(DialogueBeat(id: 'x').status, BeatStatus.ready);
 
     // 끝 이미지/프롬프트가 보존된다(FE2V 필수 프레임).
-    final legacyWithEnd = VideoClip.fromJson({
+    final withEnd = Shot.fromJson({
       'id': 'y',
-      'startPrompt': 'a',
-      'endPrompt': '문 닫힘',
-      'endImagePath': '/old/y_end.png',
+      'startScene': {'prompt': 'a', 'image': null},
+      'endScene': {'prompt': '문 닫힘', 'image': 'y_end.png'},
     }, dir);
-    expect(legacyWithEnd.endPrompt, '문 닫힘');
-    expect(legacyWithEnd.endImagePath, '$dir/y_end.png');
+    expect(withEnd.endPrompt, '문 닫힘');
+    expect(withEnd.endImagePath, '$dir/y_end.png');
   });
 
   test('Character 직렬화 — 미디어 파일명(상대) + 목소리 + 왕복 + 대표 폴백', () {

@@ -431,7 +431,7 @@ class _CharacterManagerScreenState extends State<CharacterManagerScreen> {
                         filled: true,
                         fillColor: previewBg,
                         border: OutlineInputBorder(),
-                        hintText: '외형·성격·역할 등 (클립 생성 레퍼런스로 활용)',
+                        hintText: '외형·성격·역할 등 (샷 생성 레퍼런스로 활용)',
                       ),
                     ),
                   ],

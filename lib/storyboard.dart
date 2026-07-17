@@ -1,9 +1,13 @@
 /// The storyboard / movie-production kit — one project's video pipeline as an
 /// embeddable unit, same idea as `package:framework/store.dart`: the host hands
 /// [StoryboardScreen] a project folder + display name and the kit does the rest
-/// (scene/shot authoring, AI image·video·TTS·BGM generation, preview, media
-/// management — everything persists inside that folder as storyboard.json +
-/// `scene<N>.json` + media files).
+/// (씬 > 대사 > 샷 authoring, AI image·video·TTS·BGM generation, preview, media
+/// management — everything persists inside that folder as `scene<N>.json` +
+/// media files).
+///
+/// 계층: **씬(StoryScene) > 대사(DialogueBeat) > 샷(Shot)**.
+/// 대사 하나가 여러 샷으로 덮인다(첫 샷 립싱크 + 나머지 컷어웨이) — 샷 하나 = FE2V 1회 생성.
+/// [Dialogue]는 대사의 내용(화자·텍스트·음성)이라 언어별 더빙 시 이것만 교체한다.
 ///
 /// What stays host-side: the notion of a project LIST (which folders exist,
 /// naming, deletion) — see storyboard-maker's ProjectListScreen for the
@@ -18,8 +22,8 @@
 library;
 
 export 'src/storyboard/models/character.dart';
-export 'src/storyboard/models/clip.dart';
 export 'src/storyboard/models/dialogue.dart';
+export 'src/storyboard/models/dialogue_beat.dart';
 export 'src/storyboard/models/shot.dart';
 export 'src/storyboard/models/story_scene.dart';
 export 'src/storyboard/screens/settings/settings_dialog.dart';

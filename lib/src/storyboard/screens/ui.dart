@@ -1,23 +1,23 @@
 import 'package:flutter/material.dart';
 
-import '../models/shot.dart';
+import '../models/dialogue_beat.dart';
 
 /// 샷 상태별 색(칸반). 캔버스 아이콘·인스펙터 칩이 공유.
-Color statusColor(ShotStatus s) => switch (s) {
-      ShotStatus.ready => const Color(0xFF8A8F98), // 준비 · 회색
-      ShotStatus.inProgress => const Color(0xFF4C9AFF), // 진행 · 파랑
-      ShotStatus.review => const Color(0xFFE0A94A), // 검토 · 앰버
-      ShotStatus.rejected => const Color(0xFFF2555A), // 반려 · 빨강
-      ShotStatus.done => const Color(0xFF3FB77E), // 완료 · 초록
+Color statusColor(BeatStatus s) => switch (s) {
+      BeatStatus.ready => const Color(0xFF8A8F98), // 준비 · 회색
+      BeatStatus.inProgress => const Color(0xFF4C9AFF), // 진행 · 파랑
+      BeatStatus.review => const Color(0xFFE0A94A), // 검토 · 앰버
+      BeatStatus.rejected => const Color(0xFFF2555A), // 반려 · 빨강
+      BeatStatus.done => const Color(0xFF3FB77E), // 완료 · 초록
     };
 
 /// 샷 상태별 아이콘.
-IconData statusIcon(ShotStatus s) => switch (s) {
-      ShotStatus.ready => Icons.radio_button_unchecked,
-      ShotStatus.inProgress => Icons.timelapse,
-      ShotStatus.review => Icons.visibility_outlined,
-      ShotStatus.rejected => Icons.replay,
-      ShotStatus.done => Icons.check_circle,
+IconData statusIcon(BeatStatus s) => switch (s) {
+      BeatStatus.ready => Icons.radio_button_unchecked,
+      BeatStatus.inProgress => Icons.timelapse,
+      BeatStatus.review => Icons.visibility_outlined,
+      BeatStatus.rejected => Icons.replay,
+      BeatStatus.done => Icons.check_circle,
     };
 
 /// 화면 전반에서 공유하는 색/레이아웃 상수.

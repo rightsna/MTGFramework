@@ -20,7 +20,7 @@ enum GenMode {
       };
 }
 
-/// service-api 접속 상태 스냅클립.
+/// service-api 접속 상태 스냅샷.
 class ApiStatus {
   const ApiStatus({
     required this.reachable,

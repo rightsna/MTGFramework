@@ -1,9 +1,9 @@
-import 'clip.dart'; // mediaName / mediaPath (미디어 절대경로 ↔ 파일명)
+import 'shot.dart'; // mediaName / mediaPath (미디어 절대경로 ↔ 파일명)
 
-/// 한 샷(Shot)의 대사. 샷이 0개 또는 1개 소유한다(값 객체 — 자체 id 없음).
+/// 한 샷(DialogueBeat)의 대사. 샷이 0개 또는 1개 소유한다(값 객체 — 자체 id 없음).
 ///
 /// 드라마 제작의 기준은 대본(대사)이다 — 대사를 음성(TTS, 일레븐랩스)으로 만들면
-/// 그 길이(voiceSeconds)가 이 샷의 시간을 정하고, 샷의 클립들이 그 시간을 나눠 덮는다.
+/// 그 길이(voiceSeconds)가 이 대사의 시간을 정하고, 대사의 샷들이 그 시간을 나눠 덮는다.
 /// 화자(speakerId)는 Character.id — null이면 내레이션/지문(화자 없는 대사)이다.
 /// 음성(mp3)은 프로젝트 폴더 안 파일명(상대)만 저장하고, 런타임엔 절대경로로 다룬다.
 class Dialogue {

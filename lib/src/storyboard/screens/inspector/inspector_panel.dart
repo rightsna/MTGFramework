@@ -1,117 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // Clipboard
 
-import '../../models/clip.dart';
 import '../../models/shot.dart';
+import '../../models/dialogue_beat.dart';
 import '../../providers/storyboard_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/movie_settings.dart';
 import '../canvas/bgm_section.dart';
-import '../canvas/canvas_view.dart' show editShotDialogue;
+import '../canvas/canvas_view.dart' show fmtSeconds;
 import '../common/output_preview.dart';
+import '../common/audio_box.dart';
 import '../ui.dart';
 
-/// 오른쪽 인스펙터: 최상위 탭 [일반 | 샷 | 배경음].
-///  - 일반: 씬 일반 설정(준비 중)
-///  - 샷: 선택 샷 정보(제목·상태·메모·대사)
-///  - 배경음: 씬 단위 BGM (원래 캔버스 하단에 있던 것)
-/// 클립 편집 [장면|영상|공통]은 캔버스 하단의 [ClipEditorPanel]로 분리했다.
-class InspectorPanel extends StatefulWidget {
-  const InspectorPanel({super.key});
-
-  @override
-  State<InspectorPanel> createState() => _InspectorPanelState();
-}
-
-class _InspectorPanelState extends State<InspectorPanel>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tab = TabController(
-    length: 2,
-    vsync: this,
-    initialIndex: 1,
-  ); // 기본 '배경음'
-
-  @override
-  void dispose() {
-    _tab.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: panelBg,
-        border: Border(top: BorderSide(color: Color(0x22FFFFFF))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TabBar(
-            controller: _tab,
-            labelColor: accent2,
-            indicatorColor: accent2,
-            tabs: const [
-              Tab(text: '일반'),
-              Tab(text: '배경음'),
-            ],
-          ),
-          Expanded(
-            child: AnimatedBuilder(
-              animation: _tab,
-              builder: (context, _) => IndexedStack(
-                index: _tab.index,
-                children: const [_GeneralTab(), _BgmTab()],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 일반 탭 — 씬 일반 설정(아직 내용 미정, 플레이스홀더).
-class _GeneralTab extends StatelessWidget {
-  const _GeneralTab();
-
-  @override
-  Widget build(BuildContext context) {
-    final p = StoryboardScope.of(context);
-    if (p.selectedScene == null) {
-      return const Center(
-        child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
-      );
-    }
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.tune, color: Colors.white24, size: 40),
-          SizedBox(height: 10),
-          Text('씬 일반 설정 (준비 중)', style: TextStyle(color: Colors.white38)),
-        ],
-      ),
-    );
-  }
-}
-
-/// 샷 탭 — 선택 샷 정보(제목·상태·메모·대사).
+/// 대사 탭 — 선택 대사 정보(제목·상태·메모·내용).
 class _ShotInfoTab extends StatelessWidget {
   const _ShotInfoTab();
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final shot = p.selectedShot;
-    if (shot == null) {
+    final beat = p.selectedDialogue;
+    if (beat == null) {
       return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.touch_app_outlined, color: Colors.white24, size: 40),
             SizedBox(height: 10),
-            Text('왼쪽에서 샷을 선택하세요', style: TextStyle(color: Colors.white38)),
+            Text('왼쪽에서 대사를 선택하세요', style: TextStyle(color: Colors.white38)),
           ],
         ),
       );
@@ -133,7 +49,7 @@ class _ShotInfoTab extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'SHOT ${p.shots.indexOf(shot) + 1}',
+                '대사 ${p.dialogues.indexOf(beat) + 1}',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -145,10 +61,10 @@ class _ShotInfoTab extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           TextField(
-            controller: p.titleCtrl(shot.id),
+            controller: p.titleCtrl(beat.id),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             decoration: const InputDecoration(
-              hintText: '샷 제목 (선택)',
+              hintText: '대사 제목 (선택)',
               isDense: true,
               filled: true,
               fillColor: previewBg,
@@ -157,48 +73,260 @@ class _ShotInfoTab extends StatelessWidget {
             onChanged: (_) => p.noteEdited(),
           ),
           const SizedBox(height: 12),
-          _StatusSelector(shot: shot),
+          _StatusSelector(beat: beat),
           const SizedBox(height: 14),
-          _ShotNote(shotId: shot.id),
+          _ShotNote(dialogueId: beat.id),
           const SizedBox(height: 14),
-          _DialogueSummary(shot: shot),
+          // 대사 내용·화자·음성은 팝업 대신 이 탭에서 바로 편집한다.
+          _DialogueEditor(key: ValueKey('dlg_${beat.id}'), beat: beat),
         ],
       ),
     );
   }
 }
 
-/// 배경음 탭 — 씬 단위 BGM.
-class _BgmTab extends StatelessWidget {
-  const _BgmTab();
+/// 샷 길이 합(실제) vs 음성 길이(목표) 비교 — 부족하면 채우라고, 맞으면 초록으로.
+/// 실제 재생되는 건 영상이므로 대사 길이 = 샷 합계이고, 음성은 그 위에 얹히는 목표치다.
+class _CoverageBadge extends StatelessWidget {
+  const _CoverageBadge({required this.beat});
+
+  final DialogueBeat beat;
+
+  @override
+  Widget build(BuildContext context) {
+    final gap = beat.coverageGap;
+    if (gap == null) return const SizedBox.shrink();
+    final short = gap < -0.05; // 영상이 음성보다 짧다 = 대사가 잘림
+    final over = gap > 0.05; // 영상이 더 길다 = 음성 뒤 여백
+    final c = short
+        ? Colors.orangeAccent
+        : over
+            ? Colors.white54
+            : Colors.greenAccent;
+    final msg = short
+        ? '샷 ${fmtSeconds(beat.seconds)} · 음성보다 ${fmtSeconds(-gap)} 짧음 — 대사가 잘립니다'
+        : over
+            ? '샷 ${fmtSeconds(beat.seconds)} · 음성 뒤 ${fmtSeconds(gap)} 여백'
+            : '샷 ${fmtSeconds(beat.seconds)} · 음성과 맞음';
+    return Row(
+      children: [
+        Icon(
+          short
+              ? Icons.warning_amber_rounded
+              : over
+                  ? Icons.more_horiz
+                  : Icons.check_circle_outline,
+          size: 13,
+          color: c,
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(msg, style: TextStyle(fontSize: 11, color: c)),
+        ),
+      ],
+    );
+  }
+}
+
+/// 대사 내용 편집 — 화자 + 텍스트 + 음성(TTS). 입력은 즉시 저장된다(별도 저장 버튼 없음).
+class _DialogueEditor extends StatefulWidget {
+  const _DialogueEditor({super.key, required this.beat});
+
+  final DialogueBeat beat;
+
+  @override
+  State<_DialogueEditor> createState() => _DialogueEditorState();
+}
+
+class _DialogueEditorState extends State<_DialogueEditor> {
+  late final TextEditingController _text =
+      TextEditingController(text: widget.beat.dialogue?.text ?? '');
+  bool _genning = false;
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    if (p.selectedScene == null) {
-      return const Center(
-        child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
-      );
-    }
-    return const SingleChildScrollView(child: BgmSection());
+    final beat = widget.beat;
+    final d = beat.dialogue;
+    final speaker = d?.speakerId;
+    final speakerChar = p.characterById(speaker);
+    final target = (speakerChar != null && speakerChar.hasVoice)
+        ? '${speakerChar.name.trim().isEmpty ? '화자' : speakerChar.name.trim()} 보이스'
+        : (p.settings.elevenVoiceId.trim().isNotEmpty
+            ? '기본 보이스${p.settings.elevenVoiceName.trim().isEmpty ? '' : '(${p.settings.elevenVoiceName.trim()})'}'
+            : null);
+    final has = d?.hasVoice ?? false;
+    final canGen = p.voiceReady && _text.text.trim().isNotEmpty && target != null;
+
+    return _GroupCard(
+      icon: Icons.record_voice_over_outlined,
+      title: '대사 내용',
+      done: has,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SectionLabel('화자'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String?>(
+            initialValue: speaker,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('내레이션 (화자 없음)'),
+              ),
+              for (final c in p.characters)
+                DropdownMenuItem<String?>(
+                  value: c.id,
+                  child: Text(
+                    '${c.name.trim().isEmpty ? '(이름 없음)' : c.name.trim()}'
+                    '${c.hasVoice ? '  · 🎙 ${c.voiceName.isEmpty ? '보이스' : c.voiceName}' : '  · 보이스 없음'}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (v) => p.setShotDialogueSpeaker(beat, v),
+          ),
+          const SizedBox(height: 14),
+          _SectionLabel('대사'),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _text,
+            minLines: 3,
+            maxLines: 8,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            decoration: const InputDecoration(
+              hintText: '이 대사에서 말할 내용(또는 내레이션). 비우면 무음',
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) {
+              p.setShotDialogueText(beat, v);
+              setState(() {}); // 음성 버튼 활성 갱신
+            },
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '감정 표현: 문장 앞에 [crying] [whispers] [sighs] [shouts] 같은 '
+            '영어 대괄호 태그 (일레븐랩스 v3)',
+            style: TextStyle(fontSize: 11, color: Colors.white38),
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          _SectionLabel('음성'),
+          const SizedBox(height: 6),
+          // 지금 설정된 음성이 먼저 — 결과가 위, 그걸 바꾸는 수단(불러오기/생성)이 아래.
+          // 배경음과 **같은 AudioBox**를 쓴다(같은 오디오인데 UI가 다를 이유가 없다).
+          AudioBox(
+            path: d?.voicePath,
+            emptyText: '음성 없음 — 불러오거나 생성하세요',
+            busy: _genning || p.isBusy(p.voiceBusyKey(beat.id)),
+            version: p.verOf(p.voiceBusyKey(beat.id)),
+            extraActions: [
+              if (d != null)
+                IconButton(
+                  tooltip: '대사 지우기 (무음으로)',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 16,
+                  color: Colors.redAccent,
+                  onPressed: () {
+                    p.removeShotDialogue(beat);
+                    _text.clear();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+            footer: has ? _CoverageBadge(beat: beat) : null,
+          ),
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: _genning ? null : () => p.loadVoice(beat),
+            icon: const Icon(Icons.audio_file_outlined, size: 18),
+            label: Text(has ? '다른 파일 불러오기' : '오디오 파일 불러오기'),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'mp3 · wav · m4a · aac · flac · ogg — 길이는 자동으로 측정됩니다',
+            style: TextStyle(fontSize: 11, color: Colors.white38),
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          // ── 부가: AI(일레븐랩스)로 생성 ──
+          Row(
+            children: [
+              const Icon(Icons.graphic_eq, size: 14, color: accent2),
+              const SizedBox(width: 6),
+              const Text('AI로 생성 (선택)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            !p.voiceReady
+                ? '설정에서 일레븐랩스 키를 넣어야 음성을 만들 수 있어요'
+                : target == null
+                    ? '보이스 없음 — 화자에 보이스를 지정하거나 설정에서 기본 보이스를 정하세요'
+                    : '$target 으로 위 대사를 읽습니다',
+            style: const TextStyle(fontSize: 11, color: Colors.white54),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: (_genning || !canGen)
+                ? null
+                : () async {
+                    setState(() => _genning = true);
+                    await p.genVoice(beat);
+                    if (mounted) setState(() => _genning = false);
+                  },
+            icon: _genning
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(has ? Icons.refresh : Icons.graphic_eq, size: 18),
+            label: Text(
+              _genning
+                  ? '생성 중…'
+                  : has
+                      ? '음성 재생성'
+                      : '음성 생성',
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-/// 캔버스 하단 클립 편집 패널: 탭 [장면 | 영상 | 공통]. 선택 클립을 편집한다.
+/// 캔버스 하단 샷 편집 패널: 탭 [장면 | 영상 | 공통]. 선택 샷을 편집한다.
 /// (탭 선택은 settings.inspectorTab에 유지 — 예전 인스펙터 탭 기억을 이어받음.)
-class ClipEditorPanel extends StatefulWidget {
-  const ClipEditorPanel({super.key});
+class ShotEditorPanel extends StatefulWidget {
+  const ShotEditorPanel({super.key});
 
   @override
-  State<ClipEditorPanel> createState() => _ClipEditorPanelState();
+  State<ShotEditorPanel> createState() => _ShotEditorPanelState();
 }
 
-class _ClipEditorPanelState extends State<ClipEditorPanel>
+class _ShotEditorPanelState extends State<ShotEditorPanel>
     with SingleTickerProviderStateMixin {
   late final TabController _tab;
   bool _restoredTab = false;
-  String? _lastShotId; // 선택 변경 감지용(샷만 선택 시 '샷' 탭으로 전환)
-  String? _lastClipId;
+  String? _lastDialogueId; // 선택 변경 감지용(샷만 선택 시 '샷' 탭으로 전환)
+  String? _lastShotId;
 
   @override
   void initState() {
@@ -228,8 +356,8 @@ class _ClipEditorPanelState extends State<ClipEditorPanel>
     if (p.settingsLoaded && !_restoredTab) {
       // 저장된 인스펙터 탭 1회 복원.
       _restoredTab = true;
+      _lastDialogueId = p.selectedDialogueId;
       _lastShotId = p.selectedShotId;
-      _lastClipId = p.selectedClipId;
       final saved = p.settings.inspectorTab.clamp(0, 3);
       if (saved != _tab.index) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -237,20 +365,20 @@ class _ClipEditorPanelState extends State<ClipEditorPanel>
         });
       }
     } else if (_restoredTab) {
-      // 선택 변경 감지: '샷만' 선택(클립 없음)되면 '샷' 탭으로 전환.
+      // 선택 변경 감지: '대사만' 선택(샷 없음)되면 '대사' 탭으로 전환.
+      final dialogueId = p.selectedDialogueId;
       final shotId = p.selectedShotId;
-      final clipId = p.selectedClipId;
-      if (shotId != _lastShotId || clipId != _lastClipId) {
+      if (dialogueId != _lastDialogueId || shotId != _lastShotId) {
+        _lastDialogueId = dialogueId;
         _lastShotId = shotId;
-        _lastClipId = clipId;
-        if (shotId != null && clipId == null && _tab.index != 0) {
+        if (dialogueId != null && shotId == null && _tab.index != 0) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) _tab.animateTo(0);
           });
         }
       }
     }
-    final clip = p.selectedClip;
+    final shot = p.selectedShot;
     return Container(
       color: panelBg,
       child: Column(
@@ -261,10 +389,10 @@ class _ClipEditorPanelState extends State<ClipEditorPanel>
             labelColor: accent2,
             indicatorColor: accent2,
             tabs: const [
-              Tab(text: '샷'),
+              Tab(text: '대사'),
               Tab(text: '장면'),
               Tab(text: '영상'),
-              Tab(text: '프롬프트'),
+              Tab(text: '씬'),
             ],
           ),
           Expanded(
@@ -274,9 +402,9 @@ class _ClipEditorPanelState extends State<ClipEditorPanel>
                 index: _tab.index,
                 children: [
                   const _ShotInfoTab(),
-                  clip == null ? const _NoClip() : _SceneTab(clip: clip),
-                  clip == null ? const _NoClip() : _VideoTab(clip: clip),
-                  const _CommonTab(),
+                  shot == null ? const _NoShot() : _SceneTab(shot: shot),
+                  shot == null ? const _NoShot() : _VideoTab(shot: shot),
+                  const _SceneSettingsTab(),
                 ],
               ),
             ),
@@ -287,24 +415,24 @@ class _ClipEditorPanelState extends State<ClipEditorPanel>
   }
 }
 
-/// 장면·영상 탭에 편집할 클립이 없을 때의 안내.
+/// 장면·영상 탭에 편집할 샷이 없을 때의 안내.
 ///  - 샷 미선택 → 샷을 먼저 선택
-///  - 샷은 있으나 클립 0개 → 클립 추가(＋)
-///  - 클립은 있으나 선택 안 됨 → 캔버스에서 클립을 클릭하도록 안내
-class _NoClip extends StatelessWidget {
-  const _NoClip();
+///  - 대사는 있으나 샷 0개 → 샷 추가(＋)
+///  - 샷은 있으나 선택 안 됨 → 캔버스에서 샷을 클릭하도록 안내
+class _NoShot extends StatelessWidget {
+  const _NoShot();
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final shot = p.selectedShot;
-    if (shot == null) {
+    final beat = p.selectedDialogue;
+    if (beat == null) {
       return const _CenterNote(
         icon: Icons.touch_app_outlined,
-        title: '샷을 선택하세요',
+        title: '대사를 선택하세요',
       );
     }
-    if (shot.clips.isEmpty) {
+    if (beat.shots.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -316,14 +444,14 @@ class _NoClip extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              '이 샷에 클립이 없습니다',
+              '이 대사에 샷이 없습니다',
               style: TextStyle(color: Colors.white38),
             ),
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: () => p.addClip(shot),
+              onPressed: () => p.addShot(beat),
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('클립 추가'),
+              label: const Text('대사 추가'),
             ),
           ],
         ),
@@ -331,8 +459,8 @@ class _NoClip extends StatelessWidget {
     }
     return const _CenterNote(
       icon: Icons.ads_click,
-      title: '클립을 선택하세요',
-      subtitle: '캔버스에서 편집할 클립을 클릭하면\n이 샷의 장면·영상을 편집할 수 있어요',
+      title: '샷을 선택하세요',
+      subtitle: '캔버스에서 편집할 샷을 클릭하면\n그 샷의 장면·영상을 편집할 수 있어요',
     );
   }
 }
@@ -368,96 +496,11 @@ class _CenterNote extends StatelessWidget {
   }
 }
 
-/// 대사 요약 — 화자 + 텍스트 미리보기(+음성). 탭하면 편집 모달.
-class _DialogueSummary extends StatelessWidget {
-  const _DialogueSummary({required this.shot});
+/// 장면 탭(샷): 대사 메모 + 인물참조 + 시작/끝장면 프레임.
+class _SceneTab extends StatelessWidget {
+  const _SceneTab({required this.shot});
 
   final Shot shot;
-
-  static const _voice = Color(0xFFE0678A);
-
-  @override
-  Widget build(BuildContext context) {
-    final p = StoryboardScope.of(context);
-    final d = shot.dialogue;
-    final speaker = p.characterById(d?.speakerId);
-    return InkWell(
-      onTap: () => editShotDialogue(context, shot),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-        decoration: BoxDecoration(
-          color: const Color(0x12E0678A),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0x33E0678A)),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.record_voice_over_outlined,
-              size: 16,
-              color: _voice,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: d == null
-                  ? const Text(
-                      '대사 추가 (없으면 무음 샷)',
-                      style: TextStyle(fontSize: 12, color: _voice),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          d.speakerId == null
-                              ? '내레이션'
-                              : ((speaker?.name.trim().isNotEmpty ?? false)
-                                    ? speaker!.name.trim()
-                                    : '(이름 없음)'),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: _voice,
-                          ),
-                        ),
-                        Text(
-                          d.text.trim().isEmpty ? '(대사 없음)' : d.text.trim(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xCCFFFFFF),
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-            if (d?.hasVoice ?? false) ...[
-              const Icon(Icons.graphic_eq, size: 13, color: accent2),
-              const SizedBox(width: 3),
-              Text(
-                _fmt(d!.voiceSeconds),
-                style: const TextStyle(fontSize: 10, color: accent2),
-              ),
-            ],
-            const SizedBox(width: 4),
-            const Icon(Icons.edit_outlined, size: 14, color: Colors.white38),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _fmt(double s) =>
-    s == s.roundToDouble() ? '${s.toInt()}s' : '${s.toStringAsFixed(1)}s';
-
-/// 장면 탭(클립): 샷 메모 + 인물참조 + 시작/끝장면 프레임.
-class _SceneTab extends StatelessWidget {
-  const _SceneTab({required this.clip});
-
-  final VideoClip clip;
 
   @override
   Widget build(BuildContext context) {
@@ -467,31 +510,32 @@ class _SceneTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _RefCharacterPicker(clip: clip),
-          const SizedBox(height: 20),
+          // 결과(프레임)가 위, 그 생성에 쓰이는 설정(인물참조)은 아래.
           _FrameSection(
             title: '시작장면',
-            controller: p.startCtrl(clip.id),
-            hint: '클립의 첫 프레임(시작 장면)을 묘사',
+            controller: p.startCtrl(shot.id),
+            hint: '샷의 첫 프레임(시작 장면)을 묘사',
             genLabel: '시작장면 생성',
             genIcon: Icons.first_page,
-            path: clip.startImagePath,
-            busyKey: p.busyKey(clip.id, GenMode.imageStart),
-            onGen: () => p.gen(clip, GenMode.imageStart),
-            onLoad: () => p.loadFrame(clip, GenMode.imageStart),
+            path: shot.startImagePath,
+            busyKey: p.busyKey(shot.id, GenMode.imageStart),
+            onGen: () => p.gen(shot, GenMode.imageStart),
+            onLoad: () => p.loadFrame(shot, GenMode.imageStart),
           ),
           const SizedBox(height: 16),
           _FrameSection(
             title: '끝장면',
-            controller: p.endCtrl(clip.id),
-            hint: '클립의 마지막 프레임(끝 장면)을 묘사',
+            controller: p.endCtrl(shot.id),
+            hint: '샷의 마지막 프레임(끝 장면)을 묘사',
             genLabel: '끝장면 생성',
             genIcon: Icons.last_page,
-            path: clip.endImagePath,
-            busyKey: p.busyKey(clip.id, GenMode.imageEnd),
-            onGen: () => p.gen(clip, GenMode.imageEnd),
-            onLoad: () => p.loadFrame(clip, GenMode.imageEnd),
+            path: shot.endImagePath,
+            busyKey: p.busyKey(shot.id, GenMode.imageEnd),
+            onGen: () => p.gen(shot, GenMode.imageEnd),
+            onLoad: () => p.loadFrame(shot, GenMode.imageEnd),
           ),
+          const SizedBox(height: 16),
+          _RefCharacterPicker(shot: shot),
         ],
       ),
     );
@@ -500,9 +544,9 @@ class _SceneTab extends StatelessWidget {
 
 /// 샷 제작 상태 선택 칩(준비/진행/검토/반려/완료). 사용자가 수동으로 정한다.
 class _StatusSelector extends StatelessWidget {
-  const _StatusSelector({required this.shot});
+  const _StatusSelector({required this.beat});
 
-  final Shot shot;
+  final DialogueBeat beat;
 
   @override
   Widget build(BuildContext context) {
@@ -511,11 +555,11 @@ class _StatusSelector extends StatelessWidget {
       spacing: 6,
       runSpacing: 6,
       children: [
-        for (final st in ShotStatus.values)
+        for (final st in BeatStatus.values)
           _StatusChoice(
             status: st,
-            selected: shot.status == st,
-            onTap: () => p.setShotStatus(shot, st),
+            selected: beat.status == st,
+            onTap: () => p.setDialogueStatus(beat, st),
           ),
       ],
     );
@@ -529,7 +573,7 @@ class _StatusChoice extends StatelessWidget {
     required this.onTap,
   });
 
-  final ShotStatus status;
+  final BeatStatus status;
   final bool selected;
   final VoidCallback onTap;
 
@@ -571,9 +615,9 @@ class _StatusChoice extends StatelessWidget {
 
 /// 샷 메모(특이사항). 프롬프트와 무관한 자유 기록 — 생성에 쓰이지 않는다.
 class _ShotNote extends StatelessWidget {
-  const _ShotNote({required this.shotId});
+  const _ShotNote({required this.dialogueId});
 
-  final String shotId;
+  final String dialogueId;
 
   static const _amber = Color(0xFFE0A94A);
 
@@ -612,7 +656,7 @@ class _ShotNote extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           TextField(
-            controller: p.noteCtrl(shotId),
+            controller: p.noteCtrl(dialogueId),
             minLines: 2,
             maxLines: 6,
             style: const TextStyle(fontSize: 13, height: 1.4),
@@ -631,17 +675,17 @@ class _ShotNote extends StatelessWidget {
   }
 }
 
-/// 인물 참조 피커(클립). 선택 시 이 클립의 장면 생성이 인물 대표사진을 레퍼런스로 정체성 유지 생성.
+/// 인물 참조 피커(샷). 선택 시 이 샷의 장면 생성이 인물 대표사진을 레퍼런스로 정체성 유지 생성.
 class _RefCharacterPicker extends StatelessWidget {
-  const _RefCharacterPicker({required this.clip});
+  const _RefCharacterPicker({required this.shot});
 
-  final VideoClip clip;
+  final Shot shot;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final chars = p.characters;
-    final sel = clip.refCharacterIds;
+    final sel = shot.refCharacterIds;
     final atCap = sel.length >= 3;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
@@ -701,7 +745,7 @@ class _RefCharacterPicker extends StatelessWidget {
                     selected: sel.contains(c.id),
                     onSelected: (atCap && !sel.contains(c.id))
                         ? null
-                        : (_) => p.toggleClipRefCharacter(clip, c.id),
+                        : (_) => p.toggleShotRefCharacter(shot, c.id),
                   ),
               ],
             ),
@@ -718,7 +762,7 @@ class _RefCharacterPicker extends StatelessWidget {
   }
 }
 
-/// 클립별 영상 길이(초) 슬라이더. 1~15초.
+/// 샷별 영상 길이(초) 슬라이더. 1~15초.
 class _SecondsField extends StatefulWidget {
   const _SecondsField({super.key});
 
@@ -728,7 +772,7 @@ class _SecondsField extends StatefulWidget {
 
 class _SecondsFieldState extends State<_SecondsField> {
   late double _val =
-      (StoryboardScope.read(context).selectedClip?.videoSeconds ?? 5)
+      (StoryboardScope.read(context).selectedShot?.videoSeconds ?? 5)
           .toDouble()
           .clamp(1, 15);
 
@@ -746,8 +790,8 @@ class _SecondsFieldState extends State<_SecondsField> {
             onChanged: (v) => setState(() => _val = v),
             onChangeEnd: (v) {
               final p = StoryboardScope.read(context);
-              final c = p.selectedClip;
-              if (c != null) p.setClipSeconds(c, v.round());
+              final c = p.selectedShot;
+              if (c != null) p.setShotSeconds(c, v.round());
             },
           ),
         ),
@@ -764,7 +808,7 @@ class _SecondsFieldState extends State<_SecondsField> {
   }
 }
 
-/// LoRA URL 입력 + 강도 슬라이더 (씬 단위 — 같은 씬 클립들끼리 공유).
+/// LoRA URL 입력 + 강도 슬라이더 (씬 단위 — 같은 씬 샷들끼리 공유).
 class _LoraField extends StatefulWidget {
   const _LoraField({super.key});
 
@@ -851,56 +895,36 @@ class _LoraFieldState extends State<_LoraField> {
   }
 }
 
-/// 영상 탭(클립): 설정(해상도·LoRA) + 생성 영상.
+/// 영상 탭(샷): 설정(해상도·LoRA) + 영상.
 class _VideoTab extends StatelessWidget {
-  const _VideoTab({required this.clip});
+  const _VideoTab({required this.shot});
 
-  final VideoClip clip;
+  final Shot shot;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final c = clip;
+    final c = shot;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _GroupCard(
-            icon: Icons.tune,
-            title: '설정',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _SectionLabel('생성 해상도'),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final r in VideoRes.values)
-                      ChoiceChip(
-                        label: Text(r.label),
-                        selected: p.settings.videoRes == r,
-                        onSelected: (_) => p.setVideoRes(r),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const _SectionLabel('LoRA (선택 · LTX-2.3용)'),
-                const SizedBox(height: 6),
-                _LoraField(key: ValueKey('lora_${p.selectedSceneId}')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+          // 결과(영상)가 위, 그걸 만드는 수단(프롬프트·생성) 다음, 설정은 맨 아래.
           _GroupCard(
             icon: Icons.movie_outlined,
-            title: '생성 영상',
+            title: '영상',
             done: c.videoPath != null,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _OutputBlock(
+                  title: '미리보기',
+                  path: c.videoPath,
+                  busyKey: p.busyKey(c.id, GenMode.videoLow),
+                  isVideo: true,
+                ),
+                const SizedBox(height: 14),
                 _SectionLabel('프롬프트'),
                 const SizedBox(height: 6),
                 _PromptField(
@@ -908,16 +932,9 @@ class _VideoTab extends StatelessWidget {
                   hint: '움직임/카메라 등 영상 묘사',
                 ),
                 const SizedBox(height: 14),
-                _SectionLabel('길이 (초 · 이 클립)'),
+                _SectionLabel('길이 (초 · 이 샷)'),
                 const SizedBox(height: 6),
                 _SecondsField(key: ValueKey('sec_${c.id}')),
-                const SizedBox(height: 14),
-                _OutputBlock(
-                  title: '미리보기',
-                  path: c.videoPath,
-                  busyKey: p.busyKey(c.id, GenMode.videoLow),
-                  isVideo: true,
-                ),
                 const SizedBox(height: 10),
                 // 백엔드를 버튼에서 직접 고른다(설정 안 들어가도 됨).
                 // 결과 슬롯은 하나라 다른 백엔드로 다시 뽑으면 덮어쓴다.
@@ -946,106 +963,132 @@ class _VideoTab extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          _GroupCard(
+            icon: Icons.tune,
+            title: '설정',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SectionLabel('생성 해상도'),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final r in VideoRes.values)
+                      ChoiceChip(
+                        label: Text(r.label),
+                        selected: p.settings.videoRes == r,
+                        onSelected: (_) => p.setVideoRes(r),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const _SectionLabel('LoRA (선택 · LTX-2.3용)'),
+                const SizedBox(height: 6),
+                _LoraField(key: ValueKey('lora_${p.selectedSceneId}')),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-/// 공통 탭: 프로젝트/씬 공통 프롬프트.
-class _CommonTab extends StatelessWidget {
-  const _CommonTab();
+/// 씬 탭 — 선택 씬의 것들을 한곳에: 제목 · 공통 프롬프트 · 배경음.
+class _SceneSettingsTab extends StatelessWidget {
+  const _SceneSettingsTab();
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final sc = p.selectedScene;
+    if (sc == null) {
+      return const Center(
+        child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
+      );
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _GroupCard(
-            icon: Icons.public,
-            title: '프로젝트 공통 프롬프트',
+            icon: Icons.movie_filter_outlined,
+            title: '씬',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _SectionLabel('제목'),
+                const SizedBox(height: 6),
+                TextField(
+                  key: ValueKey('scene_title_${sc.id}'),
+                  controller: p.sceneTitleCtrl(sc.id),
+                  style:
+                      const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  decoration: const InputDecoration(
+                    hintText: '씬 제목 (선택)',
+                    isDense: true,
+                    filled: true,
+                    fillColor: previewBg,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => p.noteEdited(),
+                ),
+                const SizedBox(height: 14),
+                _SectionLabel('공통 프롬프트'),
+                const SizedBox(height: 2),
                 const Text(
-                  '이 프로젝트의 모든 클립 생성에 함께 붙습니다.',
+                  '이 씬의 모든 샷 생성에 함께 붙습니다. 생성 시 [씬] + [샷] 순으로 합쳐집니다.',
                   style: TextStyle(fontSize: 11, color: Colors.white38),
                 ),
-                const SizedBox(height: 8),
-                _ProjectCommonField(key: ValueKey('proj_${p.savePath}')),
+                const SizedBox(height: 6),
+                _SceneCommonField(key: ValueKey('common_${sc.id}')),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          _GroupCard(
-            icon: Icons.movie_filter_outlined,
-            title: '씬 공통 프롬프트',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  '이 씬의 모든 클립 생성에 함께 붙습니다.',
-                  style: TextStyle(fontSize: 11, color: Colors.white38),
+          const BgmSection(),
+          const SizedBox(height: 24),
+          // 파괴적 동작이라 맨 아래에, 확인을 거쳐서. (예전엔 씬 목록 안에 있어 오클릭이 쉬웠다.)
+          OutlinedButton.icon(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('씬 삭제'),
+                  content: Text(
+                    '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬을 삭제합니다.\n'
+                    '대사 ${sc.dialogues.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
+                    '되돌릴 수 없습니다.\n\n'
+                    '(생성된 미디어 파일은 프로젝트 폴더에 남습니다)',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: Colors.redAccent),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('삭제'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                if (sc == null)
-                  const Text(
-                    '씬을 선택하세요',
-                    style: TextStyle(color: Colors.white38),
-                  )
-                else
-                  _SceneCommonField(key: ValueKey('common_${sc.id}')),
-              ],
+              );
+              if (ok == true) p.removeScene(sc);
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+              side: const BorderSide(color: Color(0x55FF5252)),
             ),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            '생성 시 [프로젝트] + [씬] + [클립] 순으로 합쳐집니다.',
-            style: TextStyle(fontSize: 11, color: Colors.white30),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('이 씬 삭제'),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ProjectCommonField extends StatefulWidget {
-  const _ProjectCommonField({super.key});
-
-  @override
-  State<_ProjectCommonField> createState() => _ProjectCommonFieldState();
-}
-
-class _ProjectCommonFieldState extends State<_ProjectCommonField> {
-  late final TextEditingController _ctrl = TextEditingController(
-    text: StoryboardScope.read(context).projectCommonPrompt,
-  );
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: _ctrl,
-      minLines: 3,
-      maxLines: 8,
-      style: const TextStyle(fontSize: 13, height: 1.4),
-      onChanged: (v) => StoryboardScope.read(context).setProjectCommonPrompt(v),
-      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
-      decoration: const InputDecoration(
-        hintText: '예: cinematic, film grain, 일관된 아트 스타일…',
-        isDense: true,
-        filled: true,
-        fillColor: previewBg,
-        border: OutlineInputBorder(),
       ),
     );
   }
@@ -1124,11 +1167,12 @@ class _FrameSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // 결과(프레임)가 위, 그걸 만드는 수단(프롬프트·생성/불러오기)이 아래.
+          _OutputBlock(title: '미리보기', path: path, busyKey: busyKey),
+          const SizedBox(height: 14),
           _SectionLabel('프롬프트'),
           const SizedBox(height: 6),
           _PromptField(controller: controller, hint: hint),
-          const SizedBox(height: 14),
-          _OutputBlock(title: '미리보기', path: path, busyKey: busyKey),
           const SizedBox(height: 10),
           Row(
             children: [

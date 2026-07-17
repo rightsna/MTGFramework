@@ -5,11 +5,12 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/material.dart';
 import 'package:framework/framework.dart';
+import 'package:video_player/video_player.dart'; // 불러온 오디오 길이 실측용
 
 import '../models/character.dart';
-import '../models/clip.dart';
-import '../models/dialogue.dart';
 import '../models/shot.dart';
+import '../models/dialogue.dart';
+import '../models/dialogue_beat.dart';
 import '../models/story_scene.dart';
 import '../services/api_service.dart';
 import '../services/elevenlabs_service.dart';
@@ -17,8 +18,8 @@ import '../services/movie_settings.dart';
 import '../services/storyboard_store.dart';
 
 /// 스토리보드 화면 전체가 공유하는 상태/로직 홀더.
-/// 구조: 스토리보드 → 씬(StoryScene) → 샷(Shot: 대사 1개? + 클립 여러 개) → 클립(VideoClip).
-/// 좌측 씬 목록·캔버스(선택 씬의 샷/클립)·인스펙터·플레이어·설정이 [StoryboardScope]로 구독한다.
+/// 구조: 스토리보드 → 씬(StoryScene) → 대사(DialogueBeat: 대사 내용 0/1 + 샷 여러 개) → 샷(Shot).
+/// 좌측 씬 목록·캔버스(선택 씬의 대사/샷)·인스펙터·플레이어·설정이 [StoryboardScope]로 구독한다.
 class StoryboardProvider extends ChangeNotifier {
   StoryboardProvider({required this.projectDirPath}) {
     _store = StoryboardStore(projectDirPath);
@@ -32,23 +33,22 @@ class StoryboardProvider extends ChangeNotifier {
   final _settingsStore = MovieSettingsStore();
 
   MovieSettings _settings = const MovieSettings();
-  String _projectCommonPrompt = ''; // 프로젝트 공통 프롬프트(모든 생성에 붙음)
   List<Character> _characters = []; // 프로젝트 등장인물(인물 참조 피커/생성용)
 
-  // 컨트롤러: 씬 제목(씬 id) · 샷 제목/메모(샷 id) · 클립 프롬프트(클립 id).
+  // 컨트롤러: 씬 제목(씬 id) · 대사 제목/메모(대사 id) · 샷 프롬프트(샷 id).
   final Map<String, TextEditingController> _sceneTitles = {};
-  final Map<String, TextEditingController> _shotTitles = {};
+  final Map<String, TextEditingController> _dialogueTitles = {};
   final Map<String, TextEditingController> _notes = {};
   final Map<String, TextEditingController> _startPrompts = {};
   final Map<String, TextEditingController> _endPrompts = {};
   final Map<String, TextEditingController> _vprompts = {};
-  final Set<String> _busy = {}; // '<clipId>:<mode>' 또는 '<shotId>:voice' 등 진행 중
+  final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
 
   List<StoryScene> _scenes = []; // 씬 리스트
   String? _selectedSceneId;
-  String? _selectedShotId; // 선택된 샷(비트)
-  String? _selectedClipId; // 선택된 클립(선택 샷 안에서)
+  String? _selectedDialogueId; // 선택된 샷(비트)
+  String? _selectedShotId; // 선택된 샷(선택 대사 안에서)
   int _seq = 0;
   String? _savePath;
 
@@ -71,11 +71,10 @@ class StoryboardProvider extends ChangeNotifier {
 
   List<StoryScene> get scenes => _scenes;
   MovieSettings get settings => _settings;
-  String get projectCommonPrompt => _projectCommonPrompt;
   List<Character> get characters => _characters;
   String? get selectedSceneId => _selectedSceneId;
+  String? get selectedDialogueId => _selectedDialogueId;
   String? get selectedShotId => _selectedShotId;
-  String? get selectedClipId => _selectedClipId;
   String? get savePath => _savePath;
   bool get sceneListOpen => _sceneListOpen;
   bool get playerOpen => _playerOpen;
@@ -125,42 +124,42 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
-  /// 현재 선택 씬의 샷들(캔버스가 타임라인으로 그리는 대상).
-  List<Shot> get shots => selectedScene?.shots ?? const [];
+  /// 현재 선택 씬의 대사들(캔버스가 타임라인으로 그리는 대상).
+  List<DialogueBeat> get dialogues => selectedScene?.dialogues ?? const [];
 
-  Shot? get selectedShot {
-    for (final s in shots) {
-      if (s.id == _selectedShotId) return s;
+  DialogueBeat? get selectedDialogue {
+    for (final s in dialogues) {
+      if (s.id == _selectedDialogueId) return s;
     }
     return null;
   }
 
-  /// 선택 샷 안의 클립들.
-  List<VideoClip> get clips => selectedShot?.clips ?? const [];
+  /// 선택 대사 안의 샷들.
+  List<Shot> get shots => selectedDialogue?.shots ?? const [];
 
-  /// 선택 씬의 모든 클립(샷 순서 → 클립 순서로 평탄화). 미리보기·연속 재생용.
-  List<VideoClip> get sceneClips => [for (final sh in shots) ...sh.clips];
+  /// 선택 씬의 모든 샷(대사 순서 → 샷 순서로 평탄화). 미리보기·연속 재생용.
+  List<Shot> get sceneShots => [for (final sh in dialogues) ...sh.shots];
 
-  VideoClip? get selectedClip {
-    for (final c in clips) {
-      if (c.id == _selectedClipId) return c;
+  Shot? get selectedShot {
+    for (final c in shots) {
+      if (c.id == _selectedShotId) return c;
     }
     return null;
   }
 
   TextEditingController sceneTitleCtrl(String sceneId) =>
       _sceneTitles[sceneId]!;
-  TextEditingController titleCtrl(String shotId) => _shotTitles[shotId]!;
-  TextEditingController noteCtrl(String shotId) => _notes[shotId]!;
-  TextEditingController startCtrl(String clipId) => _startPrompts[clipId]!;
-  TextEditingController endCtrl(String clipId) => _endPrompts[clipId]!;
-  TextEditingController videoCtrl(String clipId) => _vprompts[clipId]!;
+  TextEditingController titleCtrl(String dialogueId) => _dialogueTitles[dialogueId]!;
+  TextEditingController noteCtrl(String dialogueId) => _notes[dialogueId]!;
+  TextEditingController startCtrl(String shotId) => _startPrompts[shotId]!;
+  TextEditingController endCtrl(String shotId) => _endPrompts[shotId]!;
+  TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
 
   bool isBusy(String key) => _busy.contains(key);
   int verOf(String key) => _ver[key] ?? 0;
   String busyKey(String id, GenMode m) => '$id:${m.name}';
 
-  String? videoPathOf(VideoClip c) => c.videoPath;
+  String? videoPathOf(Shot c) => c.videoPath;
 
   // ───────── 로드/저장 ─────────
 
@@ -170,25 +169,24 @@ class StoryboardProvider extends ChangeNotifier {
     final scenes = await _store.load();
     final path = _store.path();
     _scenes = scenes;
-    _projectCommonPrompt = await _store.loadCommonPrompt();
     _characters = await _store.loadCharacters();
     for (final scene in scenes) {
       _sceneTitles[scene.id] = TextEditingController(text: scene.title);
-      for (final shot in scene.shots) {
-        _addShotControllers(shot);
-        for (final clip in shot.clips) {
-          _addClipControllers(clip);
+      for (final beat in scene.dialogues) {
+        _addDialogueControllers(beat);
+        for (final shot in beat.shots) {
+          _addShotControllers(shot);
         }
       }
     }
     final firstScene = scenes.isNotEmpty ? scenes.first : null;
-    final firstShot = (firstScene != null && firstScene.shots.isNotEmpty)
-        ? firstScene.shots.first
+    final firstShot = (firstScene != null && firstScene.dialogues.isNotEmpty)
+        ? firstScene.dialogues.first
         : null;
     _selectedSceneId = firstScene?.id;
-    _selectedShotId = firstShot?.id;
-    _selectedClipId = (firstShot != null && firstShot.clips.isNotEmpty)
-        ? firstShot.clips.first.id
+    _selectedDialogueId = firstShot?.id;
+    _selectedShotId = (firstShot != null && firstShot.shots.isNotEmpty)
+        ? firstShot.shots.first.id
         : null;
     _savePath = path;
     notifyListeners();
@@ -211,38 +209,38 @@ class StoryboardProvider extends ChangeNotifier {
     await checkConnection();
   }
 
+  void _addDialogueControllers(DialogueBeat beat) {
+    _dialogueTitles[beat.id] = TextEditingController(text: beat.title);
+    _notes[beat.id] = TextEditingController(text: beat.note);
+  }
+
+  void _disposeDialogueControllers(String dialogueId) {
+    _dialogueTitles.remove(dialogueId)?.dispose();
+    _notes.remove(dialogueId)?.dispose();
+  }
+
   void _addShotControllers(Shot shot) {
-    _shotTitles[shot.id] = TextEditingController(text: shot.title);
-    _notes[shot.id] = TextEditingController(text: shot.note);
+    _startPrompts[shot.id] = TextEditingController(text: shot.startPrompt);
+    _endPrompts[shot.id] = TextEditingController(text: shot.endPrompt);
+    _vprompts[shot.id] = TextEditingController(text: shot.videoPrompt);
   }
 
   void _disposeShotControllers(String shotId) {
-    _shotTitles.remove(shotId)?.dispose();
-    _notes.remove(shotId)?.dispose();
-  }
-
-  void _addClipControllers(VideoClip clip) {
-    _startPrompts[clip.id] = TextEditingController(text: clip.startPrompt);
-    _endPrompts[clip.id] = TextEditingController(text: clip.endPrompt);
-    _vprompts[clip.id] = TextEditingController(text: clip.videoPrompt);
-  }
-
-  void _disposeClipControllers(String clipId) {
-    _startPrompts.remove(clipId)?.dispose();
-    _endPrompts.remove(clipId)?.dispose();
-    _vprompts.remove(clipId)?.dispose();
+    _startPrompts.remove(shotId)?.dispose();
+    _endPrompts.remove(shotId)?.dispose();
+    _vprompts.remove(shotId)?.dispose();
   }
 
   Future<void> save() async {
     for (final scene in _scenes) {
       scene.title = _sceneTitles[scene.id]?.text ?? scene.title;
-      for (final shot in scene.shots) {
-        shot.title = _shotTitles[shot.id]?.text ?? shot.title;
-        shot.note = _notes[shot.id]?.text ?? shot.note;
-        for (final clip in shot.clips) {
-          clip.startPrompt = _startPrompts[clip.id]?.text ?? clip.startPrompt;
-          clip.endPrompt = _endPrompts[clip.id]?.text ?? clip.endPrompt;
-          clip.videoPrompt = _vprompts[clip.id]?.text ?? clip.videoPrompt;
+      for (final beat in scene.dialogues) {
+        beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
+        beat.note = _notes[beat.id]?.text ?? beat.note;
+        for (final shot in beat.shots) {
+          shot.startPrompt = _startPrompts[shot.id]?.text ?? shot.startPrompt;
+          shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
+          shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
         }
       }
     }
@@ -268,8 +266,8 @@ class StoryboardProvider extends ChangeNotifier {
     _sceneTitles[id] = TextEditingController();
     _scenes.add(StoryScene(id: id));
     _selectedSceneId = id;
+    _selectedDialogueId = null;
     _selectedShotId = null;
-    _selectedClipId = null;
     notifyListeners();
     save();
   }
@@ -278,10 +276,10 @@ class StoryboardProvider extends ChangeNotifier {
     final wasSelected = _selectedSceneId == scene.id;
     _scenes.remove(scene);
     _sceneTitles.remove(scene.id)?.dispose();
-    for (final shot in scene.shots) {
-      _disposeShotControllers(shot.id);
-      for (final clip in shot.clips) {
-        _disposeClipControllers(clip.id);
+    for (final beat in scene.dialogues) {
+      _disposeDialogueControllers(beat.id);
+      for (final shot in beat.shots) {
+        _disposeShotControllers(shot.id);
       }
     }
     if (wasSelected) {
@@ -301,109 +299,109 @@ class StoryboardProvider extends ChangeNotifier {
   void _selectSceneInternal(String? id) {
     _selectedSceneId = id;
     final scene = selectedScene;
-    final firstShot = (scene != null && scene.shots.isNotEmpty)
-        ? scene.shots.first
+    final firstShot = (scene != null && scene.dialogues.isNotEmpty)
+        ? scene.dialogues.first
         : null;
-    _selectedShotId = firstShot?.id;
-    _selectedClipId = (firstShot != null && firstShot.clips.isNotEmpty)
-        ? firstShot.clips.first.id
+    _selectedDialogueId = firstShot?.id;
+    _selectedShotId = (firstShot != null && firstShot.shots.isNotEmpty)
+        ? firstShot.shots.first.id
         : null;
   }
 
   // ───────── 샷(비트) 추가/삭제/선택 ─────────
 
-  /// 새 샷 추가 — 빈 샷(클립 0개). 클립은 캔버스의 ＋ 로 직접 추가한다.
-  void addShot() {
+  /// 새 대사 추가 — 빈 대사(샷 0개). 샷은 캔버스의 ＋ 로 직접 추가한다.
+  void addDialogue() {
     final scene = selectedScene;
     if (scene == null) return; // 씬 먼저 선택/추가
-    final shotId = 'shot_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
-    final shot = Shot(id: shotId);
-    _addShotControllers(shot);
-    scene.shots.add(shot);
-    _selectedShotId = shotId;
-    _selectedClipId = null; // 클립 없음
+    final dialogueId = 'shot_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
+    final beat = DialogueBeat(id: dialogueId);
+    _addDialogueControllers(beat);
+    scene.dialogues.add(beat);
+    _selectedDialogueId = dialogueId;
+    _selectedShotId = null; // 샷 없음
     notifyListeners();
     save();
   }
 
-  void removeShot(Shot shot) {
+  void removeDialogue(DialogueBeat beat) {
     final scene = selectedScene;
     if (scene == null) return;
-    final wasSelected = _selectedShotId == shot.id;
-    scene.shots.remove(shot);
-    _disposeShotControllers(shot.id);
-    for (final clip in shot.clips) {
-      _disposeClipControllers(clip.id);
+    final wasSelected = _selectedDialogueId == beat.id;
+    scene.dialogues.remove(beat);
+    _disposeDialogueControllers(beat.id);
+    for (final shot in beat.shots) {
+      _disposeShotControllers(shot.id);
     }
     if (wasSelected) {
-      final next = scene.shots.isNotEmpty ? scene.shots.last : null;
-      _selectedShotId = next?.id;
-      _selectedClipId = (next != null && next.clips.isNotEmpty)
-          ? next.clips.first.id
+      final next = scene.dialogues.isNotEmpty ? scene.dialogues.last : null;
+      _selectedDialogueId = next?.id;
+      _selectedShotId = (next != null && next.shots.isNotEmpty)
+          ? next.shots.first.id
           : null;
     }
     notifyListeners();
     save();
   }
 
-  /// 샷 선택(몸통 탭). 클립은 선택하지 않는다 — 클립 편집은 캔버스에서 클립을 직접 클릭.
-  /// 클립 선택을 비우면 오른쪽 패널이 '샷' 탭으로 전환되고, 장면/영상 탭은 "클립을 선택하세요"로 안내한다.
-  void selectShot(String id) {
-    if (_selectedShotId == id && _selectedClipId == null) return;
-    _selectedShotId = id;
-    _selectedClipId = null;
+  /// 대사 선택(몸통 탭). 샷은 선택하지 않는다 — 샷 편집은 캔버스에서 샷을 직접 클릭.
+  /// 샷 선택을 비우면 오른쪽 패널이 '대사' 탭으로 전환되고, 장면/영상 탭은 "샷을 선택하세요"로 안내한다.
+  void selectDialogue(String id) {
+    if (_selectedDialogueId == id && _selectedShotId == null) return;
+    _selectedDialogueId = id;
+    _selectedShotId = null;
     notifyListeners();
   }
 
   /// 샷 제작 상태 지정(사용자 수동).
-  void setShotStatus(Shot shot, ShotStatus status) {
-    if (shot.status == status) return;
-    shot.status = status;
+  void setDialogueStatus(DialogueBeat beat, BeatStatus status) {
+    if (beat.status == status) return;
+    beat.status = status;
     notifyListeners();
     save();
   }
 
   /// 캔버스 아이콘 탭 시 다음 상태로 순환(준비→진행→검토→반려→완료→준비).
-  void cycleShotStatus(Shot shot) {
-    final vals = ShotStatus.values;
-    setShotStatus(shot, vals[(shot.status.index + 1) % vals.length]);
+  void cycleDialogueStatus(DialogueBeat beat) {
+    final vals = BeatStatus.values;
+    setDialogueStatus(beat, vals[(beat.status.index + 1) % vals.length]);
   }
 
-  // ───────── 클립 추가/삭제/선택 ─────────
+  // ───────── 샷 추가/삭제/선택 ─────────
 
-  void addClip(Shot shot) {
+  void addShot(DialogueBeat beat) {
     final id = 'clip_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
-    final clip = VideoClip(id: id, videoSeconds: _settings.videoSeconds);
-    _addClipControllers(clip);
-    shot.clips.add(clip);
-    _selectedShotId = shot.id;
-    _selectedClipId = id;
+    final shot = Shot(id: id, videoSeconds: _settings.videoSeconds);
+    _addShotControllers(shot);
+    beat.shots.add(shot);
+    _selectedDialogueId = beat.id;
+    _selectedShotId = id;
     notifyListeners();
     save();
   }
 
-  void removeClip(Shot shot, VideoClip clip) {
-    final wasSelected = _selectedClipId == clip.id;
-    shot.clips.remove(clip);
-    _disposeClipControllers(clip.id);
+  void removeShot(DialogueBeat beat, Shot shot) {
+    final wasSelected = _selectedShotId == shot.id;
+    beat.shots.remove(shot);
+    _disposeShotControllers(shot.id);
     if (wasSelected) {
-      _selectedClipId = shot.clips.isNotEmpty ? shot.clips.last.id : null;
+      _selectedShotId = beat.shots.isNotEmpty ? beat.shots.last.id : null;
     }
     notifyListeners();
     save();
   }
 
-  /// 클립 선택 — 소속 샷도 함께 선택된다.
-  void selectClip(String shotId, String clipId) {
+  /// 샷 선택 — 소속 대사도 함께 선택된다.
+  void selectShot(String dialogueId, String shotId) {
+    _selectedDialogueId = dialogueId;
     _selectedShotId = shotId;
-    _selectedClipId = clipId;
     notifyListeners();
   }
 
-  /// 클립별 영상 길이(초, 1~15) 저장. 마지막 값은 새 클립 기본값으로도 기억한다.
-  void setClipSeconds(VideoClip clip, int sec) {
+  /// 샷별 영상 길이(초, 1~15) 저장. 마지막 값은 새 샷 기본값으로도 기억한다.
+  void setShotSeconds(Shot shot, int sec) {
     final v = sec.clamp(1, 15);
-    clip.videoSeconds = v;
+    shot.videoSeconds = v;
     _settings = _settings.copyWith(videoSeconds: v);
     _settingsStore.save(_settings);
     save();
@@ -413,28 +411,28 @@ class StoryboardProvider extends ChangeNotifier {
   // 대사는 샷이 소유한다(샷 하나 = 대사 1개 또는 없음). 편집은 모달에서 값만 반영.
 
   /// 이 샷의 대사 텍스트 저장(대사 없으면 새로 만든다).
-  void setShotDialogueText(Shot shot, String text) {
-    (shot.dialogue ??= Dialogue()).text = text;
+  void setShotDialogueText(DialogueBeat beat, String text) {
+    (beat.dialogue ??= Dialogue()).text = text;
     notifyListeners();
     save();
   }
 
   /// 이 샷의 대사 화자(Character.id, null=내레이션) 저장(대사 없으면 새로 만든다).
-  void setShotDialogueSpeaker(Shot shot, String? speakerId) {
-    (shot.dialogue ??= Dialogue()).speakerId = speakerId;
+  void setShotDialogueSpeaker(DialogueBeat beat, String? speakerId) {
+    (beat.dialogue ??= Dialogue()).speakerId = speakerId;
     notifyListeners();
     save();
   }
 
   /// 이 샷의 대사 제거(무음 샷으로).
-  void removeShotDialogue(Shot shot) {
-    shot.dialogue = null;
+  void removeShotDialogue(DialogueBeat beat) {
+    beat.dialogue = null;
     notifyListeners();
     save();
   }
 
   /// 대사 음성 진행 상태 키(샷 단위).
-  String voiceBusyKey(String shotId) => '$shotId:voice';
+  String voiceBusyKey(String dialogueId) => '$dialogueId:voice';
 
   /// 이 대사에 쓸 보이스: 화자에 보이스가 있으면 그것, 없으면 설정 기본(내레이션) 보이스.
   String? _voiceIdFor(Dialogue d) {
@@ -444,9 +442,57 @@ class StoryboardProvider extends ChangeNotifier {
     return def.isEmpty ? null : def;
   }
 
+  /// 오디오 파일 길이(초) 실측. 음성 길이가 대사(비트)의 타임라인 길이를 정하므로,
+  /// 불러온 파일도 반드시 재어 둔다. (재생에 이미 쓰는 video_player로 잰다 — 오디오도 된다.)
+  Future<double> _audioSeconds(File f) async {
+    final c = VideoPlayerController.file(f);
+    try {
+      await c.initialize();
+      return c.value.duration.inMilliseconds / 1000.0;
+    } finally {
+      await c.dispose();
+    }
+  }
+
+  /// 대사 음성을 기존 오디오 파일에서 불러온다(기본 동선 — 생성은 부가).
+  Future<void> loadVoice(DialogueBeat beat) async {
+    const typeGroup = fs.XTypeGroup(
+      label: 'audio',
+      extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'],
+    );
+    final picked = await fs.openFile(acceptedTypeGroups: [typeGroup]);
+    if (picked == null) return;
+    final key = voiceBusyKey(beat.id);
+    _busy.add(key);
+    notifyListeners();
+    try {
+      final ext = picked.name.split('.').last.toLowerCase();
+      final f = File('$projectDirPath/${beat.id}_voice.$ext');
+      await f.writeAsBytes(await picked.readAsBytes());
+      // 확장자가 바뀌면 옛 파일이 남으므로 정리.
+      for (final e in Directory(projectDirPath).listSync().whereType<File>()) {
+        final n = e.uri.pathSegments.last;
+        if (n.startsWith('${beat.id}_voice.') && e.path != f.path) {
+          await e.delete();
+        }
+      }
+      final d = beat.dialogue ??= Dialogue();
+      d.voicePath = f.path;
+      d.voiceSeconds = await _audioSeconds(f);
+      _ver[key] = (_ver[key] ?? 0) + 1;
+      await save();
+    } catch (e, st) {
+      debugPrint('[loadVoice] $key 실패: $e\n$st');
+      messenger?.call('음성 불러오기 실패: $e');
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
+  }
+
   /// 이 샷의 대사 음성(일레븐랩스 TTS) 생성 → mp3 저장 + 길이(voiceSeconds) 실측.
-  Future<void> genVoice(Shot shot) async {
-    final d = shot.dialogue;
+  Future<void> genVoice(DialogueBeat beat) async {
+    final d = beat.dialogue;
     if (d == null || d.text.trim().isEmpty) {
       messenger?.call('대사를 먼저 입력하세요');
       return;
@@ -460,14 +506,14 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call('보이스가 없습니다 — 화자에 보이스를 지정하거나 설정에서 기본 보이스를 정하세요');
       return;
     }
-    final key = voiceBusyKey(shot.id);
+    final key = voiceBusyKey(beat.id);
     _busy.add(key);
     notifyListeners();
     try {
       final res = await ElevenLabsService(
         _settings.elevenKey,
       ).generateSpeech(voiceId: voiceId, text: d.text.trim());
-      final f = File('$projectDirPath/${shot.id}_voice.mp3');
+      final f = File('$projectDirPath/${beat.id}_voice.mp3');
       await f.writeAsBytes(res.bytes);
       d.voicePath = f.path;
       d.voiceSeconds = res.seconds;
@@ -490,58 +536,58 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(voiceBlockReason!);
       return;
     }
-    for (final shot in List<Shot>.from(scene.shots)) {
-      if ((shot.dialogue?.text.trim().isNotEmpty) ?? false) {
-        await genVoice(shot);
+    for (final beat in List<DialogueBeat>.from(scene.dialogues)) {
+      if ((beat.dialogue?.text.trim().isNotEmpty) ?? false) {
+        await genVoice(beat);
       }
     }
   }
 
-  // ───────── 생성(클립) ─────────
+  // ───────── 생성(샷) ─────────
 
-  TextEditingController? _promptCtrlFor(String clipId, GenMode mode) =>
+  TextEditingController? _promptCtrlFor(String shotId, GenMode mode) =>
       switch (mode) {
-        GenMode.imageStart => _startPrompts[clipId],
-        GenMode.imageEnd => _endPrompts[clipId],
-        GenMode.videoLow => _vprompts[clipId],
+        GenMode.imageStart => _startPrompts[shotId],
+        GenMode.imageEnd => _endPrompts[shotId],
+        GenMode.videoLow => _vprompts[shotId],
       };
 
   /// [backend] 영상 생성에만 의미 있음 — 어느 백엔드로 뽑을지 호출 시점에 고른다.
   /// null이면 설정의 기본 백엔드. (결과 슬롯은 하나라 백엔드를 바꿔 다시 뽑으면 덮어쓴다.)
   Future<void> gen(
-    VideoClip clip,
+    Shot shot,
     GenMode mode, {
     VideoBackend? backend,
   }) async {
-    final raw = _promptCtrlFor(clip.id, mode)?.text.trim() ?? '';
-    final prompt = _composePrompt(clip, raw);
+    final raw = _promptCtrlFor(shot.id, mode)?.text.trim() ?? '';
+    final prompt = _composePrompt(shot, raw);
     if (prompt.isEmpty) {
       messenger?.call('${mode.label} 프롬프트를 입력하세요 (공통 프롬프트도 비어 있음)');
       return;
     }
-    final key = busyKey(clip.id, mode);
+    final key = busyKey(shot.id, mode);
     _busy.add(key);
     notifyListeners();
     try {
-      final bytes = await _generateBytes(clip, mode, prompt, backend);
+      final bytes = await _generateBytes(shot, mode, prompt, backend);
       final ext = _extFor(bytes, mode);
       final name = switch (mode) {
-        GenMode.imageStart => '${clip.id}_start',
-        GenMode.imageEnd => '${clip.id}_end',
-        GenMode.videoLow => '${clip.id}_vlow',
+        GenMode.imageStart => '${shot.id}_start',
+        GenMode.imageEnd => '${shot.id}_end',
+        GenMode.videoLow => '${shot.id}_vlow',
       };
       final f = File('$projectDirPath/$name.$ext');
       await f.writeAsBytes(bytes);
       await FileImage(f).evict();
       switch (mode) {
         case GenMode.imageStart:
-          clip.startImagePath = f.path;
+          shot.startImagePath = f.path;
         case GenMode.imageEnd:
-          clip.endImagePath = f.path;
+          shot.endImagePath = f.path;
         case GenMode.videoLow:
-          clip.videoPath = f.path;
+          shot.videoPath = f.path;
       }
-      if (mode == GenMode.imageEnd) await _chainEndToNextStart(clip);
+      if (mode == GenMode.imageEnd) await _chainEndToNextStart(shot);
       _ver[key] = (_ver[key] ?? 0) + 1;
       await save();
     } catch (e, st) {
@@ -554,7 +600,7 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 시작/끝장면을 기존 이미지 파일에서 불러온다(생성 대신).
-  Future<void> loadFrame(VideoClip clip, GenMode mode) async {
+  Future<void> loadFrame(Shot shot, GenMode mode) async {
     if (mode.isVideo) return;
     const typeGroup = fs.XTypeGroup(
       label: 'images',
@@ -562,23 +608,23 @@ class StoryboardProvider extends ChangeNotifier {
     );
     final picked = await fs.openFile(acceptedTypeGroups: [typeGroup]);
     if (picked == null) return;
-    final key = busyKey(clip.id, mode);
+    final key = busyKey(shot.id, mode);
     _busy.add(key);
     notifyListeners();
     try {
       final bytes = await picked.readAsBytes();
       final ext = _extFor(bytes, mode);
       final name = mode == GenMode.imageStart
-          ? '${clip.id}_start'
-          : '${clip.id}_end';
+          ? '${shot.id}_start'
+          : '${shot.id}_end';
       final f = File('$projectDirPath/$name.$ext');
       await f.writeAsBytes(bytes);
       await FileImage(f).evict();
       if (mode == GenMode.imageStart) {
-        clip.startImagePath = f.path;
+        shot.startImagePath = f.path;
       } else {
-        clip.endImagePath = f.path;
-        await _chainEndToNextStart(clip);
+        shot.endImagePath = f.path;
+        await _chainEndToNextStart(shot);
       }
       _ver[key] = (_ver[key] ?? 0) + 1;
       await save();
@@ -595,15 +641,15 @@ class StoryboardProvider extends ChangeNotifier {
   /// 이미지(시작/끝 프레임)는 자체 서버 전용 — 참조 인물이 있으면 FireRed(/edit), 없으면 /image.
   /// [backend]는 영상에만 의미 있음. 없으면 설정의 기본 영상 백엔드.
   Future<Uint8List> _generateBytes(
-    VideoClip clip,
+    Shot shot,
     GenMode mode,
     String prompt, [
     VideoBackend? backend,
   ]) async {
     if (!mode.isVideo) {
-      final refs = await _refPhotoBytesList(clip);
+      final refs = await _refPhotoBytesList(shot);
       if (refs.isNotEmpty) {
-        final who = clip.refCharacterIds
+        final who = shot.refCharacterIds
             .map((id) => characterById(id)?.name)
             .whereType<String>()
             .where((n) => n.isNotEmpty)
@@ -620,8 +666,8 @@ class StoryboardProvider extends ChangeNotifier {
     // 영상 생성(저) = FE2V: 시작·끝 두 프레임이 입력(둘 다 필수).
     switch (backend ?? _settings.videoBackend) {
       case VideoBackend.veo:
-        final start = await _startFrame(clip);
-        final end = await _endFrame(clip);
+        final start = await _startFrame(shot);
+        final end = await _endFrame(shot);
         if (start == null) {
           throw Exception('시작장면을 먼저 만들어 주세요 (FE2V 첫 프레임)');
         }
@@ -641,8 +687,8 @@ class StoryboardProvider extends ChangeNotifier {
           onProgress: (st) => messenger?.call(st),
         );
       case VideoBackend.serviceApi:
-        final img = await _startFrameBytes(clip);
-        final endImg = await _endFrameBytes(clip);
+        final img = await _startFrameBytes(shot);
+        final endImg = await _endFrameBytes(shot);
         if (img == null) {
           throw Exception('시작장면을 먼저 만들어 주세요 (FE2V 첫 프레임)');
         }
@@ -650,14 +696,14 @@ class StoryboardProvider extends ChangeNotifier {
           throw Exception('끝장면을 먼저 만들어 주세요 (FE2V 마지막 프레임)');
         }
         final res = _settings.videoRes;
-        final sc = sceneOf(clip); // LoRA는 씬 단위
+        final sc = sceneOf(shot); // LoRA는 씬 단위
         return ApiService(_settings.effectiveServiceUrl).generateVideo(
           image: img,
           endImage: endImg,
           prompt: prompt,
           width: res.width,
           height: res.height,
-          seconds: clip.videoSeconds,
+          seconds: shot.videoSeconds,
           loraUrl: _effectiveLoraUrl(sc),
           loraStrength: sc?.loraStrength ?? 0.8,
           onProgress: (st) => messenger?.call(st),
@@ -672,7 +718,7 @@ class StoryboardProvider extends ChangeNotifier {
     _settingsStore.save(_settings);
   }
 
-  /// 선택 씬의 LoRA URL 저장(같은 씬 클립들끼리 공유, 씬끼리 별개).
+  /// 선택 씬의 LoRA URL 저장(같은 씬 샷들끼리 공유, 씬끼리 별개).
   void setSceneLoraUrl(String url) {
     final sc = selectedScene;
     if (sc == null) return;
@@ -691,12 +737,7 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   // ───────── 공통 프롬프트(프로젝트/씬) ─────────
-  // 실제 생성 프롬프트 = [프로젝트 공통] + [씬 공통] + [클립 프롬프트].
-
-  Future<void> setProjectCommonPrompt(String v) async {
-    _projectCommonPrompt = v;
-    await _store.saveCommonPrompt(v);
-  }
+  // 실제 생성 프롬프트 = [프로젝트 공통] + [씬 공통] + [샷 프롬프트].
 
   void setSceneCommonPrompt(String v) {
     final sc = selectedScene;
@@ -705,17 +746,16 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
-  /// 생성에 쓸 최종 프롬프트: 프로젝트·씬 공통을 앞에 붙인다(빈 칸은 제외).
-  String _composePrompt(VideoClip clip, String clipPrompt) {
-    final sc = sceneOf(clip);
+  /// 생성에 쓸 최종 프롬프트: 씬 공통을 앞에 붙인다(빈 칸은 제외).
+  String _composePrompt(Shot shot, String shotPrompt) {
+    final sc = sceneOf(shot);
     return [
-      _projectCommonPrompt.trim(),
       (sc?.commonPrompt ?? '').trim(),
-      clipPrompt.trim(),
+      shotPrompt.trim(),
     ].where((e) => e.isNotEmpty).join(', ');
   }
 
-  // ───────── 인물 참조(클립 화면의 캐릭터 레퍼런스) ─────────
+  // ───────── 인물 참조(샷 화면의 캐릭터 레퍼런스) ─────────
 
   Future<void> reloadCharacters() async {
     _characters = await _store.loadCharacters();
@@ -730,21 +770,21 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
-  /// 이 클립의 참조 인물 토글(있으면 제거, 없으면 추가 · 최대 3).
-  void toggleClipRefCharacter(VideoClip clip, String id) {
-    if (clip.refCharacterIds.contains(id)) {
-      clip.refCharacterIds.remove(id);
-    } else if (clip.refCharacterIds.length < 3) {
-      clip.refCharacterIds.add(id);
+  /// 이 샷의 참조 인물 토글(있으면 제거, 없으면 추가 · 최대 3).
+  void toggleShotRefCharacter(Shot shot, String id) {
+    if (shot.refCharacterIds.contains(id)) {
+      shot.refCharacterIds.remove(id);
+    } else if (shot.refCharacterIds.length < 3) {
+      shot.refCharacterIds.add(id);
     }
     notifyListeners();
     save();
   }
 
   /// 참조 인물들의 대표사진 바이트(최대 3, 존재하는 것만). 없으면 빈 리스트 → 일반 t2i.
-  Future<List<Uint8List>> _refPhotoBytesList(VideoClip clip) async {
+  Future<List<Uint8List>> _refPhotoBytesList(Shot shot) async {
     final out = <Uint8List>[];
-    for (final id in clip.refCharacterIds.take(3)) {
+    for (final id in shot.refCharacterIds.take(3)) {
       final cover = characterById(id)?.cover;
       if (cover == null) continue;
       final f = File(cover);
@@ -771,6 +811,43 @@ class StoryboardProvider extends ChangeNotifier {
     sc.bgmSeconds = sec.clamp(5, 240);
     notifyListeners();
     save();
+  }
+
+  /// 배경음을 기존 오디오 파일에서 불러온다(기본 동선 — 생성은 부가).
+  /// 고른 파일을 프로젝트 폴더로 복사해 씬 BGM으로 삼는다.
+  Future<void> loadBgm() async {
+    final sc = selectedScene;
+    if (sc == null) return;
+    const typeGroup = fs.XTypeGroup(
+      label: 'audio',
+      extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'],
+    );
+    final picked = await fs.openFile(acceptedTypeGroups: [typeGroup]);
+    if (picked == null) return;
+    final key = bgmBusyKey(sc.id);
+    _busy.add(key);
+    notifyListeners();
+    try {
+      final ext = picked.name.split('.').last.toLowerCase();
+      final f = File('$projectDirPath/${sc.id}_bgm.$ext');
+      await f.writeAsBytes(await picked.readAsBytes());
+      // 확장자가 바뀌면 옛 파일이 남으므로 정리(같은 씬의 다른 확장자 bgm).
+      for (final e in Directory(projectDirPath).listSync().whereType<File>()) {
+        final n = e.uri.pathSegments.last;
+        if (n.startsWith('${sc.id}_bgm.') && e.path != f.path) {
+          await e.delete();
+        }
+      }
+      sc.bgmPath = f.path;
+      _ver[key] = (_ver[key] ?? 0) + 1;
+      await save();
+    } catch (e, st) {
+      debugPrint('[loadBgm] $key 실패: $e\n$st');
+      messenger?.call('배경음 불러오기 실패: $e');
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
   }
 
   Future<void> genBgm() async {
@@ -809,20 +886,20 @@ class StoryboardProvider extends ChangeNotifier {
     _settingsStore.save(_settings);
   }
 
-  /// 클립이 속한 씬 찾기(씬 → 샷 → 클립 탐색).
-  StoryScene? sceneOf(VideoClip clip) {
+  /// 샷이 속한 씬 찾기(씬 → 대사 → 샷 탐색).
+  StoryScene? sceneOf(Shot shot) {
     for (final sc in _scenes) {
-      for (final shot in sc.shots) {
-        if (shot.clips.contains(clip)) return sc;
+      for (final beat in sc.dialogues) {
+        if (beat.shots.contains(shot)) return sc;
       }
     }
     return null;
   }
 
   Future<({List<int> bytes, String mimeType})?> _startFrame(
-    VideoClip clip,
+    Shot shot,
   ) async {
-    final path = clip.startImagePath;
+    final path = shot.startImagePath;
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;
@@ -830,24 +907,24 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   Future<({List<int> bytes, String mimeType})?> _endFrame(
-    VideoClip clip,
+    Shot shot,
   ) async {
-    final path = clip.endImagePath;
+    final path = shot.endImagePath;
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;
     return (bytes: await f.readAsBytes(), mimeType: 'image/png');
   }
 
-  /// FE2V 컷 연속성: [clip]의 끝 프레임을 타임라인상 **다음 클립의 시작 프레임**으로
-  /// 자동으로 이어붙인다(끝 이미지 파일을 다음 클립의 시작 파일명으로 복사해 같은 프레임으로 맞춤).
-  /// 씬 전체 클립 나열(sceneClips) 기준이라 샷 경계도 건너뛴다. 다음 클립이 없으면 아무것도 안 한다.
-  Future<void> _chainEndToNextStart(VideoClip clip) async {
-    final endPath = clip.endImagePath;
+  /// FE2V 컷 연속성: [shot]의 끝 프레임을 타임라인상 **다음 샷의 시작 프레임**으로
+  /// 자동으로 이어붙인다(끝 이미지 파일을 다음 샷의 시작 파일명으로 복사해 같은 프레임으로 맞춤).
+  /// 씬 전체 샷 나열(sceneShots) 기준이라 대사 경계도 건너뛴다. 다음 샷이 없으면 아무것도 안 한다.
+  Future<void> _chainEndToNextStart(Shot shot) async {
+    final endPath = shot.endImagePath;
     if (endPath == null) return;
-    final all = sceneClips;
-    final i = all.indexOf(clip);
-    if (i < 0 || i + 1 >= all.length) return; // 마지막 클립 → 이어붙일 대상 없음
+    final all = sceneShots;
+    final i = all.indexOf(shot);
+    if (i < 0 || i + 1 >= all.length) return; // 마지막 샷 → 이어붙일 대상 없음
     final next = all[i + 1];
     final src = File(endPath);
     if (!await src.exists()) return;
@@ -858,7 +935,7 @@ class StoryboardProvider extends ChangeNotifier {
     next.startImagePath = dst.path;
     final k = busyKey(next.id, GenMode.imageStart);
     _ver[k] = (_ver[k] ?? 0) + 1;
-    messenger?.call('다음 클립 시작 프레임으로 이어붙였습니다');
+    messenger?.call('다음 샷 시작 프레임으로 이어붙였습니다');
   }
 
   /// LoRA URL 정규화: civitai 페이지 URL → api/download 링크로 변환 + 토큰 자동 부착.
@@ -880,16 +957,16 @@ class StoryboardProvider extends ChangeNotifier {
     return url;
   }
 
-  Future<Uint8List?> _startFrameBytes(VideoClip clip) async {
-    final path = clip.startImagePath;
+  Future<Uint8List?> _startFrameBytes(Shot shot) async {
+    final path = shot.startImagePath;
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;
     return f.readAsBytes();
   }
 
-  Future<Uint8List?> _endFrameBytes(VideoClip clip) async {
-    final path = clip.endImagePath;
+  Future<Uint8List?> _endFrameBytes(Shot shot) async {
+    final path = shot.endImagePath;
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;
@@ -975,7 +1052,7 @@ class StoryboardProvider extends ChangeNotifier {
     for (final c in _sceneTitles.values) {
       c.dispose();
     }
-    for (final c in _shotTitles.values) {
+    for (final c in _dialogueTitles.values) {
       c.dispose();
     }
     for (final c in _notes.values) {

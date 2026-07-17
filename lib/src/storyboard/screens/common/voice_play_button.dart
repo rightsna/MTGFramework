@@ -5,7 +5,7 @@ import 'package:video_player/video_player.dart';
 
 import '../ui.dart';
 
-/// 생성된 대사 음성(mp3)을 그 자리에서 재생/정지하는 작은 버튼.
+/// 대사 음성(mp3)을 그 자리에서 재생/정지하는 작은 버튼.
 /// BGM과 같은 방식으로 video_player를 오디오 재생에 재사용한다(별도 의존성 없음).
 ///
 /// 음성을 재생성하면 파일 경로는 같아도 내용이 바뀌므로, 호출부에서

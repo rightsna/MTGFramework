@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 
-import '../../models/clip.dart';
 import '../../models/shot.dart';
+import '../../models/dialogue_beat.dart';
 import '../../providers/storyboard_provider.dart';
 import '../../services/api_service.dart';
 import '../common/output_preview.dart';
 import '../common/voice_play_button.dart';
 import '../ui.dart';
 
-/// 대사(TTS·클립) 식별색.
+/// 대사(TTS·샷) 식별색.
 const _voiceColor = Color(0xFFE0678A);
 
 /// 가운데 캔버스: 선택 씬을 **샷들의 가로 타임라인**으로 그린다.
-/// 각 샷 = [상태] + [대사(0/1)] + [클립들]. 샷 하나가 대사 한 마디고, 그 아래 클립들이 화면을 덮는다.
+/// 각 대사 = [상태] + [대사 내용(0/1)] + [샷들]. 대사 한 마디 아래 샷들이 화면을 덮는다.
 class CanvasView extends StatelessWidget {
   const CanvasView({super.key});
 
@@ -29,19 +29,19 @@ class CanvasView extends StatelessWidget {
         ),
       );
     }
-    final shots = p.shots;
-    if (shots.isEmpty) {
+    final dialogues = p.dialogues;
+    if (dialogues.isEmpty) {
       return _empty(
-        '첫 샷을 추가하세요 (샷 = 대사 한 마디 + 클립들)',
+        '첫 대사를 추가하세요 (대사 한 마디 = 샷 여러 개)',
         FilledButton.icon(
-          onPressed: p.addShot,
+          onPressed: p.addDialogue,
           icon: const Icon(Icons.add),
-          label: const Text('샷 추가'),
+          label: const Text('대사 추가'),
         ),
       );
     }
     // 캔버스: 줌 인/아웃 + 상하좌우 팬(InteractiveViewer). 도트 그리드 배경 위에
-    // 샷 카드가 가로로 이어지고 사이사이 화살표로 흐름을 표시. 카드 높이는 클립 수에 맞춰 fit.
+    // 대사 카드가 가로로 이어지고 사이사이 화살표로 흐름을 표시. 카드 높이는 샷 수에 맞춰 fit.
     return InteractiveViewer(
       constrained: false,
       boundaryMargin: const EdgeInsets.all(600),
@@ -55,10 +55,10 @@ class CanvasView extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < shots.length; i++) ...[
+                for (var i = 0; i < dialogues.length; i++) ...[
                   SizedBox(
-                      width: 286, child: _ShotCard(shot: shots[i], index: i)),
-                  if (i < shots.length - 1) const _ShotArrow(),
+                      width: 286, child: _ShotCard(beat: dialogues[i], index: i)),
+                  if (i < dialogues.length - 1) const _ShotArrow(),
                 ],
                 const SizedBox(width: 8),
                 Padding(
@@ -66,7 +66,7 @@ class CanvasView extends StatelessWidget {
                   child: SizedBox(
                     width: 56,
                     child: OutlinedButton(
-                      onPressed: p.addShot,
+                      onPressed: p.addDialogue,
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 20),
                         side: const BorderSide(color: Color(0x33FFFFFF)),
@@ -91,17 +91,17 @@ class CanvasView extends StatelessWidget {
       );
 }
 
-/// 샷 카드: [상태 스트립] + [헤더] + [대사] + [클립들] + [메모].
+/// 대사 카드: [상태 스트립] + [헤더] + [대사] + [샷들] + [메모].
 class _ShotCard extends StatelessWidget {
-  const _ShotCard({required this.shot, required this.index});
+  const _ShotCard({required this.beat, required this.index});
 
-  final Shot shot;
+  final DialogueBeat beat;
   final int index;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final selected = shot.id == p.selectedShotId;
+    final selected = beat.id == p.selectedDialogueId;
     final card = Card(
       elevation: selected ? 8 : 2,
       clipBehavior: Clip.antiAlias,
@@ -115,7 +115,7 @@ class _ShotCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _StatusStrip(shot: shot),
+          _StatusStrip(beat: beat),
           // 헤더
           Container(
             decoration: const BoxDecoration(
@@ -134,14 +134,14 @@ class _ShotCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('SHOT ${index + 1}',
+                      Text('대사 ${index + 1}',
                           style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 11,
                               letterSpacing: 1.0,
                               color: Color(0xAAFFFFFF))),
-                      if (shot.title.trim().isNotEmpty)
-                        Text(shot.title.trim(),
+                      if (beat.title.trim().isNotEmpty)
+                        Text(beat.title.trim(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -152,9 +152,9 @@ class _ShotCard extends StatelessWidget {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
-                  onPressed: () => p.removeShot(shot),
+                  onPressed: () => p.removeDialogue(beat),
                   icon: const Icon(Icons.delete_outline),
-                  tooltip: '샷 삭제',
+                  tooltip: '대사 삭제',
                 ),
               ],
             ),
@@ -162,18 +162,18 @@ class _ShotCard extends StatelessWidget {
           // 대사(0/1)
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
-            child: _DialogueBox(shot: shot),
+            child: _DialogueBox(beat: beat),
           ),
-          // 클립들 — 3열 정사각 그리드. 높이는 클립 수(행)에 맞춰 자란다.
+          // 샷들 — 3열 정사각 그리드. 높이는 샷 수(행)에 맞춰 자란다.
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
-            child: _ClipsArea(shot: shot),
+            child: _ShotsArea(beat: beat),
           ),
         ],
       ),
     );
     // 메모는 샷 박스 안이 아니라, 카드 아래에 독립 라운드박스로 분리해서 붙인다.
-    final Widget content = shot.note.trim().isEmpty
+    final Widget content = beat.note.trim().isEmpty
         ? card
         : Column(
             mainAxisSize: MainAxisSize.min,
@@ -183,15 +183,15 @@ class _ShotCard extends StatelessWidget {
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: _NoteBox(text: shot.note.trim()),
+                child: _NoteBox(text: beat.note.trim()),
               ),
             ],
           );
-    // 몸통(배경) 탭 → 이 샷 선택. 앞쪽의 클립·상태 스트립·대사·삭제·＋ 버튼은
+    // 몸통(배경) 탭 → 이 대사 선택. 앞쪽의 샷·상태 스트립·대사·삭제·＋ 버튼은
     // 각자 제스처를 먼저 가져가고(자식 우선), 그 외 빈 배경 탭만 여기로 떨어진다.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => p.selectShot(shot.id),
+      onTap: () => p.selectDialogue(beat.id),
       child: content,
     );
   }
@@ -199,25 +199,25 @@ class _ShotCard extends StatelessWidget {
 
 /// 샷 최상단 상태 스트립 — 탭하면 다음 상태로 순환.
 class _StatusStrip extends StatelessWidget {
-  const _StatusStrip({required this.shot});
+  const _StatusStrip({required this.beat});
 
-  final Shot shot;
+  final DialogueBeat beat;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final c = statusColor(shot.status);
+    final c = statusColor(beat.status);
     return GestureDetector(
-      onTap: () => p.cycleShotStatus(shot),
+      onTap: () => p.cycleDialogueStatus(beat),
       behavior: HitTestBehavior.opaque,
       child: Container(
         color: c.withValues(alpha: 0.20),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         child: Row(
           children: [
-            Icon(statusIcon(shot.status), size: 13, color: c),
+            Icon(statusIcon(beat.status), size: 13, color: c),
             const SizedBox(width: 5),
-            Text(shot.status.label,
+            Text(beat.status.label,
                 style: TextStyle(
                     fontSize: 11, fontWeight: FontWeight.w800, color: c)),
           ],
@@ -227,19 +227,19 @@ class _StatusStrip extends StatelessWidget {
   }
 }
 
-/// 샷의 대사 박스 — 화자 + 텍스트 + 음성 상태. 탭 → 편집 모달. 대사 없으면 "대사 추가".
+/// 대사 박스 — 화자 + 텍스트 + 음성 상태. 탭 → 이 대사를 선택(편집은 우측 '대사' 탭).
 class _DialogueBox extends StatelessWidget {
-  const _DialogueBox({required this.shot});
+  const _DialogueBox({required this.beat});
 
-  final Shot shot;
+  final DialogueBeat beat;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final d = shot.dialogue;
+    final d = beat.dialogue;
     if (d == null) {
       return InkWell(
-        onTap: () => editShotDialogue(context, shot),
+        onTap: () => p.selectDialogue(beat.id),
         borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -251,7 +251,7 @@ class _DialogueBox extends StatelessWidget {
             children: [
               Icon(Icons.add, size: 14, color: _voiceColor),
               SizedBox(width: 6),
-              Text('대사 추가',
+              Text('대사 입력',
                   style: TextStyle(fontSize: 12, color: _voiceColor)),
             ],
           ),
@@ -260,9 +260,9 @@ class _DialogueBox extends StatelessWidget {
     }
     final speaker = p.characterById(d.speakerId);
     final isNarration = d.speakerId == null;
-    final busy = p.isBusy(p.voiceBusyKey(shot.id));
+    final busy = p.isBusy(p.voiceBusyKey(beat.id));
     return InkWell(
-      onTap: () => editShotDialogue(context, shot),
+      onTap: () => p.selectDialogue(beat.id),
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
@@ -308,7 +308,7 @@ class _DialogueBox extends StatelessWidget {
                       size: 16,
                     ),
                     const SizedBox(width: 3),
-                    Text(_fmt(d.voiceSeconds),
+                    Text(fmtSeconds(d.voiceSeconds),
                         style: const TextStyle(fontSize: 10, color: accent2)),
                   ])
                 else
@@ -335,12 +335,12 @@ class _DialogueBox extends StatelessWidget {
   }
 }
 
-/// 샷의 클립들 — **3열 정사각 그리드** + 추가 타일. 탭하면 그 클립 선택(인스펙터가 편집).
-/// shrinkWrap이라 그리드 높이가 행 수(클립 수)에 맞춰 자라고 → 샷 카드 높이도 따라 fit 된다.
-class _ClipsArea extends StatelessWidget {
-  const _ClipsArea({required this.shot});
+/// 대사의 샷들 — **3열 정사각 그리드** + 추가 타일. 탭하면 그 샷 선택(인스펙터가 편집).
+/// shrinkWrap이라 그리드 높이가 행 수(샷 수)에 맞춰 자라고 → 대사 카드 높이도 따라 fit 된다.
+class _ShotsArea extends StatelessWidget {
+  const _ShotsArea({required this.beat});
 
-  final Shot shot;
+  final DialogueBeat beat;
 
   @override
   Widget build(BuildContext context) {
@@ -349,14 +349,14 @@ class _ClipsArea extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Text('클립',
+            const Text('샷',
                 style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.8,
                     color: accent2)),
             const SizedBox(width: 5),
-            Text('${shot.clips.length}',
+            Text('${beat.shots.length}',
                 style: const TextStyle(fontSize: 10, color: Colors.white38)),
           ],
         ),
@@ -369,9 +369,9 @@ class _ClipsArea extends StatelessWidget {
           crossAxisSpacing: 8,
           childAspectRatio: 1, // 정사각
           children: [
-            for (var i = 0; i < shot.clips.length; i++)
-              _ClipThumb(shot: shot, clip: shot.clips[i], index: i),
-            _AddClipTile(shot: shot),
+            for (var i = 0; i < beat.shots.length; i++)
+              _ShotThumb(beat: beat, shot: beat.shots[i], index: i),
+            _AddShotTile(beat: beat),
           ],
         ),
       ],
@@ -379,22 +379,22 @@ class _ClipsArea extends StatelessWidget {
   }
 }
 
-/// 정사각 클립 썸네일 — 시작이미지 + 오버레이(번호·삭제·하단 영상상태/길이). 그리드 셀을 꽉 채운다.
-class _ClipThumb extends StatelessWidget {
-  const _ClipThumb(
-      {required this.shot, required this.clip, required this.index});
+/// 정사각 샷 썸네일 — 시작이미지 + 오버레이(번호·삭제·하단 영상상태/길이). 그리드 셀을 꽉 채운다.
+class _ShotThumb extends StatelessWidget {
+  const _ShotThumb(
+      {required this.beat, required this.shot, required this.index});
 
+  final DialogueBeat beat;
   final Shot shot;
-  final VideoClip clip;
   final int index;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final selected = clip.id == p.selectedClipId && shot.id == p.selectedShotId;
-    final hasVideo = clip.videoPath != null;
+    final selected = shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
+    final hasVideo = shot.videoPath != null;
     return GestureDetector(
-      onTap: () => p.selectClip(shot.id, clip.id),
+      onTap: () => p.selectShot(beat.id, shot.id),
       child: Container(
         decoration: BoxDecoration(
           color: previewBg,
@@ -408,9 +408,9 @@ class _ClipThumb extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             OutputPreview(
-              path: clip.startImagePath,
-              version: p.verOf(p.busyKey(clip.id, GenMode.imageStart)),
-              busy: p.isBusy(p.busyKey(clip.id, GenMode.imageStart)),
+              path: shot.startImagePath,
+              version: p.verOf(p.busyKey(shot.id, GenMode.imageStart)),
+              busy: p.isBusy(p.busyKey(shot.id, GenMode.imageStart)),
             ),
             Positioned(
               left: 3,
@@ -431,7 +431,7 @@ class _ClipThumb extends StatelessWidget {
               right: 1,
               top: 1,
               child: GestureDetector(
-                onTap: () => p.removeClip(shot, clip),
+                onTap: () => p.removeShot(beat, shot),
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: const BoxDecoration(
@@ -454,7 +454,7 @@ class _ClipThumb extends StatelessWidget {
                     Icon(hasVideo ? Icons.check_circle : Icons.movie_outlined,
                         size: 9, color: hasVideo ? accent2 : Colors.white38),
                     const SizedBox(width: 3),
-                    Text('${clip.videoSeconds}s',
+                    Text('${shot.videoSeconds}s',
                         style: const TextStyle(
                             fontSize: 9, color: Colors.white70)),
                   ],
@@ -468,18 +468,18 @@ class _ClipThumb extends StatelessWidget {
   }
 }
 
-/// 클립 추가 타일 — 그리드 셀 가운데의 원형 + 버튼.
-class _AddClipTile extends StatelessWidget {
-  const _AddClipTile({required this.shot});
+/// 샷 추가 타일 — 그리드 셀 가운데의 원형 + 버튼.
+class _AddShotTile extends StatelessWidget {
+  const _AddShotTile({required this.beat});
 
-  final Shot shot;
+  final DialogueBeat beat;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     return Center(
       child: InkWell(
-        onTap: () => p.addClip(shot),
+        onTap: () => p.addShot(beat),
         customBorder: const CircleBorder(),
         child: Container(
           width: 24,
@@ -567,190 +567,6 @@ class _GridPainter extends CustomPainter {
 }
 
 /// 초 표기(정수면 정수, 아니면 소수 1자리).
-String _fmt(double s) =>
+String fmtSeconds(double s) =>
     s == s.roundToDouble() ? '${s.toInt()}s' : '${s.toStringAsFixed(1)}s';
 
-/// 샷 대사 편집 모달: 화자(내레이션 포함) + 텍스트 + 음성 생성 + 대사 삭제.
-Future<void> editShotDialogue(BuildContext context, Shot shot) async {
-  final p = StoryboardScope.read(context);
-  final d = shot.dialogue;
-  final textCtrl = TextEditingController(text: d?.text ?? '');
-  String? speaker = d?.speakerId;
-  bool genning = false;
-  await showDialog<void>(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setState) => AlertDialog(
-        title: Row(
-          children: [
-            const Text('대사'),
-            const Spacer(),
-            if (shot.dialogue != null)
-              IconButton(
-                tooltip: '대사 삭제(무음 샷)',
-                onPressed: () {
-                  p.removeShotDialogue(shot);
-                  Navigator.of(ctx).pop();
-                },
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: Colors.redAccent,
-              ),
-          ],
-        ),
-        content: SizedBox(
-          width: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('화자',
-                  style: TextStyle(fontSize: 12, color: Colors.white54)),
-              const SizedBox(height: 6),
-              DropdownButtonFormField<String?>(
-                initialValue: speaker,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                    isDense: true, border: OutlineInputBorder()),
-                items: [
-                  const DropdownMenuItem<String?>(
-                      value: null, child: Text('내레이션 (화자 없음)')),
-                  for (final c in p.characters)
-                    DropdownMenuItem<String?>(
-                      value: c.id,
-                      child: Text(
-                        '${c.name.trim().isEmpty ? '(이름 없음)' : c.name.trim()}'
-                        '${c.hasVoice ? '  · 🎙 ${c.voiceName.isEmpty ? '보이스' : c.voiceName}' : '  · 보이스 없음'}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (v) => setState(() => speaker = v),
-              ),
-              const SizedBox(height: 14),
-              const Text('대사',
-                  style: TextStyle(fontSize: 12, color: Colors.white54)),
-              const SizedBox(height: 6),
-              TextField(
-                controller: textCtrl,
-                autofocus: true,
-                minLines: 3,
-                maxLines: 8,
-                style: const TextStyle(fontSize: 14, height: 1.4),
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(
-                  hintText: '이 샷에서 말할 대사(또는 내레이션). 비우면 무음 샷',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                '감정 표현: 문장 앞에 [crying] [whispers] [sighs] [shouts] 같은 '
-                '영어 대괄호 태그 (일레븐랩스 v3)',
-                style: TextStyle(fontSize: 11, color: Colors.white38),
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              // 음성(TTS)
-              Builder(builder: (_) {
-                final speakerChar = p.characterById(speaker);
-                final target = (speakerChar != null && speakerChar.hasVoice)
-                    ? '${speakerChar.name.trim().isEmpty ? '화자' : speakerChar.name.trim()} 보이스'
-                    : (p.settings.elevenVoiceId.trim().isNotEmpty
-                        ? '기본 보이스${p.settings.elevenVoiceName.trim().isEmpty ? '' : '(${p.settings.elevenVoiceName.trim()})'}'
-                        : null);
-                final canGen = p.voiceReady &&
-                    textCtrl.text.trim().isNotEmpty &&
-                    target != null;
-                final has = shot.dialogue?.hasVoice ?? false;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.graphic_eq, size: 14, color: accent2),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            !p.voiceReady
-                                ? '설정에서 일레븐랩스 키를 넣어야 음성을 만들 수 있어요'
-                                : target == null
-                                    ? '보이스 없음 — 화자에 보이스를 지정하거나 설정에서 기본 보이스를 정하세요'
-                                    : has
-                                        ? '현재 음성 ${_fmt(shot.dialogue!.voiceSeconds)} · $target 으로 재생성'
-                                        : '$target 으로 생성',
-                            style: const TextStyle(
-                                fontSize: 11, color: Colors.white54),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        if (has && !genning) ...[
-                          VoicePlayButton(
-                            key: ValueKey(
-                                '${shot.dialogue!.voicePath}:${shot.dialogue!.voiceSeconds}'),
-                            path: shot.dialogue!.voicePath!,
-                            size: 34,
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        Expanded(
-                          child: FilledButton.tonalIcon(
-                            onPressed: (genning || !canGen)
-                                ? null
-                                : () async {
-                                    p.setShotDialogueSpeaker(shot, speaker);
-                                    p.setShotDialogueText(
-                                        shot, textCtrl.text.trim());
-                                    setState(() => genning = true);
-                                    await p.genVoice(shot);
-                                    if (ctx.mounted) {
-                                      setState(() => genning = false);
-                                    }
-                                  },
-                            icon: genning
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2))
-                                : Icon(has ? Icons.refresh : Icons.graphic_eq,
-                                    size: 18),
-                            label: Text(genning
-                                ? '생성 중…'
-                                : has
-                                    ? '음성 재생성'
-                                    : '음성 생성'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              }),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () {
-              p.setShotDialogueSpeaker(shot, speaker);
-              p.setShotDialogueText(shot, textCtrl.text.trim());
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    ),
-  );
-  textCtrl.dispose();
-}

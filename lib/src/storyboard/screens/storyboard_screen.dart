@@ -124,7 +124,7 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
             actions: [
               const _ConnStatus(),
               IconButton(
-                tooltip: '프로젝트 폴더 열기 (생성된 영상·이미지·음성이 저장되는 곳)',
+                tooltip: '프로젝트 폴더 열기 (영상·이미지·음성이 저장되는 곳)',
                 icon: const Icon(Icons.folder_open_outlined),
                 onPressed: _provider.openProjectFolder,
               ),
@@ -151,19 +151,11 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
                 const SizedBox(width: playerW, child: PreviewPlayer()),
                 Container(width: 1, color: const Color(0x22FFFFFF)),
               ],
-              // 가운데: 캔버스(샷 타임라인, 위) + 인스펙터(아래, 일반·샷·배경음).
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(child: CanvasView()),
-                    SizedBox(height: 340, child: InspectorPanel()),
-                  ],
-                ),
-              ),
+              // 가운데: 캔버스(대사/샷 타임라인) — 세로 전체를 쓴다.
+              const Expanded(child: CanvasView()),
               Container(width: 1, color: const Color(0x22FFFFFF)),
-              // 오른쪽: 클립 편집(장면·영상·공통) — 세로로 긴 편집이라 우측 패널이 적합.
-              const SizedBox(width: inspectorW, child: ClipEditorPanel()),
+              // 오른쪽: 편집 패널(대사·장면·영상·씬) — 세로로 긴 편집이라 우측이 적합.
+              const SizedBox(width: inspectorW, child: ShotEditorPanel()),
             ],
           ),
         ),

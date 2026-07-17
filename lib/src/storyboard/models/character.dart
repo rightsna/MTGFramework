@@ -1,4 +1,4 @@
-import 'clip.dart'; // mediaName / mediaPath (미디어 절대경로 ↔ 파일명)
+import 'shot.dart'; // mediaName / mediaPath (미디어 절대경로 ↔ 파일명)
 
 /// 프로젝트의 등장인물 한 명. 인물은 **얼굴 + 목소리**의 정체성이다.
 ///  - 얼굴: 대표사진 + 여러 사진(갤러리) — 장면 생성 시 이미지 레퍼런스(FireRed)로 외형 유지

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../providers/storyboard_provider.dart';
 import '../ui.dart';
 
-/// 좌측 씬 목록 사이드: 씬(클립 그룹) 추가/선택/삭제/제목 편집.
+/// 좌측 씬 목록 사이드: 씬(대사 그룹) 추가/선택/삭제/제목 편집.
 class SceneListSidebar extends StatelessWidget {
   const SceneListSidebar({super.key});
 
@@ -11,7 +11,6 @@ class SceneListSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final scenes = p.scenes;
-    final selected = p.selectedScene;
     return Container(
       color: panelBg,
       child: Column(
@@ -73,38 +72,16 @@ class SceneListSidebar extends StatelessWidget {
                                   fontWeight:
                                       sel ? FontWeight.w800 : FontWeight.w600)),
                           subtitle: Text(
-                              '${scene.shots.length} 샷 · ${scene.clipCount} 클립',
+                              '${scene.dialogues.length} 대사 · ${scene.shotCount} 샷',
                               style: const TextStyle(
                                   fontSize: 11, color: Color(0x99FFFFFF))),
-                          trailing: IconButton(
-                            visualDensity: VisualDensity.compact,
-                            iconSize: 18,
-                            tooltip: '씬 삭제',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => p.removeScene(scene),
-                          ),
+                          // 삭제는 우측 '씬' 탭 최하단으로 옮겼다 — 목록에서 실수로 누르기 쉬웠다.
                         ),
                       );
                     },
                   ),
           ),
-          // 선택 씬 제목 편집
-          if (selected != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-              child: TextField(
-                controller: p.sceneTitleCtrl(selected.id),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                decoration: const InputDecoration(
-                  labelText: '씬 제목 (선택)',
-                  isDense: true,
-                  filled: true,
-                  fillColor: previewBg,
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (_) => p.noteEdited(),
-              ),
-            ),
+          // (씬 제목 편집은 우측 '씬' 탭으로 옮겼다.)
           // 씬 추가
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
