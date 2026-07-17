@@ -76,11 +76,20 @@ class ApiService {
   }
 
   /// 텍스트→이미지 (/image). 시작/끝 스크린샷 생성용.
-  Future<Uint8List> generateImage(String prompt) async {
+  /// [width]/[height]는 함께 지정(둘 다 8의 배수). 0이면 서버 워크플로 기본(1024×1024 정사각).
+  Future<Uint8List> generateImage(
+    String prompt, {
+    int width = 0,
+    int height = 0,
+  }) async {
     final r = await http.post(
       Uri.parse('$_base/image'),
       headers: const {'Content-Type': 'application/json', ..._ngrok},
-      body: jsonEncode({'prompt': prompt}),
+      body: jsonEncode({
+        'prompt': prompt,
+        if (width > 0 && height > 0) 'width': width,
+        if (width > 0 && height > 0) 'height': height,
+      }),
     );
     _check(r.statusCode, r.bodyBytes);
     return r.bodyBytes;

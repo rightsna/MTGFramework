@@ -521,6 +521,8 @@ class _SceneTab extends StatelessWidget {
             busyKey: p.busyKey(shot.id, GenMode.imageStart),
             onGen: () => p.gen(shot, GenMode.imageStart),
             onLoad: () => p.loadFrame(shot, GenMode.imageStart),
+            shot: shot,
+            mode: GenMode.imageStart,
           ),
           const SizedBox(height: 16),
           _FrameSection(
@@ -533,9 +535,57 @@ class _SceneTab extends StatelessWidget {
             busyKey: p.busyKey(shot.id, GenMode.imageEnd),
             onGen: () => p.gen(shot, GenMode.imageEnd),
             onLoad: () => p.loadFrame(shot, GenMode.imageEnd),
+            shot: shot,
+            mode: GenMode.imageEnd,
           ),
           const SizedBox(height: 16),
           _RefCharacterPicker(shot: shot),
+          const SizedBox(height: 16),
+          _GroupCard(
+            icon: Icons.tune,
+            title: '설정',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _SectionLabel('생성 해상도'),
+                const SizedBox(height: 2),
+                const Text(
+                  'FE2V 입력이라 영상과 비율을 맞추세요.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final r in ImageRes.values)
+                      ChoiceChip(
+                        label: Text(r.label),
+                        selected: p.settings.imageRes == r,
+                        onSelected: (_) => p.setImageRes(r),
+                      ),
+                  ],
+                ),
+                if (shot.refCharacterIds.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          size: 13, color: Colors.orangeAccent),
+                      SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          '인물참조가 있으면 이 해상도가 무시되고 참조 사진 크기로 나옵니다',
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.orangeAccent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -919,10 +969,11 @@ class _VideoTab extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _OutputBlock(
-                  title: '미리보기',
+                  title: '영상',
                   path: c.videoPath,
                   busyKey: p.busyKey(c.id, GenMode.videoLow),
                   isVideo: true,
+                  deleteTarget: (shot: c, mode: GenMode.videoLow),
                 ),
                 const SizedBox(height: 14),
                 _SectionLabel('프롬프트'),
@@ -1052,6 +1103,48 @@ class _SceneSettingsTab extends StatelessWidget {
           const SizedBox(height: 16),
           const BgmSection(),
           const SizedBox(height: 24),
+          // 구조는 두고 생성물만 비우기 — 다시 뽑기 전 초기화용.
+          OutlinedButton.icon(
+            onPressed: () async {
+              final shots = [for (final b in sc.dialogues) ...b.shots];
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('미디어 모두 삭제'),
+                  content: Text(
+                    '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬의 '
+                    '생성물을 모두 지웁니다 — 샷 ${shots.length}개의 시작·끝 프레임과 영상, '
+                    '대사 음성, 배경음.\n'
+                    '파일도 함께 삭제되며 되돌릴 수 없습니다.\n\n'
+                    '프롬프트·제목·대사 텍스트 등 구조는 그대로 남습니다.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: Colors.redAccent),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('모두 삭제'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok == true) {
+                final n = await p.removeSceneMedia();
+                p.messenger?.call('미디어 $n개를 삭제했습니다');
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.orangeAccent,
+              side: const BorderSide(color: Color(0x55FFAB40)),
+            ),
+            icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+            label: const Text('미디어 모두 삭제'),
+          ),
+          const SizedBox(height: 8),
           // 파괴적 동작이라 맨 아래에, 확인을 거쳐서. (예전엔 씬 목록 안에 있어 오클릭이 쉬웠다.)
           OutlinedButton.icon(
             onPressed: () async {
@@ -1144,7 +1237,13 @@ class _FrameSection extends StatelessWidget {
     required this.busyKey,
     required this.onGen,
     required this.onLoad,
+    required this.shot,
+    required this.mode,
   });
+
+  /// 이 프레임이 속한 샷 + 어느 프레임인지 — 삭제 버튼이 대상을 알기 위해.
+  final Shot shot;
+  final GenMode mode;
 
   final String title;
   final TextEditingController controller;
@@ -1168,7 +1267,12 @@ class _FrameSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 결과(프레임)가 위, 그걸 만드는 수단(프롬프트·생성/불러오기)이 아래.
-          _OutputBlock(title: '미리보기', path: path, busyKey: busyKey),
+          _OutputBlock(
+            title: title,
+            path: path,
+            busyKey: busyKey,
+            deleteTarget: (shot: shot, mode: mode),
+          ),
           const SizedBox(height: 14),
           _SectionLabel('프롬프트'),
           const SizedBox(height: 6),
@@ -1371,12 +1475,16 @@ class _OutputBlock extends StatelessWidget {
     required this.path,
     required this.busyKey,
     this.isVideo = false,
+    this.deleteTarget,
   });
 
   final String title;
   final String? path;
   final String busyKey;
   final bool isVideo;
+
+  /// 지정하면 '삭제' 버튼이 붙는다 — 이 샷의 해당 생성물(프레임/영상)만 지운다.
+  final ({Shot shot, GenMode mode})? deleteTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -1416,6 +1524,45 @@ class _OutputBlock extends StatelessWidget {
                 icon: const Icon(Icons.download_outlined, size: 16),
                 label: const Text('내보내기'),
               ),
+              if (deleteTarget != null)
+                TextButton.icon(
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text('$title 삭제'),
+                        content: Text(
+                          '이 샷의 $title을(를) 지웁니다.\n'
+                          '파일도 함께 삭제되며 되돌릴 수 없습니다.\n\n'
+                          '${path!.split('/').last}',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('취소'),
+                          ),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: Colors.redAccent),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('삭제'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok == true) {
+                      await p.removeMedia(
+                          deleteTarget!.shot, deleteTarget!.mode);
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    foregroundColor: Colors.redAccent,
+                  ),
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('삭제'),
+                ),
             ],
           ],
         ),

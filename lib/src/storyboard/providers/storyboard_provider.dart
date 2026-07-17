@@ -369,15 +369,18 @@ class StoryboardProvider extends ChangeNotifier {
 
   // ───────── 샷 추가/삭제/선택 ─────────
 
-  void addShot(DialogueBeat beat) {
+  Future<void> addShot(DialogueBeat beat) async {
     final id = 'clip_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
     final shot = Shot(id: id, videoSeconds: _settings.videoSeconds);
     _addShotControllers(shot);
     beat.shots.add(shot);
     _selectedDialogueId = beat.id;
     _selectedShotId = id;
+    notifyListeners(); // 먼저 목록에 띄우고
+    // FE2V 컷 연속성: 앞 샷에 끝 프레임이 있으면 그걸 이 샷의 시작으로 물려받는다.
+    await _inheritStartFromPrev(shot);
     notifyListeners();
-    save();
+    await save();
   }
 
   void removeShot(DialogueBeat beat, Shot shot) {
@@ -657,11 +660,17 @@ class StoryboardProvider extends ChangeNotifier {
         final instruction =
             '아래 참조 인물${who.isEmpty ? '' : '($who)'}을(를) 다음 장면에 자연스럽게 배치하라. '
             '각 인물의 얼굴·헤어스타일·의상 등 정체성은 그대로 유지할 것. 장면: $prompt';
+        // ⚠️ /edit(FireRed)은 출력 크기를 못 정한다 — 결과가 참조 사진 크기를 따라간다.
+        //    (엔드포인트의 w/h는 '편집할 영역' 크롭용이지 출력 해상도가 아니다.)
+        //    imageRes 비율을 맞추려면 서버 /edit에 출력 w/h 지원이 필요하다.
         return ApiService(
           _settings.effectiveServiceUrl,
         ).generateImageWithRefs(references: refs, prompt: instruction);
       }
-      return ApiService(_settings.effectiveServiceUrl).generateImage(prompt);
+      final res = _settings.imageRes;
+      return ApiService(
+        _settings.effectiveServiceUrl,
+      ).generateImage(prompt, width: res.width, height: res.height);
     }
     // 영상 생성(저) = FE2V: 시작·끝 두 프레임이 입력(둘 다 필수).
     switch (backend ?? _settings.videoBackend) {
@@ -714,6 +723,13 @@ class StoryboardProvider extends ChangeNotifier {
   /// 영상 생성 해상도(비율 포함) 선택 저장.
   void setVideoRes(VideoRes r) {
     _settings = _settings.copyWith(videoRes: r);
+    notifyListeners();
+    _settingsStore.save(_settings);
+  }
+
+  /// 스크린샷(시작·끝 프레임) 생성 해상도(비율 포함) 선택 저장.
+  void setImageRes(ImageRes r) {
+    _settings = _settings.copyWith(imageRes: r);
     notifyListeners();
     _settingsStore.save(_settings);
   }
@@ -916,8 +932,104 @@ class StoryboardProvider extends ChangeNotifier {
     return (bytes: await f.readAsBytes(), mimeType: 'image/png');
   }
 
-  /// FE2V 컷 연속성: [shot]의 끝 프레임을 타임라인상 **다음 샷의 시작 프레임**으로
-  /// 자동으로 이어붙인다(끝 이미지 파일을 다음 샷의 시작 파일명으로 복사해 같은 프레임으로 맞춤).
+  /// 샷의 생성물 하나(시작 프레임 · 끝 프레임 · 영상)를 지운다 — 파일까지 삭제.
+  /// 다른 샷이 같은 파일을 참조할 수 있으므로(FE 체이닝은 **복사**본을 쓴다) 여기선
+  /// 이 샷 소유 파일만 지운다.
+  Future<void> removeMedia(Shot shot, GenMode mode) async {
+    final path = switch (mode) {
+      GenMode.imageStart => shot.startImagePath,
+      GenMode.imageEnd => shot.endImagePath,
+      GenMode.videoLow => shot.videoPath,
+    };
+    if (path == null) return;
+    switch (mode) {
+      case GenMode.imageStart:
+        shot.startImagePath = null;
+      case GenMode.imageEnd:
+        shot.endImagePath = null;
+      case GenMode.videoLow:
+        shot.videoPath = null;
+    }
+    try {
+      final f = File(path);
+      if (await f.exists()) await f.delete();
+      await FileImage(f).evict();
+    } catch (e) {
+      debugPrint('[removeMedia] 파일 삭제 실패(참조는 이미 끊음): $e');
+    }
+    final k = busyKey(shot.id, mode);
+    _ver[k] = (_ver[k] ?? 0) + 1;
+    notifyListeners();
+    await save();
+  }
+
+  /// 선택 씬의 **생성물 전부**(모든 샷의 시작·끝 프레임 + 영상, 씬 배경음, 대사 음성)를 지운다.
+  /// 프롬프트·제목·구조는 그대로 두고 미디어만 비운다 — 다시 뽑기 전 초기화용.
+  /// 지운 개수를 돌려준다.
+  Future<int> removeSceneMedia() async {
+    final scene = selectedScene;
+    if (scene == null) return 0;
+    var n = 0;
+    Future<void> kill(String? path) async {
+      if (path == null) return;
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+        await FileImage(f).evict();
+      } catch (e) {
+        debugPrint('[removeSceneMedia] 삭제 실패(참조는 끊음): $e');
+      }
+      n++;
+    }
+
+    for (final beat in scene.dialogues) {
+      for (final shot in beat.shots) {
+        await kill(shot.startImagePath);
+        await kill(shot.endImagePath);
+        await kill(shot.videoPath);
+        shot.startImagePath = null;
+        shot.endImagePath = null;
+        shot.videoPath = null;
+        for (final m in GenMode.values) {
+          final k = busyKey(shot.id, m);
+          _ver[k] = (_ver[k] ?? 0) + 1;
+        }
+      }
+      final d = beat.dialogue;
+      if (d != null) {
+        await kill(d.voicePath);
+        d.voicePath = null;
+        d.voiceSeconds = 0;
+        final k = voiceBusyKey(beat.id);
+        _ver[k] = (_ver[k] ?? 0) + 1;
+      }
+    }
+    await kill(scene.bgmPath);
+    scene.bgmPath = null;
+    final bk = bgmBusyKey(scene.id);
+    _ver[bk] = (_ver[bk] ?? 0) + 1;
+
+    notifyListeners();
+    await save();
+    return n;
+  }
+
+  /// [srcPath]의 이미지를 [target]의 **시작 프레임**으로 복사해 같은 프레임으로 맞춘다.
+  /// 성공하면 true. (FE2V 컷 연속성 양방향의 공통 부분.)
+  Future<bool> _copyAsStartFrame(Shot target, String srcPath) async {
+    final src = File(srcPath);
+    if (!await src.exists()) return false;
+    final ext = srcPath.split('.').last;
+    final dst = File('$projectDirPath/${target.id}_start.$ext');
+    await src.copy(dst.path);
+    await FileImage(dst).evict();
+    target.startImagePath = dst.path;
+    final k = busyKey(target.id, GenMode.imageStart);
+    _ver[k] = (_ver[k] ?? 0) + 1;
+    return true;
+  }
+
+  /// FE2V 컷 연속성 (앞 → 뒤): [shot]의 끝 프레임을 만들었을 때 **다음 샷의 시작**으로 밀어준다.
   /// 씬 전체 샷 나열(sceneShots) 기준이라 대사 경계도 건너뛴다. 다음 샷이 없으면 아무것도 안 한다.
   Future<void> _chainEndToNextStart(Shot shot) async {
     final endPath = shot.endImagePath;
@@ -925,17 +1037,23 @@ class StoryboardProvider extends ChangeNotifier {
     final all = sceneShots;
     final i = all.indexOf(shot);
     if (i < 0 || i + 1 >= all.length) return; // 마지막 샷 → 이어붙일 대상 없음
-    final next = all[i + 1];
-    final src = File(endPath);
-    if (!await src.exists()) return;
-    final ext = endPath.split('.').last;
-    final dst = File('$projectDirPath/${next.id}_start.$ext');
-    await src.copy(dst.path);
-    await FileImage(dst).evict();
-    next.startImagePath = dst.path;
-    final k = busyKey(next.id, GenMode.imageStart);
-    _ver[k] = (_ver[k] ?? 0) + 1;
-    messenger?.call('다음 샷 시작 프레임으로 이어붙였습니다');
+    if (await _copyAsStartFrame(all[i + 1], endPath)) {
+      messenger?.call('다음 샷 시작 프레임으로 이어붙였습니다');
+    }
+  }
+
+  /// FE2V 컷 연속성 (뒤 → 앞): **새로 추가된** [shot]의 시작을 앞 샷의 끝 프레임에서 가져온다.
+  /// 위 [_chainEndToNextStart]는 끝을 만드는 시점에만 도니, 이미 끝 프레임이 있는 샷 뒤에
+  /// 새 샷을 추가하면 시작이 비어버린다 — 그 구멍을 메운다. 첫 샷이면 물려받을 앞이 없다.
+  Future<void> _inheritStartFromPrev(Shot shot) async {
+    final all = sceneShots;
+    final i = all.indexOf(shot);
+    if (i <= 0) return; // 첫 샷
+    final prevEnd = all[i - 1].endImagePath;
+    if (prevEnd == null) return;
+    if (await _copyAsStartFrame(shot, prevEnd)) {
+      messenger?.call('앞 샷의 끝 프레임을 시작으로 가져왔습니다');
+    }
   }
 
   /// LoRA URL 정규화: civitai 페이지 URL → api/download 링크로 변환 + 토큰 자동 부착.

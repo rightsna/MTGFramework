@@ -35,6 +35,22 @@ enum VideoResolution {
   final String label;
 }
 
+/// 자체 서버 스크린샷(시작·끝 프레임) 생성 해상도 — 비율(세로/가로)까지 한 값에 통합.
+/// 8의 배수여야 한다(서버 /image 제약). FE2V 입력이라 **영상과 비율을 맞추는 게 기본**이고,
+/// 큰 쪽(1088×1984)은 같은 비율로 더 선명하게 뽑는 용도 — 영상 워크플로가 어차피 긴 변을
+/// 1536으로 리사이즈하므로 704 폭보다 이쪽이 디테일에서 유리하다.
+enum ImageRes {
+  p704x1280(704, 1280, '704×1280 · 세로'),
+  l1280x704(1280, 704, '1280×704 · 가로'),
+  p1088x1984(1088, 1984, '1088×1984 · 세로 (고해상)'),
+  l1984x1088(1984, 1088, '1984×1088 · 가로 (고해상)');
+
+  const ImageRes(this.width, this.height, this.label);
+  final int width;
+  final int height;
+  final String label;
+}
+
 /// 자체 서버(LTX-2.3) FE2V 생성 해상도 — 비율(세로/가로)까지 한 값에 통합. 32의 배수(LTX 제약).
 enum VideoRes {
   p352x640(352, 640, '352×640 · 세로'),
@@ -70,6 +86,7 @@ VideoRes _readVideoRes(Map<String, dynamic> j) {
 const String kServerDomain = 'https://camera-doctrine-galleria.ngrok-free.dev';
 
 class MovieSettings {
+  final ImageRes imageRes; // 스크린샷(시작·끝 프레임) 생성 해상도(비율 포함)
   final VideoBackend videoBackend;
   final String veoModel; // Veo 모델 id (3.1 / Fast / Lite)
   final VideoAspect videoAspect;
@@ -92,6 +109,7 @@ class MovieSettings {
       serviceApiUrl.trim().isEmpty ? kServerDomain : serviceApiUrl.trim();
 
   const MovieSettings({
+    this.imageRes = ImageRes.p704x1280,
     this.videoBackend = VideoBackend.serviceApi,
     this.veoModel = 'veo-3.1-generate-preview',
     this.videoAspect = VideoAspect.landscape,
@@ -110,6 +128,7 @@ class MovieSettings {
   });
 
   MovieSettings copyWith({
+    ImageRes? imageRes,
     VideoBackend? videoBackend,
     String? veoModel,
     VideoAspect? videoAspect,
@@ -126,6 +145,7 @@ class MovieSettings {
     String? elevenVoiceName,
     String? serviceApiUrl,
   }) => MovieSettings(
+    imageRes: imageRes ?? this.imageRes,
     videoBackend: videoBackend ?? this.videoBackend,
     veoModel: veoModel ?? this.veoModel,
     videoAspect: videoAspect ?? this.videoAspect,
@@ -144,6 +164,7 @@ class MovieSettings {
   );
 
   Map<String, dynamic> toJson() => {
+    'imageRes': imageRes.name,
     'videoBackend': videoBackend.name,
     'veoModel': veoModel,
     'videoAspect': videoAspect.name,
@@ -162,6 +183,10 @@ class MovieSettings {
   };
 
   factory MovieSettings.fromJson(Map<String, dynamic> j) => MovieSettings(
+    imageRes: ImageRes.values.firstWhere(
+      (e) => e.name == j['imageRes'],
+      orElse: () => ImageRes.p704x1280,
+    ),
     videoBackend: VideoBackend.values.firstWhere(
       (e) => e.name == j['videoBackend'],
       orElse: () => VideoBackend.serviceApi,
