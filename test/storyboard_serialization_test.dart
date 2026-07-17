@@ -89,7 +89,12 @@ void main() {
     // 샷엔 status/note 없음(대사 소유).
     expect(c1.containsKey('status'), isFalse);
     expect(c1['refCharacters'], ['char_miles']);
-    expect(c1['startScene'], {'prompt': '마일스 입을 뗀다, 클로즈업', 'image': 'clip_1_start.png'});
+    // inherit = 시작장면을 앞 샷 끝장면에 연동할지.
+    expect(c1['startScene'], {
+      'prompt': '마일스 입을 뗀다, 클로즈업',
+      'image': 'clip_1_start.png',
+      'inherit': false,
+    });
     expect(c1['video'], {
       'prompt': '카메라 천천히 전진',
       'seconds': 3,

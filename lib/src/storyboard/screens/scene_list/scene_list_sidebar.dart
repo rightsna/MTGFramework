@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../providers/storyboard_provider.dart';
+import '../common/video_batch.dart';
 import '../ui.dart';
 
 /// 좌측 씬 목록 사이드: 씬(대사 그룹) 추가/선택/삭제/제목 편집.
@@ -82,6 +83,28 @@ class SceneListSidebar extends StatelessWidget {
                   ),
           ),
           // (씬 제목 편집은 우측 '씬' 탭으로 옮겼다.)
+          // 목록 전체를 대상으로 하는 것들 — 범위가 '모든 씬'이라 씬 탭이 아니라 여기 둔다.
+          // (씬 탭은 '선택된 씬'의 탭이다.)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: OutlinedButton.icon(
+              onPressed: scenes.isEmpty
+                  ? null
+                  : () => showAllScenesVideoDialog(context),
+              icon: p.batchRunning
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_motion_outlined, size: 17),
+              label: Text(
+                p.batchRunning
+                    ? '생성 중 ${p.batchDone}/${p.batchTotal}'
+                    : '모든 씬 영상 생성',
+              ),
+            ),
+          ),
           // 씬 추가
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),

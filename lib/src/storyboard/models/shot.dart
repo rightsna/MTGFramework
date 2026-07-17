@@ -17,6 +17,15 @@ class Shot {
   String? endImagePath; // 생성된 끝장면 파일 경로
   String? videoPath; // 생성된 영상 파일 경로
 
+  /// 시작장면을 **앞 샷의 끝장면에 연동**한다(컷이 이어지는 기본 동선).
+  /// 켜져 있으면 앞 샷의 끝 이미지·프롬프트가 이 샷의 시작으로 따라 들어오고,
+  /// 시작장면은 직접 만들거나 고칠 수 없다(읽기 전용).
+  ///
+  /// 이미지는 참조가 아니라 **복사**한다 — 앞 샷 파일을 지워도 이 샷이 깨지지 않고,
+  /// FE2V 입력·미리보기 등 경로를 읽는 쪽이 전부 그대로 동작한다.
+  /// 씬의 첫 샷은 물려받을 앞이 없어 항상 꺼진 상태다.
+  bool linkStart;
+
   Shot({
     required this.id,
     this.title = '',
@@ -28,13 +37,18 @@ class Shot {
     this.startImagePath,
     this.endImagePath,
     this.videoPath,
+    this.linkStart = false,
   }) : refCharacterIds = refCharacterIds ?? [];
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'refCharacters': refCharacterIds,
-        'startScene': {'prompt': startPrompt, 'image': mediaName(startImagePath)},
+        'startScene': {
+          'prompt': startPrompt,
+          'image': mediaName(startImagePath),
+          'inherit': linkStart,
+        },
         'endScene': {
           'prompt': endPrompt,
           'image': mediaName(endImagePath),
@@ -62,6 +76,9 @@ class Shot {
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),
       videoPath: mediaPath(dir, video?['file']),
+      // 'inherit'가 없는 옛 데이터는 꺼진 걸로 읽는다 — 켠 걸로 보면 이미 만들어 둔
+      // 시작 프레임을 앞 샷 것으로 말없이 갈아치우게 된다.
+      linkStart: (start?['inherit'] as bool?) ?? false,
     );
   }
 }

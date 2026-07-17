@@ -408,7 +408,7 @@ class _ShotThumb extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             OutputPreview(
-              path: shot.startImagePath,
+              path: p.startPathOf(shot),
               version: p.verOf(p.busyKey(shot.id, GenMode.imageStart)),
               busy: p.isBusy(p.busyKey(shot.id, GenMode.imageStart)),
             ),

@@ -243,8 +243,25 @@ class StoryboardProvider extends ChangeNotifier {
           shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
         }
       }
+      _syncLinkedStartPrompts(scene);
     }
     await _store.save(_scenes);
+  }
+
+  /// 시작장면을 연동한 샷의 프롬프트를 앞 샷의 끝 프롬프트에 맞춘다.
+  /// 이미지는 앞 샷의 끝이 만들어질 때 복사되지만 프롬프트는 그냥 타이핑이라 그 계기가 없다 —
+  /// 저장(=글자 하나 칠 때마다)마다 맞춰야 연동이 실제로 살아 있다.
+  void _syncLinkedStartPrompts(StoryScene scene) {
+    final all = [for (final beat in scene.dialogues) ...beat.shots];
+    for (var i = 1; i < all.length; i++) {
+      final shot = all[i];
+      if (!shot.linkStart) continue;
+      final prompt = all[i - 1].endPrompt;
+      if (shot.startPrompt == prompt) continue;
+      shot.startPrompt = prompt;
+      // 읽기 전용 칸이라 사용자가 타이핑 중일 리 없다 — 덮어써도 안전하다.
+      _startPrompts[shot.id]?.text = prompt;
+    }
   }
 
   /// 텍스트 편집 중 호출: 라벨 즉시 갱신 + 저장.
@@ -376,11 +393,12 @@ class StoryboardProvider extends ChangeNotifier {
     beat.shots.add(shot);
     _selectedDialogueId = beat.id;
     _selectedShotId = id;
-    notifyListeners(); // 먼저 목록에 띄우고
-    // FE2V 컷 연속성: 앞 샷에 끝 프레임이 있으면 그걸 이 샷의 시작으로 물려받는다.
-    await _inheritStartFromPrev(shot);
+    // FE2V 컷 연속성: 컷은 이어지는 게 기본이라 앞 샷이 있으면 시작장면을 연동해서 시작한다.
+    // (씬의 첫 샷은 물려받을 앞이 없으니 꺼진 채로 둔다.) 연동은 앞 샷의 끝을 그대로
+    // 가리키는 것이라 여기서 옮겨올 파일이 없다.
+    shot.linkStart = prevShotOf(shot) != null;
+    await save(); // 프롬프트 연동이 여기서 걸리므로 알리기 전에 저장한다
     notifyListeners();
-    await save();
   }
 
   void removeShot(DialogueBeat beat, Shot shot) {
@@ -565,33 +583,52 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 선택 씬의 샷을 훑어 일괄 영상 생성 계획을 세운다 — **생성 전에 미리 보여주기 위한 것**이라
-  /// 부수효과가 없다. [skipExisting]이면 이미 영상이 있는 샷은 건너뛸 목록으로 뺀다.
-  ///
-  /// FE2V는 시작·끝 프레임이 둘 다 있어야 하고 프롬프트도 필요하다 — 하나라도 없으면
-  /// 그 샷은 [blocked]로 가고, 호출부는 경고로 띄운다.
+  /// 선택 씬의 일괄 영상 생성 계획.
   SceneVideoPlan sceneVideoPlan({required bool skipExisting}) {
     final scene = selectedScene;
     if (scene == null) return const SceneVideoPlan([], [], []);
+    return _planFor([scene], skipExisting: skipExisting, withSceneName: false);
+  }
+
+  /// **모든 씬**의 일괄 영상 생성 계획. 경고에 어느 씬인지 같이 나와야 찾아갈 수 있으므로
+  /// 샷 이름에 씬 이름을 붙인다.
+  SceneVideoPlan allVideoPlan({required bool skipExisting}) =>
+      _planFor(_scenes, skipExisting: skipExisting, withSceneName: true);
+
+  /// 샷을 훑어 일괄 영상 생성 계획을 세운다 — **생성 전에 미리 보여주기 위한 것**이라
+  /// 부수효과가 없다. [skipExisting]이면 이미 영상이 있는 샷은 건너뛸 목록으로 뺀다.
+  ///
+  /// FE2V는 시작·끝 프레임이 둘 다 있어야 하고 프롬프트도 필요하다 — 하나라도 없으면
+  /// 그 샷은 blocked로 가고, 호출부는 경고로 띄운다.
+  SceneVideoPlan _planFor(
+    List<StoryScene> scenes, {
+    required bool skipExisting,
+    required bool withSceneName,
+  }) {
     final ready = <Shot>[];
     final blocked = <BlockedShot>[];
     final skipped = <Shot>[];
-    for (final beat in scene.dialogues) {
-      for (final shot in beat.shots) {
-        if (skipExisting && shot.videoPath != null) {
-          skipped.add(shot);
-          continue;
-        }
-        final missing = <String>[];
-        if (!_hasFile(shot.startImagePath)) missing.add('시작장면');
-        if (!_hasFile(shot.endImagePath)) missing.add('끝장면');
-        final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
-            shot.videoPrompt;
-        if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
-        if (missing.isEmpty) {
-          ready.add(shot);
-        } else {
-          blocked.add(BlockedShot(shot, shotLabel(shot), missing));
+    for (final scene in scenes) {
+      for (final beat in scene.dialogues) {
+        for (final shot in beat.shots) {
+          if (skipExisting && shot.videoPath != null) {
+            skipped.add(shot);
+            continue;
+          }
+          final missing = <String>[];
+          if (!_hasFile(startPathOf(shot))) missing.add('시작장면');
+          if (!_hasFile(shot.endImagePath)) missing.add('끝장면');
+          final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
+              shot.videoPrompt;
+          if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
+          if (missing.isEmpty) {
+            ready.add(shot);
+          } else {
+            blocked.add(
+              BlockedShot(shot, shotLabel(shot, withScene: withSceneName),
+                  missing),
+            );
+          }
         }
       }
     }
@@ -602,9 +639,20 @@ class StoryboardProvider extends ChangeNotifier {
       path != null && path.isNotEmpty && File(path).existsSync();
 
   /// 사람이 알아볼 샷 이름 — 제목이 없으면 씬 안에서 몇 번째 샷인지로 부른다.
-  String shotLabel(Shot shot) {
-    if (shot.title.trim().isNotEmpty) return shot.title.trim();
+  /// [withScene]이면 'SCENE 2 · 샷 3'처럼 씬까지 붙인다(여러 씬을 한 목록에 늘어놓을 때).
+  String shotLabel(Shot shot, {bool withScene = false}) {
     final scene = sceneOf(shot);
+    final own = shot.title.trim().isNotEmpty
+        ? shot.title.trim()
+        : _shotOrdinal(scene, shot);
+    if (!withScene || scene == null) return own;
+    final i = _scenes.indexOf(scene);
+    final name = scene.title.trim();
+    final sceneLabel = 'SCENE ${i + 1}${name.isEmpty ? '' : ' · $name'}';
+    return '$sceneLabel · $own';
+  }
+
+  String _shotOrdinal(StoryScene? scene, Shot shot) {
     if (scene == null) return '샷';
     var n = 0;
     for (final beat in scene.dialogues) {
@@ -616,14 +664,20 @@ class StoryboardProvider extends ChangeNotifier {
     return '샷';
   }
 
-  /// 선택 씬의 영상을 한 번에 만든다. [skipExisting]이면 이미 영상이 있는 샷은 넘긴다
-  /// (기본은 덮어쓰기 — 다시 뽑는 게 보통이라).
+  /// 선택 씬의 영상을 한 번에 만든다.
+  Future<void> genSceneVideos({required bool skipExisting}) =>
+      _runBatch(sceneVideoPlan(skipExisting: skipExisting));
+
+  /// 모든 씬의 영상을 한 번에 만든다.
+  Future<void> genAllVideos({required bool skipExisting}) =>
+      _runBatch(allVideoPlan(skipExisting: skipExisting));
+
+  /// 계획의 ready 샷들을 순서대로 생성한다.
   ///
-  /// 준비가 안 된 샷은 [sceneVideoPlan]이 걸러내므로 여기서는 생성 가능한 것만 돈다.
+  /// 준비가 안 된 샷은 계획 단계에서 이미 걸러졌으므로 여기서는 생성 가능한 것만 돈다.
   /// **한 번에 하나씩** 돌린다 — 서버 GPU가 하나뿐이라 동시에 던져봐야 큐에서 밀린다.
-  Future<void> genSceneVideos({required bool skipExisting}) async {
+  Future<void> _runBatch(SceneVideoPlan plan) async {
     if (_batchRunning) return;
-    final plan = sceneVideoPlan(skipExisting: skipExisting);
     if (plan.ready.isEmpty) {
       messenger?.call('생성할 샷이 없습니다');
       return;
@@ -637,7 +691,8 @@ class StoryboardProvider extends ChangeNotifier {
       for (final shot in plan.ready) {
         if (_batchCancel) break;
         messenger?.call(
-          '[${_batchDone + 1}/$_batchTotal] ${shotLabel(shot)} 영상 생성 중…',
+          '[${_batchDone + 1}/$_batchTotal] '
+          '${shotLabel(shot, withScene: true)} 영상 생성 중…',
         );
         await gen(shot, GenMode.videoLow);
         _batchDone++;
@@ -699,7 +754,7 @@ class StoryboardProvider extends ChangeNotifier {
         case GenMode.videoLow:
           shot.videoPath = f.path;
       }
-      if (mode == GenMode.imageEnd) await _chainEndToNextStart(shot);
+      if (mode == GenMode.imageEnd) _refreshLinkedNext(shot);
       _ver[key] = (_ver[key] ?? 0) + 1;
       await save();
     } catch (e, st) {
@@ -736,7 +791,7 @@ class StoryboardProvider extends ChangeNotifier {
         shot.startImagePath = f.path;
       } else {
         shot.endImagePath = f.path;
-        await _chainEndToNextStart(shot);
+        _refreshLinkedNext(shot);
       }
       _ver[key] = (_ver[key] ?? 0) + 1;
       await save();
@@ -1024,7 +1079,7 @@ class StoryboardProvider extends ChangeNotifier {
   Future<({List<int> bytes, String mimeType})?> _startFrame(
     Shot shot,
   ) async {
-    final path = shot.startImagePath;
+    final path = startPathOf(shot); // 연동 중이면 앞 샷의 끝장면
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;
@@ -1136,44 +1191,73 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// [srcPath]의 이미지를 [target]의 **시작 프레임**으로 복사해 같은 프레임으로 맞춘다.
   /// 성공하면 true. (FE2V 컷 연속성 양방향의 공통 부분.)
-  Future<bool> _copyAsStartFrame(Shot target, String srcPath) async {
+  /// [shot]이 속한 씬의 샷 전체를 순서대로(대사 경계 무시). [sceneShots]와 달리
+  /// **선택된 씬이 아니라 그 샷의 씬**을 본다 — 일괄 생성은 안 열어 본 씬도 훑는다.
+  List<Shot> _shotsAround(Shot shot) {
+    final scene = sceneOf(shot);
+    if (scene == null) return const [];
+    return [for (final beat in scene.dialogues) ...beat.shots];
+  }
+
+  /// 씬 나열 기준 [shot]의 바로 앞 샷 — 없으면(첫 샷) null. 대사 경계는 건너뛴다.
+  /// 시작장면 연동이 무엇을 물려받는지 UI가 보여줘야 해서 공개돼 있다.
+  Shot? prevShotOf(Shot shot) {
+    final all = _shotsAround(shot);
+    final i = all.indexOf(shot);
+    return i <= 0 ? null : all[i - 1];
+  }
+
+  /// 이 샷의 시작장면 이미지 경로 — **연동 중이면 앞 샷의 끝장면 그 자체**다.
+  /// 복사본을 두지 않으므로 앞 샷의 끝이 바뀌면 즉시 따라오고, 지워지면 같이 없어진다
+  /// (그게 사실이다 — 이어받을 게 없어진 것이니 '준비 안 됨'으로 잡히는 게 맞다).
+  ///
+  /// 시작장면을 읽는 쪽은 [Shot.startImagePath] 대신 **전부 이걸** 써야 한다.
+  String? startPathOf(Shot shot) => shot.linkStart
+      ? prevShotOf(shot)?.endImagePath
+      : shot.startImagePath;
+
+  /// 시작장면 연동 켜기/끄기.
+  ///
+  /// 켤 때: 플래그만 세우면 된다 — 이미지는 [startPathOf]가 앞 샷에서 바로 읽는다.
+  /// 직접 만들어 둔 시작 이미지는 지우지 않고 남겨둔다(끄면 그대로 돌아온다).
+  ///
+  /// 끌 때: 직접 만들어 둔 게 없으면 지금 보고 있던 앞 샷의 끝을 자기 파일로 굳혀준다 —
+  /// 끄자마자 프레임이 사라지면 당황스럽다.
+  Future<void> setLinkStart(Shot shot, bool on) async {
+    if (on && prevShotOf(shot) == null) return; // 첫 샷은 물려받을 앞이 없다
+    if (!on && shot.linkStart && shot.startImagePath == null) {
+      await _materializeStart(shot);
+    }
+    shot.linkStart = on;
+    _ver[busyKey(shot.id, GenMode.imageStart)] =
+        (_ver[busyKey(shot.id, GenMode.imageStart)] ?? 0) + 1;
+    await save(); // 프롬프트 연동이 여기서 걸리므로 알리기 전에 저장한다
+    notifyListeners();
+  }
+
+  /// 연동을 끊을 때: 앞 샷의 끝장면을 이 샷의 시작 파일로 복사해 남긴다.
+  Future<void> _materializeStart(Shot shot) async {
+    final srcPath = prevShotOf(shot)?.endImagePath;
+    if (srcPath == null) return;
     final src = File(srcPath);
-    if (!await src.exists()) return false;
-    final ext = srcPath.split('.').last;
-    final dst = File('$projectDirPath/${target.id}_start.$ext');
+    if (!await src.exists()) return;
+    final dst = File('$projectDirPath/${shot.id}_start.${srcPath.split('.').last}');
     await src.copy(dst.path);
     await FileImage(dst).evict();
-    target.startImagePath = dst.path;
-    final k = busyKey(target.id, GenMode.imageStart);
+    shot.startImagePath = dst.path;
+  }
+
+  /// FE2V 컷 연속성: [shot]의 끝 프레임이 바뀌면 **다음 샷의 시작**도 바뀐 셈이다
+  /// (연동 중이라면 그 시작이 곧 이 끝 파일이므로 — [startPathOf] 참고).
+  /// 경로가 그대로라 미리보기 캐시가 옛 그림을 붙들고 있으니 버전만 올려 깨워준다.
+  void _refreshLinkedNext(Shot shot) {
+    final all = _shotsAround(shot);
+    final i = all.indexOf(shot);
+    if (i < 0 || i + 1 >= all.length) return; // 마지막 샷 → 이어질 대상 없음
+    final next = all[i + 1];
+    if (!next.linkStart) return;
+    final k = busyKey(next.id, GenMode.imageStart);
     _ver[k] = (_ver[k] ?? 0) + 1;
-    return true;
-  }
-
-  /// FE2V 컷 연속성 (앞 → 뒤): [shot]의 끝 프레임을 만들었을 때 **다음 샷의 시작**으로 밀어준다.
-  /// 씬 전체 샷 나열(sceneShots) 기준이라 대사 경계도 건너뛴다. 다음 샷이 없으면 아무것도 안 한다.
-  Future<void> _chainEndToNextStart(Shot shot) async {
-    final endPath = shot.endImagePath;
-    if (endPath == null) return;
-    final all = sceneShots;
-    final i = all.indexOf(shot);
-    if (i < 0 || i + 1 >= all.length) return; // 마지막 샷 → 이어붙일 대상 없음
-    if (await _copyAsStartFrame(all[i + 1], endPath)) {
-      messenger?.call('다음 샷 시작 프레임으로 이어붙였습니다');
-    }
-  }
-
-  /// FE2V 컷 연속성 (뒤 → 앞): **새로 추가된** [shot]의 시작을 앞 샷의 끝 프레임에서 가져온다.
-  /// 위 [_chainEndToNextStart]는 끝을 만드는 시점에만 도니, 이미 끝 프레임이 있는 샷 뒤에
-  /// 새 샷을 추가하면 시작이 비어버린다 — 그 구멍을 메운다. 첫 샷이면 물려받을 앞이 없다.
-  Future<void> _inheritStartFromPrev(Shot shot) async {
-    final all = sceneShots;
-    final i = all.indexOf(shot);
-    if (i <= 0) return; // 첫 샷
-    final prevEnd = all[i - 1].endImagePath;
-    if (prevEnd == null) return;
-    if (await _copyAsStartFrame(shot, prevEnd)) {
-      messenger?.call('앞 샷의 끝 프레임을 시작으로 가져왔습니다');
-    }
   }
 
   /// LoRA URL 정규화: civitai 페이지 URL → api/download 링크로 변환 + 토큰 자동 부착.
@@ -1196,7 +1280,7 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   Future<Uint8List?> _startFrameBytes(Shot shot) async {
-    final path = shot.startImagePath;
+    final path = startPathOf(shot); // 연동 중이면 앞 샷의 끝장면
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;

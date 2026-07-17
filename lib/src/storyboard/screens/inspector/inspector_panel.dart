@@ -10,6 +10,7 @@ import '../canvas/bgm_section.dart';
 import '../canvas/canvas_view.dart' show fmtSeconds;
 import '../common/output_preview.dart';
 import '../common/audio_box.dart';
+import '../common/video_batch.dart';
 import '../common/video_trim_dialog.dart';
 import '../ui.dart';
 
@@ -518,7 +519,7 @@ class _SceneTab extends StatelessWidget {
             hint: '샷의 첫 프레임(시작 장면)을 묘사',
             genLabel: '시작장면 생성',
             genIcon: Icons.first_page,
-            path: shot.startImagePath,
+            path: p.startPathOf(shot),
             busyKey: p.busyKey(shot.id, GenMode.imageStart),
             onGen: () => p.gen(shot, GenMode.imageStart),
             onLoad: () => p.loadFrame(shot, GenMode.imageStart),
@@ -1050,269 +1051,6 @@ class _VideoTab extends StatelessWidget {
   }
 }
 
-/// 씬 탭의 영상 일괄 생성 칸 — 이 씬 모든 샷의 영상을 한 번에 만든다.
-///
-/// 생성은 GPU 시간(=돈)이 드는 일이라, 누르기 전에 **무엇이 돌고 무엇이 빠지는지**를
-/// 먼저 보여준다: 재료(시작·끝 프레임·프롬프트)가 모자란 샷은 경고로 드러내고,
-/// 실제로 몇 개를 만들지는 버튼에 적어둔 뒤 확인까지 받는다.
-class _SceneVideoBatch extends StatefulWidget {
-  const _SceneVideoBatch();
-
-  @override
-  State<_SceneVideoBatch> createState() => _SceneVideoBatchState();
-}
-
-class _SceneVideoBatchState extends State<_SceneVideoBatch> {
-  /// 기본은 건너뛰기 — 이미 만들어 둔 영상(=이미 쓴 GPU 시간)을 실수로 날리지 않는 쪽이 안전하다.
-  bool _skipExisting = true;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = StoryboardScope.of(context);
-    final plan = p.sceneVideoPlan(skipExisting: _skipExisting);
-    final backend = p.settings.videoBackend;
-    final blockReason = p.videoBlockReasonOf(backend);
-    final running = p.batchRunning;
-    final n = plan.ready.length;
-
-    return _GroupCard(
-      icon: Icons.auto_awesome_motion_outlined,
-      title: '영상 일괄 생성',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '이 씬의 모든 샷 영상을 한 번에 만듭니다 (${backend.label}).',
-            style: const TextStyle(fontSize: 11, color: Colors.white38),
-          ),
-          const SizedBox(height: 10),
-          _BatchCounts(plan: plan),
-          const SizedBox(height: 6),
-          // 기본 OFF(덮어쓰기)라 켰을 때 뭐가 달라지는지를 부제에 적는다.
-          SwitchListTile(
-            value: _skipExisting,
-            onChanged: running
-                ? null
-                : (v) => setState(() => _skipExisting = v),
-            title: const Text(
-              '이미 생성된 영상 건너뛰기',
-              style: TextStyle(fontSize: 12.5),
-            ),
-            subtitle: Text(
-              _skipExisting
-                  ? '영상이 있는 샷은 그대로 둡니다'
-                  : '영상이 있는 샷도 덮어서 새로 만듭니다',
-              style: const TextStyle(fontSize: 11, color: Colors.white38),
-            ),
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            controlAffinity: ListTileControlAffinity.leading,
-          ),
-          if (plan.blocked.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            _BatchWarning(blocked: plan.blocked),
-          ],
-          const SizedBox(height: 12),
-          if (running) ...[
-            LinearProgressIndicator(
-              value: p.batchTotal == 0 ? null : p.batchDone / p.batchTotal,
-              minHeight: 6,
-              backgroundColor: previewBg,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
-                  '${p.batchDone} / ${p.batchTotal} 생성됨',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: p.cancelBatch,
-                  style: TextButton.styleFrom(
-                      foregroundColor: Colors.orangeAccent),
-                  icon: const Icon(Icons.stop_circle_outlined, size: 16),
-                  label: const Text('중지'),
-                ),
-              ],
-            ),
-            const Text(
-              '지금 만드는 샷까지 끝내고 멈춥니다.',
-              style: TextStyle(fontSize: 11, color: Colors.white30),
-            ),
-          ] else
-            FilledButton.icon(
-              onPressed:
-                  (blockReason != null || n == 0) ? null : () => _start(p, plan),
-              icon: const Icon(Icons.play_arrow, size: 18),
-              label: Text(n == 0 ? '생성할 샷 없음' : '영상 $n개 생성'),
-            ),
-          if (blockReason != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              blockReason,
-              style: const TextStyle(fontSize: 11, color: Colors.orangeAccent),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  /// 돈이 드는 작업이라 시작 전에 한 번 더 확인받는다 — 특히 덮어쓰기는 되돌릴 수 없다.
-  Future<void> _start(StoryboardProvider p, SceneVideoPlan plan) async {
-    final n = plan.ready.length;
-    final overwrite = _skipExisting
-        ? 0
-        : plan.ready.where((s) => s.videoPath != null).length;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('영상 $n개 생성'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('샷 $n개의 영상을 순서대로 만듭니다. 몇 분씩 걸릴 수 있습니다.'),
-            if (overwrite > 0) ...[
-              const SizedBox(height: 10),
-              Text(
-                '이 중 $overwrite개는 이미 영상이 있습니다 — 덮어쓰며 되돌릴 수 없습니다.\n'
-                '남기려면 "이미 생성된 영상 건너뛰기"를 켜세요.',
-                style: const TextStyle(color: Colors.orangeAccent),
-              ),
-            ],
-            if (plan.blocked.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                '준비가 안 된 샷 ${plan.blocked.length}개는 건너뜁니다.',
-                style: const TextStyle(color: Colors.white54),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('생성'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await p.genSceneVideos(skipExisting: _skipExisting);
-    }
-  }
-}
-
-/// 계획 요약 — 생성 / 건너뜀 / 준비 안 됨 개수.
-class _BatchCounts extends StatelessWidget {
-  const _BatchCounts({required this.plan});
-  final SceneVideoPlan plan;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: previewBg,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          _Count('생성', plan.ready.length, accent2),
-          if (plan.skipped.isNotEmpty)
-            _Count('건너뜀', plan.skipped.length, Colors.white38),
-          if (plan.blocked.isNotEmpty)
-            _Count('준비 안 됨', plan.blocked.length, Colors.orangeAccent),
-        ],
-      ),
-    );
-  }
-}
-
-class _Count extends StatelessWidget {
-  const _Count(this.label, this.n, this.color);
-  final String label;
-  final int n;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(right: 16),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$n',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: color,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Colors.white38),
-            ),
-          ],
-        ),
-      );
-}
-
-/// 재료가 빠져 못 도는 샷들을 이유까지 찍어준다 — 뭘 채워야 할지 바로 알 수 있게.
-class _BatchWarning extends StatelessWidget {
-  const _BatchWarning({required this.blocked});
-  final List<BlockedShot> blocked;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.orangeAccent.withValues(alpha: .08),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.orangeAccent.withValues(alpha: .35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.warning_amber_rounded,
-                  size: 15, color: Colors.orangeAccent),
-              const SizedBox(width: 6),
-              Text(
-                '샷 ${blocked.length}개는 재료가 빠져 건너뜁니다',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.orangeAccent,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          for (final b in blocked)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                '• ${b.label} — ${b.missing.join(', ')} 없음',
-                style: const TextStyle(fontSize: 11, color: Colors.white60),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 /// 씬 탭 — 선택 씬의 것들을 한곳에: 제목 · 공통 프롬프트 · 영상 일괄 생성 · 배경음.
 class _SceneSettingsTab extends StatelessWidget {
   const _SceneSettingsTab();
@@ -1366,7 +1104,11 @@ class _SceneSettingsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const _SceneVideoBatch(),
+          const _GroupCard(
+            icon: Icons.auto_awesome_motion_outlined,
+            title: '영상 일괄 생성',
+            child: VideoBatch(allScenes: false),
+          ),
           const SizedBox(height: 16),
           const BgmSection(),
           const SizedBox(height: 24),
@@ -1526,6 +1268,9 @@ class _FrameSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final busy = p.isBusy(busyKey);
+    // 연동은 시작장면에만 있다 — 끝장면은 물려받을 대상이 아니라 만드는 것이다.
+    final canLink = mode == GenMode.imageStart && p.prevShotOf(shot) != null;
+    final linked = mode == GenMode.imageStart && shot.linkStart;
     return _GroupCard(
       icon: genIcon,
       title: title,
@@ -1533,37 +1278,115 @@ class _FrameSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (canLink) ...[
+            _LinkStartToggle(shot: shot),
+            const SizedBox(height: 10),
+          ],
           // 결과(프레임)가 위, 그걸 만드는 수단(프롬프트·생성/불러오기)이 아래.
           _OutputBlock(
             title: title,
             path: path,
             busyKey: busyKey,
-            deleteTarget: (shot: shot, mode: mode),
+            // 연동 중인 시작장면은 앞 샷의 끝장면 파일 그 자체다 — 여기서 지우면 앞 샷이 날아간다.
+            // 지우려면 연동을 먼저 끄거나, 앞 샷의 끝장면에서 지워야 한다.
+            deleteTarget: linked ? null : (shot: shot, mode: mode),
           ),
           const SizedBox(height: 14),
           _SectionLabel('프롬프트'),
           const SizedBox(height: 6),
-          _PromptField(controller: controller, hint: hint),
+          _PromptField(
+            controller: controller,
+            hint: linked ? '앞 샷의 끝장면 프롬프트가 들어옵니다' : hint,
+            readOnly: linked,
+          ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _GenButton(
-                  label: genLabel,
-                  icon: genIcon,
-                  busyKey: busyKey,
-                  onGen: onGen,
-                  enabled: p.imageReady,
-                  disabledHint: p.imageBlockReason,
+          // 연동 중이면 만들 게 없다 — 앞 샷의 끝장면이 곧 이 샷의 시작이다.
+          if (!linked)
+            Row(
+              children: [
+                Expanded(
+                  child: _GenButton(
+                    label: genLabel,
+                    icon: genIcon,
+                    busyKey: busyKey,
+                    onGen: onGen,
+                    enabled: p.imageReady,
+                    disabledHint: p.imageBlockReason,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: busy ? null : onLoad,
-                icon: const Icon(Icons.upload_file_outlined, size: 18),
-                label: const Text('불러오기'),
-              ),
-            ],
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: busy ? null : onLoad,
+                  icon: const Icon(Icons.upload_file_outlined, size: 18),
+                  label: const Text('불러오기'),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 시작장면 연동 토글 — 켜면 앞 샷의 끝장면(이미지·프롬프트)이 따라 들어오고 편집이 잠긴다.
+class _LinkStartToggle extends StatelessWidget {
+  const _LinkStartToggle({required this.shot});
+
+  final Shot shot;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final prev = p.prevShotOf(shot);
+    if (prev == null) return const SizedBox.shrink();
+    final on = shot.linkStart;
+    final prevName = p.shotLabel(prev);
+    final prevHasEnd = prev.endImagePath != null;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 2, 6, 2),
+      decoration: BoxDecoration(
+        color: on ? const Color(0x145BD1C0) : const Color(0x08FFFFFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: on ? const Color(0x445BD1C0) : const Color(0x14FFFFFF),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            on ? Icons.link : Icons.link_off,
+            size: 16,
+            color: on ? accent2 : Colors.white38,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '앞 샷 끝장면 이어받기',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  on
+                      ? (prevHasEnd
+                          ? '$prevName의 끝장면 · 바뀌면 같이 바뀝니다'
+                          : '$prevName에 끝장면이 아직 없습니다 — 만들면 들어옵니다')
+                      : '이 샷의 시작장면을 직접 만듭니다',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: on && !prevHasEnd
+                        ? Colors.orangeAccent
+                        : Colors.white38,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: on,
+            onChanged: (v) => p.setLinkStart(shot, v),
           ),
         ],
       ),
@@ -1673,19 +1496,31 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _PromptField extends StatelessWidget {
-  const _PromptField({required this.controller, required this.hint});
+  const _PromptField({
+    required this.controller,
+    required this.hint,
+    this.readOnly = false,
+  });
 
   final TextEditingController controller;
   final String hint;
+
+  /// 연동으로 값이 따라 들어오는 칸 — 보여주기만 하고 고칠 수 없다.
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     return TextField(
       controller: controller,
+      readOnly: readOnly,
       minLines: 4,
       maxLines: 10,
-      style: const TextStyle(fontSize: 14, height: 1.4),
+      style: TextStyle(
+        fontSize: 14,
+        height: 1.4,
+        color: readOnly ? Colors.white54 : null,
+      ),
       decoration: InputDecoration(
         hintText: hint,
         isDense: true,
@@ -1693,7 +1528,7 @@ class _PromptField extends StatelessWidget {
         fillColor: previewBg,
         border: const OutlineInputBorder(),
       ),
-      onChanged: (_) => p.save(),
+      onChanged: readOnly ? null : (_) => p.save(),
     );
   }
 }
