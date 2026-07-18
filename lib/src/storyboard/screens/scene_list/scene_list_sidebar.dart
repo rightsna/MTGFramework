@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../providers/storyboard_provider.dart';
-import '../common/video_batch.dart';
 import '../ui.dart';
 
 /// 좌측 씬 목록 사이드: 씬(대사 그룹) 추가/선택/삭제/제목 편집.
@@ -50,8 +49,8 @@ class SceneListSidebar extends StatelessWidget {
                       final scene = scenes[i];
                       final sel = scene.id == p.selectedSceneId;
                       final title = scene.title.trim().isEmpty
-                          ? 'SCENE ${i + 1}'
-                          : 'SCENE ${i + 1} · ${scene.title.trim()}';
+                          ? '(제목 없음)'
+                          : scene.title.trim();
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 3),
                         color: sel ? const Color(0x222B7BFF) : null,
@@ -83,26 +82,38 @@ class SceneListSidebar extends StatelessWidget {
                   ),
           ),
           // (씬 제목 편집은 우측 '씬' 탭으로 옮겼다.)
-          // 목록 전체를 대상으로 하는 것들 — 범위가 '모든 씬'이라 씬 탭이 아니라 여기 둔다.
-          // (씬 탭은 '선택된 씬'의 탭이다.)
+          // 선택 씬 조작 — 복제 | 위로 | 아래로. 아이콘만.
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: OutlinedButton.icon(
-              onPressed: scenes.isEmpty
-                  ? null
-                  : () => showAllScenesVideoDialog(context),
-              icon: p.batchRunning
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_awesome_motion_outlined, size: 17),
-              label: Text(
-                p.batchRunning
-                    ? '생성 중 ${p.batchDone}/${p.batchTotal}'
-                    : '모든 씬 영상 생성',
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _SceneOpButton(
+                    // 선택된 씬을 그대로 최하단에 복제.
+                    icon: Icons.copy_all_outlined,
+                    tooltip: '선택 씬 복제',
+                    onPressed: p.selectedScene == null
+                        ? null
+                        : () => p.duplicateScene(),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _SceneOpButton(
+                    icon: Icons.keyboard_arrow_up,
+                    tooltip: '위로',
+                    onPressed: p.canMoveSceneUp ? () => p.moveScene(-1) : null,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _SceneOpButton(
+                    icon: Icons.keyboard_arrow_down,
+                    tooltip: '아래로',
+                    onPressed: p.canMoveSceneDown ? () => p.moveScene(1) : null,
+                  ),
+                ),
+              ],
             ),
           ),
           // 씬 추가
@@ -118,4 +129,27 @@ class SceneListSidebar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 씬 목록 하단의 아이콘 전용 조작 버튼(복제·위·아래) — 생김새를 한 군데로 모은다.
+class _SceneOpButton extends StatelessWidget {
+  const _SceneOpButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(0, 36),
+        ),
+        child: Tooltip(message: tooltip, child: Icon(icon, size: 18)),
+      );
 }

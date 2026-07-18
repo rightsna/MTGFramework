@@ -3,20 +3,16 @@ import 'package:flutter/material.dart';
 import '../../providers/storyboard_provider.dart';
 import '../ui.dart';
 
-/// 영상 일괄 생성 몸통 — 씬 탭의 칸(이 씬)과 씬 목록의 다이얼로그(모든 씬)가 함께 쓴다.
-/// 범위만 [allScenes]로 다르고 보여주는 것·판단은 같다.
+/// 영상 일괄 생성 몸통 — 씬 탭의 칸(선택 씬의 모든 샷 영상을 한 번에).
 ///
 /// 생성은 GPU 시간(=돈)이 드는 일이라, 누르기 전에 **무엇이 돌고 무엇이 빠지는지**를
 /// 먼저 보여준다: 재료(시작·끝 프레임·프롬프트)가 모자란 샷은 경고로 드러내고,
 /// 실제로 몇 개를 만들지는 버튼에 적어둔 뒤 확인까지 받는다.
 ///
-/// 진행 상태는 [StoryboardProvider]가 들고 있어서(한 번에 하나만 돈다) 다이얼로그를
-/// 닫아도 생성은 계속되고, 다시 열면 진행 중인 게 그대로 보인다.
+/// 진행 상태는 [StoryboardProvider]가 들고 있어서(한 번에 하나만 돈다) 탭을 벗어나도
+/// 생성은 계속되고, 다시 오면 진행 중인 게 그대로 보인다.
 class VideoBatch extends StatefulWidget {
-  const VideoBatch({super.key, required this.allScenes});
-
-  /// true면 프로젝트의 모든 씬, false면 선택된 씬 하나.
-  final bool allScenes;
+  const VideoBatch({super.key});
 
   @override
   State<VideoBatch> createState() => _VideoBatchState();
@@ -29,9 +25,7 @@ class _VideoBatchState extends State<VideoBatch> {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final plan = widget.allScenes
-        ? p.allVideoPlan(skipExisting: _skipExisting)
-        : p.sceneVideoPlan(skipExisting: _skipExisting);
+    final plan = p.sceneVideoPlan(skipExisting: _skipExisting);
     final backend = p.settings.videoBackend;
     final blockReason = p.videoBlockReasonOf(backend);
     final running = p.batchRunning;
@@ -42,9 +36,7 @@ class _VideoBatchState extends State<VideoBatch> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          widget.allScenes
-              ? '모든 씬의 샷 영상을 한 번에 만듭니다 (${backend.label}).'
-              : '이 씬의 모든 샷 영상을 한 번에 만듭니다 (${backend.label}).',
+          '이 씬의 모든 샷 영상을 한 번에 만듭니다 (${backend.label}).',
           style: const TextStyle(fontSize: 11, color: Colors.white38),
         ),
         const SizedBox(height: 10),
@@ -133,10 +125,7 @@ class _VideoBatchState extends State<VideoBatch> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              '${widget.allScenes ? '모든 씬' : '이 씬'}에서 샷 $n개의 영상을 '
-              '순서대로 만듭니다. 몇 분씩 걸릴 수 있습니다.',
-            ),
+            Text('이 씬에서 샷 $n개의 영상을 순서대로 만듭니다. 몇 분씩 걸릴 수 있습니다.'),
             if (overwrite > 0) ...[
               const SizedBox(height: 10),
               Text(
@@ -167,43 +156,8 @@ class _VideoBatchState extends State<VideoBatch> {
       ),
     );
     if (ok != true) return;
-    if (widget.allScenes) {
-      await p.genAllVideos(skipExisting: _skipExisting);
-    } else {
-      await p.genSceneVideos(skipExisting: _skipExisting);
-    }
+    await p.genSceneVideos(skipExisting: _skipExisting);
   }
-}
-
-/// 씬 목록에서 여는 '모든 씬 영상 생성' 다이얼로그.
-/// 닫아도 생성은 계속 돈다(진행 상태는 프로바이더에 있다).
-Future<void> showAllScenesVideoDialog(BuildContext context) {
-  // ⚠️ 다이얼로그는 Navigator 위에 떠서 StoryboardScope **바깥**에 있다 — 그대로 두면
-  //    안에서 StoryboardScope.of()가 못 찾는다. 스코프 안인 호출부에서 프로바이더를 잡아
-  //    다시 씌워준다. (InheritedNotifier라 이것만으로 진행 상태 갱신도 따라온다.)
-  final p = StoryboardScope.read(context);
-  return showDialog<void>(
-    context: context,
-    builder: (ctx) => StoryboardScope(
-      notifier: p,
-      child: AlertDialog(
-        title: const Text('모든 씬 영상 생성'),
-        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-        content: SizedBox(
-          width: 420,
-          child: const SingleChildScrollView(
-            child: VideoBatch(allScenes: true),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 /// 계획 요약 — 생성 / 건너뜀 / 준비 안 됨 개수.

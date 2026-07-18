@@ -112,42 +112,17 @@ void main() {
     expect(plan.blocked, isEmpty);
   });
 
-  test('모든 씬 계획은 전 씬을 합치고, 선택 씬 계획은 그 씬만 본다', () async {
+  test('계획은 선택된 씬만 본다(다른 씬은 안 섞인다)', () async {
     await makeShot(p.dialogues.single); // SCENE 1: 샷 1개
 
-    p.addScene(); // SCENE 2로 이동
+    p.addScene(); // SCENE 2로 이동 → 이제 이게 선택 씬
     p.addDialogue();
     await makeShot(p.dialogues.single);
     await makeShot(p.dialogues.single, end: false); // 준비 안 된 샷
 
     expect(p.scenes.length, 2);
-    // 선택 씬(=SCENE 2)만.
-    final one = p.sceneVideoPlan(skipExisting: false);
-    expect(one.ready.length, 1);
-    expect(one.blocked.length, 1);
-    // 전 씬 합계.
-    final all = p.allVideoPlan(skipExisting: false);
-    expect(all.ready.length, 2);
-    expect(all.blocked.length, 1);
-  });
-
-  test('전 씬 계획의 경고 라벨에는 어느 씬인지가 들어간다', () async {
-    await makeShot(p.dialogues.single);
-
-    p.addScene();
-    // 씬 제목의 정본은 컨트롤러다(save()가 모델 필드를 컨트롤러 값으로 덮는다) —
-    // 모델에 직접 넣으면 다음 save() 때 날아간다. 사용자가 타이핑하는 경로 그대로 쓴다.
-    p.sceneTitleCtrl(p.selectedSceneId!).text = '편집실';
-    p.addDialogue();
-    await makeShot(p.dialogues.single, start: false);
-
-    final all = p.allVideoPlan(skipExisting: false);
-    // 여러 씬을 한 목록에 늘어놓으므로 '샷 1'만으로는 어느 씬인지 못 찾는다.
-    expect(all.blocked.single.label, contains('SCENE 2'));
-    expect(all.blocked.single.label, contains('편집실'));
-
-    // 반면 선택 씬 계획은 그 씬 안이라 씬 이름이 군더더기다.
-    final one = p.sceneVideoPlan(skipExisting: false);
-    expect(one.blocked.single.label, isNot(contains('SCENE')));
+    final plan = p.sceneVideoPlan(skipExisting: false);
+    expect(plan.ready.length, 1, reason: 'SCENE 2의 준비된 샷만');
+    expect(plan.blocked.length, 1);
   });
 }

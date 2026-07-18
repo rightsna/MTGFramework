@@ -1109,7 +1109,7 @@ class _SceneSettingsTab extends StatelessWidget {
           const _GroupCard(
             icon: Icons.auto_awesome_motion_outlined,
             title: '영상 일괄 생성',
-            child: VideoBatch(allScenes: false),
+            child: VideoBatch(),
           ),
           const SizedBox(height: 16),
           const BgmSection(),

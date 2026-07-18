@@ -27,6 +27,7 @@ export 'src/storyboard/models/dialogue_beat.dart';
 export 'src/storyboard/models/shot.dart';
 export 'src/storyboard/models/story_scene.dart';
 export 'src/storyboard/providers/storyboard_provider.dart';
+export 'src/storyboard/services/api_service.dart' show GenMode;
 export 'src/storyboard/screens/settings/settings_dialog.dart';
 export 'src/storyboard/screens/storyboard_screen.dart';
 export 'src/storyboard/screens/ui.dart';

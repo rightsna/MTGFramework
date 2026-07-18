@@ -307,6 +307,101 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
+  /// 선택된 씬을 **통째로 복제해 목록 맨 뒤에 추가**하고 그 복제본을 선택한다.
+  /// 프롬프트·대사·샷은 물론 미디어(프레임·영상·음성·배경음)까지 새 파일로 복사해
+  /// 원본과 완전히 분리한다 — 복제본을 지우거나 다시 뽑아도 원본은 그대로다.
+  Future<void> duplicateScene() async {
+    final src = selectedScene;
+    if (src == null) return;
+    // 왕복(toJson→fromJson)으로 독립 객체 트리를 얻는다. 이 시점 미디어 경로는
+    // 아직 원본 파일을 가리키므로, 아래에서 새 id 이름으로 복사해 갈아끼운다.
+    final copy = StoryScene.fromJson(src.toJson(), projectDirPath);
+    copy.id = _newId('scene');
+    copy.title = _dupTitle(src.title);
+    copy.bgmPath = await _copyMedia(copy.bgmPath, '${copy.id}_bgm');
+
+    for (final beat in copy.dialogues) {
+      final newBeatId = _newId('shot');
+      final voice = beat.dialogue?.voicePath;
+      if (voice != null) {
+        beat.dialogue!.voicePath =
+            await _copyMedia(voice, '${newBeatId}_voice');
+      }
+      for (final shot in beat.shots) {
+        final newShotId = _newId('clip');
+        // 연동(linkStart) 중인 시작장면은 자기 파일이 없다(앞 샷 끝을 가리킴) — 복사할 것도 없다.
+        shot.startImagePath =
+            await _copyMedia(shot.startImagePath, '${newShotId}_start');
+        shot.endImagePath =
+            await _copyMedia(shot.endImagePath, '${newShotId}_end');
+        shot.videoPath =
+            await _copyMedia(shot.videoPath, '${newShotId}_vlow');
+        shot.id = newShotId;
+      }
+      beat.id = newBeatId;
+    }
+
+    // 컨트롤러 등록(새 id 기준).
+    _sceneTitles[copy.id] = TextEditingController(text: copy.title);
+    for (final beat in copy.dialogues) {
+      _addDialogueControllers(beat);
+      for (final shot in beat.shots) {
+        _addShotControllers(shot);
+      }
+    }
+
+    _scenes.add(copy);
+    _selectSceneInternal(copy.id);
+    notifyListeners();
+    await save();
+    messenger?.call('씬을 복제했습니다');
+  }
+
+  String _newId(String prefix) =>
+      '${prefix}_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
+
+  /// 복제본 제목: 비어 있으면 그대로 두고(자동으로 '(제목 없음)' 표시), 있으면 ' 복사본'을 붙인다.
+  String _dupTitle(String title) {
+    final t = title.trim();
+    return t.isEmpty ? '' : '$t 복사본';
+  }
+
+  /// [srcPath] 파일을 [newBase](확장자 제외 새 파일명)로 프로젝트 폴더에 복사하고 새 절대경로를 돌려준다.
+  /// 경로가 없거나 파일이 실제로 없으면 null — 복제본이 깨진 참조를 물지 않게.
+  Future<String?> _copyMedia(String? srcPath, String newBase) async {
+    if (srcPath == null) return null;
+    final src = File(srcPath);
+    if (!await src.exists()) return null;
+    final ext = srcPath.split('.').last;
+    final dst = File('$projectDirPath/$newBase.$ext');
+    await src.copy(dst.path);
+    await FileImage(dst).evict();
+    return dst.path;
+  }
+
+  /// 선택된 씬을 목록에서 [delta]칸 옮긴다(-1=위로, +1=아래로). 범위를 벗어나면 무시.
+  /// 저장은 순서대로 scene1.json…을 다시 쓰므로 순서만 바뀐다(미디어는 id 기준이라 무관).
+  Future<void> moveScene(int delta) async {
+    final i = _scenes.indexWhere((s) => s.id == _selectedSceneId);
+    if (i < 0) return;
+    final j = i + delta;
+    if (j < 0 || j >= _scenes.length) return; // 이미 끝
+    final s = _scenes.removeAt(i);
+    _scenes.insert(j, s);
+    notifyListeners();
+    await save();
+  }
+
+  bool get canMoveSceneUp {
+    final i = _scenes.indexWhere((s) => s.id == _selectedSceneId);
+    return i > 0;
+  }
+
+  bool get canMoveSceneDown {
+    final i = _scenes.indexWhere((s) => s.id == _selectedSceneId);
+    return i >= 0 && i < _scenes.length - 1;
+  }
+
   void selectScene(String id) {
     if (_selectedSceneId == id) return;
     _selectSceneInternal(id);
@@ -583,52 +678,33 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 선택 씬의 일괄 영상 생성 계획.
-  SceneVideoPlan sceneVideoPlan({required bool skipExisting}) {
-    final scene = selectedScene;
-    if (scene == null) return const SceneVideoPlan([], [], []);
-    return _planFor([scene], skipExisting: skipExisting, withSceneName: false);
-  }
-
-  /// **모든 씬**의 일괄 영상 생성 계획. 경고에 어느 씬인지 같이 나와야 찾아갈 수 있으므로
-  /// 샷 이름에 씬 이름을 붙인다.
-  SceneVideoPlan allVideoPlan({required bool skipExisting}) =>
-      _planFor(_scenes, skipExisting: skipExisting, withSceneName: true);
-
-  /// 샷을 훑어 일괄 영상 생성 계획을 세운다 — **생성 전에 미리 보여주기 위한 것**이라
+  /// 선택 씬의 샷을 훑어 일괄 영상 생성 계획을 세운다 — **생성 전에 미리 보여주기 위한 것**이라
   /// 부수효과가 없다. [skipExisting]이면 이미 영상이 있는 샷은 건너뛸 목록으로 뺀다.
   ///
   /// FE2V는 시작·끝 프레임이 둘 다 있어야 하고 프롬프트도 필요하다 — 하나라도 없으면
   /// 그 샷은 blocked로 가고, 호출부는 경고로 띄운다.
-  SceneVideoPlan _planFor(
-    List<StoryScene> scenes, {
-    required bool skipExisting,
-    required bool withSceneName,
-  }) {
+  SceneVideoPlan sceneVideoPlan({required bool skipExisting}) {
+    final scene = selectedScene;
+    if (scene == null) return const SceneVideoPlan([], [], []);
     final ready = <Shot>[];
     final blocked = <BlockedShot>[];
     final skipped = <Shot>[];
-    for (final scene in scenes) {
-      for (final beat in scene.dialogues) {
-        for (final shot in beat.shots) {
-          if (skipExisting && shot.videoPath != null) {
-            skipped.add(shot);
-            continue;
-          }
-          final missing = <String>[];
-          if (!_hasFile(startPathOf(shot))) missing.add('시작장면');
-          if (!_hasFile(shot.endImagePath)) missing.add('끝장면');
-          final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
-              shot.videoPrompt;
-          if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
-          if (missing.isEmpty) {
-            ready.add(shot);
-          } else {
-            blocked.add(
-              BlockedShot(shot, shotLabel(shot, withScene: withSceneName),
-                  missing),
-            );
-          }
+    for (final beat in scene.dialogues) {
+      for (final shot in beat.shots) {
+        if (skipExisting && shot.videoPath != null) {
+          skipped.add(shot);
+          continue;
+        }
+        final missing = <String>[];
+        if (!_hasFile(startPathOf(shot))) missing.add('시작장면');
+        if (!_hasFile(shot.endImagePath)) missing.add('끝장면');
+        final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
+            shot.videoPrompt;
+        if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
+        if (missing.isEmpty) {
+          ready.add(shot);
+        } else {
+          blocked.add(BlockedShot(shot, shotLabel(shot), missing));
         }
       }
     }
@@ -639,20 +715,9 @@ class StoryboardProvider extends ChangeNotifier {
       path != null && path.isNotEmpty && File(path).existsSync();
 
   /// 사람이 알아볼 샷 이름 — 제목이 없으면 씬 안에서 몇 번째 샷인지로 부른다.
-  /// [withScene]이면 'SCENE 2 · 샷 3'처럼 씬까지 붙인다(여러 씬을 한 목록에 늘어놓을 때).
-  String shotLabel(Shot shot, {bool withScene = false}) {
+  String shotLabel(Shot shot) {
+    if (shot.title.trim().isNotEmpty) return shot.title.trim();
     final scene = sceneOf(shot);
-    final own = shot.title.trim().isNotEmpty
-        ? shot.title.trim()
-        : _shotOrdinal(scene, shot);
-    if (!withScene || scene == null) return own;
-    final i = _scenes.indexOf(scene);
-    final name = scene.title.trim();
-    final sceneLabel = 'SCENE ${i + 1}${name.isEmpty ? '' : ' · $name'}';
-    return '$sceneLabel · $own';
-  }
-
-  String _shotOrdinal(StoryScene? scene, Shot shot) {
     if (scene == null) return '샷';
     var n = 0;
     for (final beat in scene.dialogues) {
@@ -667,10 +732,6 @@ class StoryboardProvider extends ChangeNotifier {
   /// 선택 씬의 영상을 한 번에 만든다.
   Future<void> genSceneVideos({required bool skipExisting}) =>
       _runBatch(sceneVideoPlan(skipExisting: skipExisting));
-
-  /// 모든 씬의 영상을 한 번에 만든다.
-  Future<void> genAllVideos({required bool skipExisting}) =>
-      _runBatch(allVideoPlan(skipExisting: skipExisting));
 
   /// 계획의 ready 샷들을 순서대로 생성한다.
   ///
@@ -691,8 +752,7 @@ class StoryboardProvider extends ChangeNotifier {
       for (final shot in plan.ready) {
         if (_batchCancel) break;
         messenger?.call(
-          '[${_batchDone + 1}/$_batchTotal] '
-          '${shotLabel(shot, withScene: true)} 영상 생성 중…',
+          '[${_batchDone + 1}/$_batchTotal] ${shotLabel(shot)} 영상 생성 중…',
         );
         await gen(shot, GenMode.videoLow);
         _batchDone++;
