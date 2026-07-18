@@ -10,7 +10,9 @@ import '../canvas/bgm_section.dart';
 import '../canvas/canvas_view.dart' show fmtSeconds;
 import '../common/output_preview.dart';
 import '../common/audio_box.dart';
+import '../common/image_zoom_dialog.dart';
 import '../common/video_batch.dart';
+import '../common/video_play_dialog.dart';
 import '../common/video_trim_dialog.dart';
 import '../ui.dart';
 
@@ -1619,37 +1621,57 @@ class _OutputBlock extends StatelessWidget {
             isVideo: isVideo,
             fit: BoxFit.contain,
             onOpen: path == null ? null : () => p.openFile(path!),
+            // 이미지(시작·끝장면)는 클릭하면 확대 팝업 — 영상은 탭이 재생이라 제외.
+            onImageTap: (isVideo || path == null)
+                ? null
+                : () => showImageZoomDialog(
+                      context,
+                      path: path!,
+                      version: p.verOf(busyKey),
+                      title: title,
+                    ),
+            // 영상은 그 자리서 재생하지 말고 팝업으로 크게 재생.
+            onVideoTap: (isVideo && path != null)
+                ? () => showVideoPlayDialog(context, path: path!, title: title)
+                : null,
           ),
         ),
-        // 결과가 위, 그걸 다루는 수단은 아래. 인스펙터 폭이 좁아 한 줄에 다 못 들어가면
-        // 넘치는 대신 다음 줄로 접는다.
+        // 결과가 위, 그걸 다루는 수단은 아래. 왼쪽에 열기·폴더·트림(넘치면 접힘),
+        // 삭제만 오른쪽 끝으로 떼어 둔다 — 되돌릴 수 없는 동작이라 실수로 안 눌리게.
         if (path != null) ...[
           const SizedBox(height: 4),
-          Wrap(
-            spacing: 2,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _MediaAction(
-                icon: Icons.open_in_new,
-                label: '열기',
-                onTap: () => p.openFile(path!),
-              ),
-              _MediaAction(
-                icon: Icons.folder_open_outlined,
-                label: '폴더',
-                onTap: () => p.revealInFinder(path!),
-              ),
-              if (trimTarget != null)
-                _MediaAction(
-                  icon: Icons.content_cut,
-                  label: '트림',
-                  onTap: () async {
-                    final seconds =
-                        await showVideoTrimDialog(context, path: path!);
-                    if (seconds != null) {
-                      await p.applyTrim(trimTarget!, seconds);
-                    }
-                  },
+              Expanded(
+                child: Wrap(
+                  spacing: 2,
+                  children: [
+                    _MediaAction(
+                      icon: Icons.open_in_new,
+                      label: '열기',
+                      onTap: () => p.openFile(path!),
+                    ),
+                    _MediaAction(
+                      icon: Icons.folder_open_outlined,
+                      label: '폴더',
+                      onTap: () => p.revealInFinder(path!),
+                    ),
+                    if (trimTarget != null)
+                      _MediaAction(
+                        icon: Icons.content_cut,
+                        label: '트림',
+                        onTap: () async {
+                          final seconds =
+                              await showVideoTrimDialog(context, path: path!);
+                          if (seconds != null) {
+                            await p.applyTrim(trimTarget!, seconds);
+                          }
+                        },
+                      ),
+                  ],
                 ),
+              ),
               if (deleteTarget != null)
                 _MediaAction(
                   icon: Icons.delete_outline,

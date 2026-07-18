@@ -22,6 +22,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   int _index = 0;
   bool _playing = false; // 연속 재생 모드
   bool _ready = false;
+  String? _sceneId; // 지금 재생 목록이 어느 씬 것인지 — 씬이 바뀌면 처음부터.
 
   static const _videoExts = {'.mp4', '.mov', '.m4v', '.webm'};
 
@@ -37,13 +38,18 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         shots.add((shot: s, path: path));
       }
     }
-    // 목록이 바뀌었으면 재구성.
-    final changed = shots.length != _shots.length ||
+    // 씬이 바뀌면 처음(1번)부터. 같은 씬에서 목록만 바뀐 거라면(영상 생성/삭제)
+    // 보던 위치를 지키되 범위를 벗어나면 당겨 넣는다.
+    final sceneChanged = p.selectedSceneId != _sceneId;
+    final listChanged = shots.length != _shots.length ||
         [for (var i = 0; i < shots.length; i++) shots[i].path != _shots[i].path]
             .any((x) => x);
-    if (changed) {
+    if (sceneChanged || listChanged) {
       _shots = shots;
-      _index = _index.clamp(0, shots.isEmpty ? 0 : shots.length - 1);
+      _sceneId = p.selectedSceneId;
+      _index = sceneChanged
+          ? 0
+          : _index.clamp(0, shots.isEmpty ? 0 : shots.length - 1);
       _load(autoPlay: _playing);
     }
   }

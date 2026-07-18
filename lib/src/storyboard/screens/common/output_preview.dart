@@ -14,6 +14,8 @@ class OutputPreview extends StatelessWidget {
     this.isVideo = false,
     this.fit = BoxFit.cover,
     this.onOpen,
+    this.onImageTap,
+    this.onVideoTap,
   });
 
   final String? path;
@@ -22,6 +24,14 @@ class OutputPreview extends StatelessWidget {
   final bool isVideo;
   final BoxFit fit;
   final VoidCallback? onOpen;
+
+  /// 이미지(영상 아님)를 눌렀을 때 — 확대 팝업 등. 없으면 이미지는 그냥 표시만 한다.
+  /// (영상은 탭이 재생/정지라 여기에 걸리지 않는다.)
+  final VoidCallback? onImageTap;
+
+  /// 영상을 눌렀을 때 — 지정하면 인라인 재생 대신 이걸 부른다(팝업 재생 등).
+  /// 없으면 기존대로 그 자리에서 재생/정지한다.
+  final VoidCallback? onVideoTap;
 
   static const _videoExts = {'.mp4', '.mov', '.m4v', '.webm'};
 
@@ -45,10 +55,11 @@ class OutputPreview extends StatelessWidget {
         path: p,
         fit: fit,
         onOpen: onOpen,
+        onTapOverride: onVideoTap,
       );
     }
     // 이미지(PNG/JPG/애니메이션 WebP)
-    return Image.file(
+    final img = Image.file(
       File(p),
       key: ValueKey('$p:$version'),
       fit: fit,
@@ -56,21 +67,29 @@ class OutputPreview extends StatelessWidget {
       errorBuilder: (_, _, _) =>
           const Center(child: Icon(Icons.broken_image_outlined)),
     );
+    if (onImageTap == null) return img;
+    return GestureDetector(
+      onTap: onImageTap,
+      child: MouseRegion(cursor: SystemMouseCursors.zoomIn, child: img),
+    );
   }
 }
 
 /// 인라인 영상 미리보기: 첫 프레임을 보여주고 탭하면 재생/일시정지.
+/// [onTapOverride]가 있으면 탭이 그걸 부른다(그 자리에서 재생하지 않고 팝업 등으로).
 class _VideoPreview extends StatefulWidget {
   const _VideoPreview({
     super.key,
     required this.path,
     required this.fit,
     this.onOpen,
+    this.onTapOverride,
   });
 
   final String path;
   final BoxFit fit;
   final VoidCallback? onOpen;
+  final VoidCallback? onTapOverride;
 
   @override
   State<_VideoPreview> createState() => _VideoPreviewState();
@@ -107,6 +126,11 @@ class _VideoPreviewState extends State<_VideoPreview> {
   }
 
   void _toggle() {
+    // 팝업 등으로 넘길 거면 인라인 재생은 하지 않는다.
+    if (widget.onTapOverride != null) {
+      widget.onTapOverride!();
+      return;
+    }
     if (!_ready) return;
     if (_ctrl.value.isPlaying) {
       _ctrl.pause();
