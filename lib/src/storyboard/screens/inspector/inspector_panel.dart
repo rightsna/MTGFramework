@@ -669,6 +669,24 @@ class _SceneTab extends StatelessWidget {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          _GroupCard(
+            icon: Icons.layers_outlined,
+            title: '씬 공통 프롬프트',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  '이 씬의 모든 샷 **장면 생성**에 함께 붙습니다 ([씬] + [샷] 순).\n'
+                  '영상 생성에는 붙지 않습니다 — 세계관·복장·룩은 이미 프레임이 들고 있습니다.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                ),
+                const SizedBox(height: 8),
+                _SceneCommonField(
+                    key: ValueKey('common_${p.selectedSceneId ?? ''}')),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1170,15 +1188,6 @@ class _SceneSettingsTab extends StatelessWidget {
                   ),
                   onChanged: (_) => p.noteEdited(),
                 ),
-                const SizedBox(height: 14),
-                _SectionLabel('공통 프롬프트'),
-                const SizedBox(height: 2),
-                const Text(
-                  '이 씬의 모든 샷 생성에 함께 붙습니다. 생성 시 [씬] + [샷] 순으로 합쳐집니다.',
-                  style: TextStyle(fontSize: 11, color: Colors.white38),
-                ),
-                const SizedBox(height: 6),
-                _SceneCommonField(key: ValueKey('common_${sc.id}')),
               ],
             ),
           ),

@@ -713,7 +713,9 @@ class StoryboardProvider extends ChangeNotifier {
         if (!shot.i2v && !_hasFile(shot.endImagePath)) missing.add('끝장면');
         final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
             shot.videoPrompt;
-        if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
+        if (_composePrompt(shot, raw, GenMode.videoLow).isEmpty) {
+          missing.add('영상 프롬프트');
+        }
         if (missing.isEmpty) {
           ready.add(shot);
         } else {
@@ -800,7 +802,7 @@ class StoryboardProvider extends ChangeNotifier {
     VideoBackend? backend,
   }) async {
     final raw = _promptCtrlFor(shot.id, mode)?.text.trim() ?? '';
-    final prompt = _composePrompt(shot, raw);
+    final prompt = _composePrompt(shot, raw, mode);
     if (prompt.isEmpty) {
       messenger?.call('${mode.label} 프롬프트를 입력하세요 (공통 프롬프트도 비어 있음)');
       return;
@@ -1001,8 +1003,12 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
-  /// 생성에 쓸 최종 프롬프트: 씬 공통을 앞에 붙인다(빈 칸은 제외).
-  String _composePrompt(Shot shot, String shotPrompt) {
+  /// 생성에 쓸 최종 프롬프트.
+  /// **장면(시작/끝 이미지)에만 씬 공통을 앞에 붙인다.** 영상은 붙이지 않는다 —
+  /// 세계관·복장·룩은 이미 두 장의 프레임이 들고 있고, 거기에 공통 블록까지 얹으면
+  /// 짧게 쓴 모션 지시가 묻혀 동작이 엉킨다(실측).
+  String _composePrompt(Shot shot, String shotPrompt, GenMode mode) {
+    if (mode == GenMode.videoLow) return shotPrompt.trim();
     final sc = sceneOf(shot);
     return [
       (sc?.commonPrompt ?? '').trim(),
