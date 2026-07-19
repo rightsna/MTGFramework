@@ -15,6 +15,11 @@ class Shot {
   String endPromptKo; // 위 프롬프트의 한국어 번역 — 확인용, 생성엔 안 쓰임
   String videoPrompt; // 영상용 프롬프트(생성에 실제로 쓰이는 원문)
   String videoPromptKo; // 위 프롬프트의 한국어 번역 — 읽고 확인하는 용도, 생성엔 안 쓰임
+
+  /// 영상 네거티브 프롬프트 — **빼고 싶은 것만** 여기 적는다.
+  /// 프롬프트 본문에 "no hand" 식으로 쓰면 오히려 그게 불려 나오므로(언급이 곧 소환),
+  /// 부정은 전부 이 칸으로 보낸다. 비우면 서버 워크플로의 기본 네거티브를 그대로 쓴다.
+  String videoNegativePrompt;
   int videoSeconds; // 이 샷의 영상 길이(초, 1~15)
   String? startImagePath; // 생성된 시작장면 파일 경로(런타임 절대경로)
   String? endImagePath; // 생성된 끝장면 파일 경로
@@ -44,6 +49,7 @@ class Shot {
     this.endPromptKo = '',
     this.videoPrompt = '',
     this.videoPromptKo = '',
+    this.videoNegativePrompt = '',
     this.videoSeconds = 5,
     this.startImagePath,
     this.endImagePath,
@@ -75,6 +81,7 @@ class Shot {
         'video': {
           'prompt': videoPrompt,
           'promptKo': videoPromptKo,
+          'negativePrompt': videoNegativePrompt,
           'seconds': videoSeconds,
           'file': mediaName(videoPath),
           'i2v': i2v,
@@ -96,6 +103,8 @@ class Shot {
       endPromptKo: (end?['promptKo'] as String?) ?? '',
       videoPrompt: (video?['prompt'] as String?) ?? '',
       videoPromptKo: (video?['promptKo'] as String?) ?? '',
+      // 'negativePrompt'가 없는 옛 데이터는 빈 값 — 서버 기본 네거티브가 그대로 쓰인다.
+      videoNegativePrompt: (video?['negativePrompt'] as String?) ?? '',
       videoSeconds: (video?['seconds'] as int?) ?? 5,
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),

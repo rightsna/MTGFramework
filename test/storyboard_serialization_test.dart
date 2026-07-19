@@ -93,9 +93,11 @@ void main() {
       'inherit': false,
     });
     // i2v = 끝 프레임 없이(시작 한 장으로) 뽑을지. 기본은 FE2V(false).
+    // negativePrompt = 빼고 싶은 것만 적는 칸(비면 서버 워크플로 기본 네거티브).
     expect(c1['video'], {
       'prompt': '카메라 천천히 전진',
       'promptKo': '',
+      'negativePrompt': '',
       'seconds': 3,
       'file': 'clip_1_vlow.mp4',
       'i2v': false,
@@ -150,6 +152,26 @@ void main() {
     // 씬 전체 길이 = 각 대사의 실제 길이(샷 합) 합 — 음성 길이(5.4)가 아니라 영상 기준.
     expect(after.totalSeconds, s1.shotSeconds + s2.shotSeconds);
     expect(after.shotCount, 3);
+  });
+
+  test('영상 네거티브 프롬프트 왕복 + 옛 데이터는 빈 값', () {
+    final shot = Shot(
+      id: 'clip_neg',
+      videoPrompt: 'the hand presses the button',
+      videoNegativePrompt: 'hand, text, watermark',
+    );
+    final j = shot.toJson();
+    expect((j['video'] as Map)['negativePrompt'], 'hand, text, watermark');
+
+    final back = Shot.fromJson(j, dir);
+    expect(back.videoNegativePrompt, 'hand, text, watermark');
+
+    // 'negativePrompt' 키가 없던 옛 데이터 — 빈 값으로 읽혀 서버 기본 네거티브를 쓴다.
+    final old = Shot.fromJson({
+      'id': 'clip_old',
+      'video': {'prompt': 'x', 'seconds': 3, 'i2v': false},
+    }, dir);
+    expect(old.videoNegativePrompt, '');
   });
 
   test('폴더가 이동해도 미디어 경로가 새 dir 기준으로 복원된다', () {

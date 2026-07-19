@@ -1082,6 +1082,14 @@ class _VideoTab extends StatelessWidget {
                   controller: p.videoKoCtrl(c.id),
                   hint: '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임',
                 ),
+                const SizedBox(height: 10),
+                _SectionLabel('네거티브 프롬프트'),
+                const SizedBox(height: 6),
+                _PromptField(
+                  controller: p.videoNegCtrl(c.id),
+                  hint: '빼고 싶은 것만 (예: hand, text, watermark) — '
+                      '위 프롬프트에 "no hand"처럼 쓰면 오히려 나온다',
+                ),
                 const SizedBox(height: 14),
                 _SectionLabel('길이 (초 · 이 샷)'),
                 const SizedBox(height: 6),

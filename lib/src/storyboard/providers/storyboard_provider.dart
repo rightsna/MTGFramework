@@ -46,6 +46,7 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _endPromptKos = {};
   final Map<String, TextEditingController> _vprompts = {};
   final Map<String, TextEditingController> _vpromptKos = {};
+  final Map<String, TextEditingController> _vnegs = {};
   final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
 
@@ -163,6 +164,7 @@ class StoryboardProvider extends ChangeNotifier {
   TextEditingController endKoCtrl(String shotId) => _endPromptKos[shotId]!;
   TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
   TextEditingController videoKoCtrl(String shotId) => _vpromptKos[shotId]!;
+  TextEditingController videoNegCtrl(String shotId) => _vnegs[shotId]!;
 
   bool isBusy(String key) => _busy.contains(key);
   int verOf(String key) => _ver[key] ?? 0;
@@ -237,6 +239,7 @@ class StoryboardProvider extends ChangeNotifier {
     _endPromptKos[shot.id] = TextEditingController(text: shot.endPromptKo);
     _vprompts[shot.id] = TextEditingController(text: shot.videoPrompt);
     _vpromptKos[shot.id] = TextEditingController(text: shot.videoPromptKo);
+    _vnegs[shot.id] = TextEditingController(text: shot.videoNegativePrompt);
   }
 
   void _disposeShotControllers(String shotId) {
@@ -246,6 +249,7 @@ class StoryboardProvider extends ChangeNotifier {
     _endPromptKos.remove(shotId)?.dispose();
     _vprompts.remove(shotId)?.dispose();
     _vpromptKos.remove(shotId)?.dispose();
+    _vnegs.remove(shotId)?.dispose();
   }
 
   Future<void> save() async {
@@ -265,6 +269,8 @@ class StoryboardProvider extends ChangeNotifier {
           shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
           shot.videoPromptKo =
               _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
+          shot.videoNegativePrompt =
+              _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
         }
       }
       _syncLinkedStartPrompts(scene);
@@ -947,10 +953,15 @@ class StoryboardProvider extends ChangeNotifier {
         }
         final res = _settings.videoRes;
         final sc = sceneOf(shot); // LoRA는 씬 단위
+        // 네거티브는 샷 칸이 먼저고, 비어 있으면 설정의 전역 값으로 떨어진다.
+        // 둘 다 비면 서버 워크플로에 박힌 기본 네거티브가 쓰인다.
+        final neg = (_vnegs[shot.id]?.text ?? shot.videoNegativePrompt).trim();
         return ApiService(_settings.effectiveServiceUrl).generateVideo(
           image: img,
           endImage: endImg,
           prompt: prompt,
+          negativePrompt:
+              neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
           width: res.width,
           height: res.height,
           seconds: shot.videoSeconds,
@@ -1489,6 +1500,9 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _vpromptKos.values) {
+      c.dispose();
+    }
+    for (final c in _vnegs.values) {
       c.dispose();
     }
     super.dispose();

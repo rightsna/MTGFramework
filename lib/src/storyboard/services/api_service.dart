@@ -143,6 +143,7 @@ class ApiService {
     required Uint8List image,
     Uint8List? endImage, // null = I2V (끝 프레임 없이 생성)
     required String prompt,
+    String negativePrompt = '', // 빼고 싶은 것만 — 비우면 워크플로 기본 네거티브
     required int width,
     required int height,
     required int seconds,
@@ -154,6 +155,7 @@ class ApiService {
     final req = http.MultipartRequest('POST', Uri.parse('$_base/video'))
       ..headers.addAll(_ngrok)
       ..fields['prompt'] = prompt
+      ..fields['negative_prompt'] = negativePrompt
       ..fields['width'] = '$width'
       ..fields['height'] = '$height'
       ..fields['seconds'] = '$seconds'
