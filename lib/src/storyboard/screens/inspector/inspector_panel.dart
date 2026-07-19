@@ -592,6 +592,7 @@ class _SceneTab extends StatelessWidget {
           _FrameSection(
             title: '시작장면',
             controller: p.startCtrl(shot.id),
+            koController: p.startKoCtrl(shot.id),
             hint: '샷의 첫 프레임(시작 장면)을 묘사',
             genLabel: '시작장면 생성',
             genIcon: Icons.first_page,
@@ -608,6 +609,7 @@ class _SceneTab extends StatelessWidget {
             _FrameSection(
               title: '끝장면',
               controller: p.endCtrl(shot.id),
+              koController: p.endKoCtrl(shot.id),
               hint: '샷의 마지막 프레임(끝 장면)을 묘사',
               genLabel: '끝장면 생성',
               genIcon: Icons.last_page,
@@ -779,8 +781,8 @@ class _DirectionNote extends StatelessWidget {
           const SizedBox(height: 8),
           TextField(
             controller: p.directionCtrl(dialogueId),
-            minLines: 2,
-            maxLines: 8,
+            minLines: 6,
+            maxLines: 30,
             style: const TextStyle(fontSize: 13, height: 1.4),
             decoration: const InputDecoration(
               hintText: '이 비트에서 무엇을 표현할지 (대사는 그중 하나)',
@@ -1055,6 +1057,13 @@ class _VideoTab extends StatelessWidget {
                   controller: p.videoCtrl(c.id),
                   hint: '움직임/카메라 등 영상 묘사',
                 ),
+                const SizedBox(height: 10),
+                _SectionLabel('프롬프트 번역 (한국어)'),
+                const SizedBox(height: 6),
+                _PromptField(
+                  controller: p.videoKoCtrl(c.id),
+                  hint: '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임',
+                ),
                 const SizedBox(height: 14),
                 _SectionLabel('길이 (초 · 이 샷)'),
                 const SizedBox(height: 6),
@@ -1309,6 +1318,7 @@ class _FrameSection extends StatelessWidget {
   const _FrameSection({
     required this.title,
     required this.controller,
+    required this.koController,
     required this.hint,
     required this.genLabel,
     required this.genIcon,
@@ -1326,6 +1336,7 @@ class _FrameSection extends StatelessWidget {
 
   final String title;
   final TextEditingController controller;
+  final TextEditingController koController;
   final String hint;
   final String genLabel;
   final IconData genIcon;
@@ -1367,6 +1378,14 @@ class _FrameSection extends StatelessWidget {
           _PromptField(
             controller: controller,
             hint: linked ? '앞 샷의 끝장면 프롬프트가 들어옵니다' : hint,
+            readOnly: linked,
+          ),
+          const SizedBox(height: 10),
+          _SectionLabel('프롬프트 번역 (한국어)'),
+          const SizedBox(height: 6),
+          _PromptField(
+            controller: koController,
+            hint: '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임',
             readOnly: linked,
           ),
           const SizedBox(height: 10),

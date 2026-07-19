@@ -41,8 +41,11 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _notes = {};
   final Map<String, TextEditingController> _directions = {};
   final Map<String, TextEditingController> _startPrompts = {};
+  final Map<String, TextEditingController> _startPromptKos = {};
   final Map<String, TextEditingController> _endPrompts = {};
+  final Map<String, TextEditingController> _endPromptKos = {};
   final Map<String, TextEditingController> _vprompts = {};
+  final Map<String, TextEditingController> _vpromptKos = {};
   final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
 
@@ -155,8 +158,11 @@ class StoryboardProvider extends ChangeNotifier {
   TextEditingController directionCtrl(String dialogueId) =>
       _directions[dialogueId]!;
   TextEditingController startCtrl(String shotId) => _startPrompts[shotId]!;
+  TextEditingController startKoCtrl(String shotId) => _startPromptKos[shotId]!;
   TextEditingController endCtrl(String shotId) => _endPrompts[shotId]!;
+  TextEditingController endKoCtrl(String shotId) => _endPromptKos[shotId]!;
   TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
+  TextEditingController videoKoCtrl(String shotId) => _vpromptKos[shotId]!;
 
   bool isBusy(String key) => _busy.contains(key);
   int verOf(String key) => _ver[key] ?? 0;
@@ -226,14 +232,20 @@ class StoryboardProvider extends ChangeNotifier {
 
   void _addShotControllers(Shot shot) {
     _startPrompts[shot.id] = TextEditingController(text: shot.startPrompt);
+    _startPromptKos[shot.id] = TextEditingController(text: shot.startPromptKo);
     _endPrompts[shot.id] = TextEditingController(text: shot.endPrompt);
+    _endPromptKos[shot.id] = TextEditingController(text: shot.endPromptKo);
     _vprompts[shot.id] = TextEditingController(text: shot.videoPrompt);
+    _vpromptKos[shot.id] = TextEditingController(text: shot.videoPromptKo);
   }
 
   void _disposeShotControllers(String shotId) {
     _startPrompts.remove(shotId)?.dispose();
+    _startPromptKos.remove(shotId)?.dispose();
     _endPrompts.remove(shotId)?.dispose();
+    _endPromptKos.remove(shotId)?.dispose();
     _vprompts.remove(shotId)?.dispose();
+    _vpromptKos.remove(shotId)?.dispose();
   }
 
   Future<void> save() async {
@@ -245,8 +257,14 @@ class StoryboardProvider extends ChangeNotifier {
         beat.direction = _directions[beat.id]?.text ?? beat.direction;
         for (final shot in beat.shots) {
           shot.startPrompt = _startPrompts[shot.id]?.text ?? shot.startPrompt;
+          shot.startPromptKo =
+              _startPromptKos[shot.id]?.text ?? shot.startPromptKo;
           shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
+          shot.endPromptKo =
+              _endPromptKos[shot.id]?.text ?? shot.endPromptKo;
           shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
+          shot.videoPromptKo =
+              _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
         }
       }
       _syncLinkedStartPrompts(scene);
@@ -1452,10 +1470,19 @@ class StoryboardProvider extends ChangeNotifier {
     for (final c in _startPrompts.values) {
       c.dispose();
     }
+    for (final c in _startPromptKos.values) {
+      c.dispose();
+    }
     for (final c in _endPrompts.values) {
       c.dispose();
     }
+    for (final c in _endPromptKos.values) {
+      c.dispose();
+    }
     for (final c in _vprompts.values) {
+      c.dispose();
+    }
+    for (final c in _vpromptKos.values) {
       c.dispose();
     }
     super.dispose();

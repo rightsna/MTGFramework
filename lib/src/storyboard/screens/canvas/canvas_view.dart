@@ -11,6 +11,34 @@ import '../ui.dart';
 /// 대사(TTS·샷) 식별색.
 const _voiceColor = Color(0xFFE0678A);
 
+/// 삭제 전 확인. 되돌릴 수 없는 삭제는 전부 이걸 거친다 — 클릭 한 번에 사라지면 안 된다.
+/// 미디어 파일은 프로젝트 폴더에 남으므로 그 사실도 같이 알린다.
+Future<bool> confirmDelete(
+  BuildContext context, {
+  required String title,
+  required String body,
+}) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(title),
+      content: Text('$body\n\n(생성된 미디어 파일은 프로젝트 폴더에 남습니다)'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('취소'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('삭제'),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
 /// 가운데 캔버스: 선택 씬을 **샷들의 가로 타임라인**으로 그린다.
 /// 각 대사 = [상태] + [대사 내용(0/1)] + [샷들]. 대사 한 마디 아래 샷들이 화면을 덮는다.
 class CanvasView extends StatelessWidget {
@@ -151,7 +179,17 @@ class _ShotCard extends StatelessWidget {
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
-                  onPressed: () => p.removeDialogue(beat),
+                  onPressed: () async {
+                    if (await confirmDelete(
+                      context,
+                      title: '비트 삭제',
+                      body:
+                          '"${beat.title.trim().isEmpty ? '(제목 없음)' : beat.title.trim()}" 비트를 삭제합니다.\n'
+                          '샷 ${beat.shots.length}개가 함께 사라집니다. 되돌릴 수 없습니다.',
+                    )) {
+                      p.removeDialogue(beat);
+                    }
+                  },
                   icon: const Icon(Icons.delete_outline),
                   tooltip: '비트 삭제',
                 ),
@@ -400,7 +438,17 @@ class _ShotThumb extends StatelessWidget {
               right: 1,
               top: 1,
               child: GestureDetector(
-                onTap: () => p.removeShot(beat, shot),
+                onTap: () async {
+                  if (await confirmDelete(
+                    context,
+                    title: '샷 삭제',
+                    body:
+                        '"${shot.title.trim().isEmpty ? '샷 ${index + 1}' : shot.title.trim()}" 을 삭제합니다.\n'
+                        '되돌릴 수 없습니다.',
+                  )) {
+                    p.removeShot(beat, shot);
+                  }
+                },
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: const BoxDecoration(

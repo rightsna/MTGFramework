@@ -10,8 +10,11 @@ class Shot {
   String title; // 샷 제목 (비우면 '샷 n' 으로 표시)
   List<String> refCharacterIds; // 이 샷 화면의 참조 인물 id들(FireRed 멀티, 최대 3)
   String startPrompt; // 시작장면 프롬프트
+  String startPromptKo; // 위 프롬프트의 한국어 번역 — 확인용, 생성엔 안 쓰임
   String endPrompt; // 끝장면 프롬프트
-  String videoPrompt; // 영상용 프롬프트
+  String endPromptKo; // 위 프롬프트의 한국어 번역 — 확인용, 생성엔 안 쓰임
+  String videoPrompt; // 영상용 프롬프트(생성에 실제로 쓰이는 원문)
+  String videoPromptKo; // 위 프롬프트의 한국어 번역 — 읽고 확인하는 용도, 생성엔 안 쓰임
   int videoSeconds; // 이 샷의 영상 길이(초, 1~15)
   String? startImagePath; // 생성된 시작장면 파일 경로(런타임 절대경로)
   String? endImagePath; // 생성된 끝장면 파일 경로
@@ -36,8 +39,11 @@ class Shot {
     this.title = '',
     List<String>? refCharacterIds,
     this.startPrompt = '',
+    this.startPromptKo = '',
     this.endPrompt = '',
+    this.endPromptKo = '',
     this.videoPrompt = '',
+    this.videoPromptKo = '',
     this.videoSeconds = 5,
     this.startImagePath,
     this.endImagePath,
@@ -57,15 +63,18 @@ class Shot {
         'refCharacters': refCharacterIds,
         'startScene': {
           'prompt': startPrompt,
+          'promptKo': startPromptKo,
           'image': mediaName(startImagePath),
           'inherit': linkStart,
         },
         'endScene': {
           'prompt': endPrompt,
+          'promptKo': endPromptKo,
           'image': mediaName(endImagePath),
         },
         'video': {
           'prompt': videoPrompt,
+          'promptKo': videoPromptKo,
           'seconds': videoSeconds,
           'file': mediaName(videoPath),
           'i2v': i2v,
@@ -82,8 +91,11 @@ class Shot {
       title: (j['title'] as String?) ?? '',
       refCharacterIds: (j['refCharacters'] as List?)?.cast<String>(),
       startPrompt: (start?['prompt'] as String?) ?? '',
+      startPromptKo: (start?['promptKo'] as String?) ?? '',
       endPrompt: (end?['prompt'] as String?) ?? '',
+      endPromptKo: (end?['promptKo'] as String?) ?? '',
       videoPrompt: (video?['prompt'] as String?) ?? '',
+      videoPromptKo: (video?['promptKo'] as String?) ?? '',
       videoSeconds: (video?['seconds'] as int?) ?? 5,
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),

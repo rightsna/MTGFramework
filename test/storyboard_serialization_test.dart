@@ -88,12 +88,14 @@ void main() {
     // inherit = 시작장면을 앞 샷 끝장면에 연동할지.
     expect(c1['startScene'], {
       'prompt': '마일스 입을 뗀다, 클로즈업',
+      'promptKo': '',
       'image': 'clip_1_start.png',
       'inherit': false,
     });
     // i2v = 끝 프레임 없이(시작 한 장으로) 뽑을지. 기본은 FE2V(false).
     expect(c1['video'], {
       'prompt': '카메라 천천히 전진',
+      'promptKo': '',
       'seconds': 3,
       'file': 'clip_1_vlow.mp4',
       'i2v': false,
