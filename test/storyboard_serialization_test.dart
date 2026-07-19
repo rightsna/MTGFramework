@@ -25,7 +25,6 @@ void main() {
             id: 'shot_1',
             title: '첫 컷',
             note: '역광 주의 · 클라 요청으로 톤 어둡게',
-            status: BeatStatus.review,
             dialogue: Dialogue(
               speakerId: 'char_miles',
               text: '형사님, 그 밤에 무슨 일이 있었죠?',
@@ -76,7 +75,6 @@ void main() {
 
     // 대사1: 상태·메모·대사 + 샷 2개.
     final s1 = dialogues.first as Map;
-    expect(s1['status'], 'review');
     expect(s1['note'], '역광 주의 · 클라 요청으로 톤 어둡게');
     expect(s1['dialogue'], {
       'speaker': 'char_miles',
@@ -86,8 +84,6 @@ void main() {
     final clips1 = s1['shots'] as List;
     expect(clips1.length, 2);
     final c1 = clips1.first as Map;
-    // 샷엔 status/note 없음(대사 소유).
-    expect(c1.containsKey('status'), isFalse);
     expect(c1['refCharacters'], ['char_miles']);
     // inherit = 시작장면을 앞 샷 끝장면에 연동할지.
     expect(c1['startScene'], {
@@ -95,10 +91,12 @@ void main() {
       'image': 'clip_1_start.png',
       'inherit': false,
     });
+    // i2v = 끝 프레임 없이(시작 한 장으로) 뽑을지. 기본은 FE2V(false).
     expect(c1['video'], {
       'prompt': '카메라 천천히 전진',
       'seconds': 3,
       'file': 'clip_1_vlow.mp4',
+      'i2v': false,
     });
 
     // 샷2: 무음(dialogue=null).
@@ -120,7 +118,6 @@ void main() {
     expect(after.dialogues.length, 2);
 
     final s1 = after.dialogues.first;
-    expect(s1.status, BeatStatus.review);
     expect(s1.note, '역광 주의 · 클라 요청으로 톤 어둡게');
     expect(s1.hasDialogue, isTrue);
     expect(s1.dialogue!.speakerId, 'char_miles');
@@ -200,12 +197,10 @@ void main() {
     final beat = DialogueBeat.fromJson({'id': 'b_min'}, dir);
     expect(beat.shots, isEmpty);
     expect(beat.dialogue, isNull);
-    expect(beat.status, BeatStatus.ready);
   });
 
   test('새 대사 기본값 + 끝장면(샷) 왕복', () {
     expect(DialogueBeat(id: 'x').hasDialogue, isFalse);
-    expect(DialogueBeat(id: 'x').status, BeatStatus.ready);
 
     // 끝 이미지/프롬프트가 보존된다(FE2V 필수 프레임).
     final withEnd = Shot.fromJson({

@@ -16,7 +16,7 @@ import '../common/video_play_dialog.dart';
 import '../common/video_trim_dialog.dart';
 import '../ui.dart';
 
-/// 대사 탭 — 선택 대사 정보(제목·상태·메모·내용).
+/// 비트 탭 — 선택 비트 정보(제목·비트 연출 노트·메모·대사).
 class _ShotInfoTab extends StatelessWidget {
   const _ShotInfoTab();
 
@@ -31,7 +31,7 @@ class _ShotInfoTab extends StatelessWidget {
           children: [
             Icon(Icons.touch_app_outlined, color: Colors.white24, size: 40),
             SizedBox(height: 10),
-            Text('왼쪽에서 대사를 선택하세요', style: TextStyle(color: Colors.white38)),
+            Text('왼쪽에서 비트를 선택하세요', style: TextStyle(color: Colors.white38)),
           ],
         ),
       );
@@ -53,7 +53,7 @@ class _ShotInfoTab extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '대사 ${p.dialogues.indexOf(beat) + 1}',
+                '비트 ${p.dialogues.indexOf(beat) + 1}',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -68,7 +68,7 @@ class _ShotInfoTab extends StatelessWidget {
             controller: p.titleCtrl(beat.id),
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             decoration: const InputDecoration(
-              hintText: '대사 제목 (선택)',
+              hintText: '비트 제목 (선택)',
               isDense: true,
               filled: true,
               fillColor: previewBg,
@@ -77,7 +77,7 @@ class _ShotInfoTab extends StatelessWidget {
             onChanged: (_) => p.noteEdited(),
           ),
           const SizedBox(height: 12),
-          _StatusSelector(beat: beat),
+          _DirectionNote(dialogueId: beat.id),
           const SizedBox(height: 14),
           _ShotNote(dialogueId: beat.id),
           const SizedBox(height: 14),
@@ -210,7 +210,7 @@ class _DialogueEditorState extends State<_DialogueEditor> {
             maxLines: 8,
             style: const TextStyle(fontSize: 14, height: 1.4),
             decoration: const InputDecoration(
-              hintText: '이 대사에서 말할 내용(또는 내레이션). 비우면 무음',
+              hintText: '이 비트에서 말할 내용(또는 내레이션). 비우면 무음',
               isDense: true,
               border: OutlineInputBorder(),
             ),
@@ -369,7 +369,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
         });
       }
     } else if (_restoredTab) {
-      // 선택 변경 감지: '대사만' 선택(샷 없음)되면 '대사' 탭으로 전환.
+      // 선택 변경 감지: '비트만' 선택(샷 없음)되면 '비트' 탭으로 전환.
       final dialogueId = p.selectedDialogueId;
       final shotId = p.selectedShotId;
       if (dialogueId != _lastDialogueId || shotId != _lastShotId) {
@@ -393,7 +393,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
             labelColor: accent2,
             indicatorColor: accent2,
             tabs: const [
-              Tab(text: '대사'),
+              Tab(text: '비트'),
               Tab(text: '장면'),
               Tab(text: '영상'),
               Tab(text: '씬'),
@@ -433,7 +433,7 @@ class _NoShot extends StatelessWidget {
     if (beat == null) {
       return const _CenterNote(
         icon: Icons.touch_app_outlined,
-        title: '대사를 선택하세요',
+        title: '비트를 선택하세요',
       );
     }
     if (beat.shots.isEmpty) {
@@ -448,14 +448,14 @@ class _NoShot extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             const Text(
-              '이 대사에 샷이 없습니다',
+              '이 비트에 샷이 없습니다',
               style: TextStyle(color: Colors.white38),
             ),
             const SizedBox(height: 12),
             FilledButton.icon(
               onPressed: () => p.addShot(beat),
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('대사 추가'),
+              label: const Text('비트 추가'),
             ),
           ],
         ),
@@ -500,6 +500,78 @@ class _CenterNote extends StatelessWidget {
   }
 }
 
+/// 영상 생성 방식 토글(샷) — I2V / FE2V.
+/// 같은 모델·같은 그래프고 끝 프레임을 박느냐만 다르다. FE2V는 끝 그림이 정해지는 대신
+/// 양끝이 멀면 중간이 깨지고, I2V는 끝이 자유로운 대신 어디로 갈지 통제가 안 된다.
+class _VideoModeToggle extends StatelessWidget {
+  const _VideoModeToggle({required this.shot});
+
+  final Shot shot;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final i2v = shot.i2v;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0x148B7BFF),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0x338B7BFF)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.movie_creation_outlined, size: 15, color: accent),
+              const SizedBox(width: 6),
+              const Text(
+                '영상 생성 방식',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: false,
+                label: Text('FE2V'),
+                icon: Icon(Icons.compare_arrows, size: 15),
+              ),
+              ButtonSegment(
+                value: true,
+                label: Text('I2V'),
+                icon: Icon(Icons.play_arrow, size: 15),
+              ),
+            ],
+            selected: {i2v},
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
+            ),
+            onSelectionChanged: (s) => p.setI2v(shot, s.first),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            i2v
+                ? '시작장면 한 장만 쓰고, 끝은 모델이 만든다 — 끝장면은 생성/사용하지 않음'
+                : '시작·끝 두 장을 고정하고 그 사이를 만든다 — 끝장면이 필요함',
+            style: const TextStyle(fontSize: 11, color: Colors.white54, height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 장면 탭(샷): 대사 메모 + 인물참조 + 시작/끝장면 프레임.
 class _SceneTab extends StatelessWidget {
   const _SceneTab({required this.shot});
@@ -514,6 +586,8 @@ class _SceneTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _VideoModeToggle(shot: shot),
+          const SizedBox(height: 14),
           // 결과(프레임)가 위, 그 생성에 쓰이는 설정(인물참조)은 아래.
           _FrameSection(
             title: '시작장면',
@@ -528,20 +602,23 @@ class _SceneTab extends StatelessWidget {
             shot: shot,
             mode: GenMode.imageStart,
           ),
-          const SizedBox(height: 16),
-          _FrameSection(
-            title: '끝장면',
-            controller: p.endCtrl(shot.id),
-            hint: '샷의 마지막 프레임(끝 장면)을 묘사',
-            genLabel: '끝장면 생성',
-            genIcon: Icons.last_page,
-            path: shot.endImagePath,
-            busyKey: p.busyKey(shot.id, GenMode.imageEnd),
-            onGen: () => p.gen(shot, GenMode.imageEnd),
-            onLoad: () => p.loadFrame(shot, GenMode.imageEnd),
-            shot: shot,
-            mode: GenMode.imageEnd,
-          ),
+          // I2V면 끝장면은 안 쓴다 — 숨긴다(파일은 남아 있어 FE2V로 되돌리면 그대로 보인다).
+          if (!shot.i2v) ...[
+            const SizedBox(height: 16),
+            _FrameSection(
+              title: '끝장면',
+              controller: p.endCtrl(shot.id),
+              hint: '샷의 마지막 프레임(끝 장면)을 묘사',
+              genLabel: '끝장면 생성',
+              genIcon: Icons.last_page,
+              path: shot.endImagePath,
+              busyKey: p.busyKey(shot.id, GenMode.imageEnd),
+              onGen: () => p.gen(shot, GenMode.imageEnd),
+              onLoad: () => p.loadFrame(shot, GenMode.imageEnd),
+              shot: shot,
+              mode: GenMode.imageEnd,
+            ),
+          ],
           const SizedBox(height: 16),
           _RefCharacterPicker(shot: shot),
           const SizedBox(height: 16),
@@ -596,77 +673,6 @@ class _SceneTab extends StatelessWidget {
   }
 }
 
-/// 샷 제작 상태 선택 칩(준비/진행/검토/반려/완료). 사용자가 수동으로 정한다.
-class _StatusSelector extends StatelessWidget {
-  const _StatusSelector({required this.beat});
-
-  final DialogueBeat beat;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = StoryboardScope.of(context);
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final st in BeatStatus.values)
-          _StatusChoice(
-            status: st,
-            selected: beat.status == st,
-            onTap: () => p.setDialogueStatus(beat, st),
-          ),
-      ],
-    );
-  }
-}
-
-class _StatusChoice extends StatelessWidget {
-  const _StatusChoice({
-    required this.status,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final BeatStatus status;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = statusColor(status);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-          color: selected ? c.withValues(alpha: 0.22) : const Color(0x0FFFFFFF),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: selected ? c : const Color(0x1AFFFFFF)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              statusIcon(status),
-              size: 12,
-              color: selected ? c : Colors.white38,
-            ),
-            const SizedBox(width: 4),
-            Text(
-              status.label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected ? c : Colors.white54,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// 샷 메모(특이사항). 프롬프트와 무관한 자유 기록 — 생성에 쓰이지 않는다.
 class _ShotNote extends StatelessWidget {
   const _ShotNote({required this.dialogueId});
@@ -716,6 +722,68 @@ class _ShotNote extends StatelessWidget {
             style: const TextStyle(fontSize: 13, height: 1.4),
             decoration: const InputDecoration(
               hintText: '이 샷의 특이사항·참고를 자유롭게 기록 (프롬프트 아님)',
+              isDense: true,
+              filled: true,
+              fillColor: previewBg,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (_) => p.save(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 비트 연출 노트 = 이 비트에서 **무엇을 표현할지**. 비트는 표현 단위이고, 대사는 그 표현을
+/// 이루는 요소 중 하나일 뿐이다(대사 없이 연출만으로도 성립).
+/// 메모(특이사항)와 달리 제작 지시에 해당하지만, 프롬프트로 자동으로 물리지는 않는다.
+class _DirectionNote extends StatelessWidget {
+  const _DirectionNote({required this.dialogueId});
+
+  final String dialogueId;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0x145BD1C0),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0x335BD1C0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.movie_filter_outlined, size: 15, color: accent2),
+              const SizedBox(width: 6),
+              const Text(
+                '비트 연출 노트',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: accent2,
+                ),
+              ),
+              const Spacer(),
+              const Text(
+                '무엇을 표현할지',
+                style: TextStyle(fontSize: 10, color: Colors.white38),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: p.directionCtrl(dialogueId),
+            minLines: 2,
+            maxLines: 8,
+            style: const TextStyle(fontSize: 13, height: 1.4),
+            decoration: const InputDecoration(
+              hintText: '이 비트에서 무엇을 표현할지 (대사는 그중 하나)',
               isDense: true,
               filled: true,
               fillColor: previewBg,
@@ -1165,7 +1233,7 @@ class _SceneSettingsTab extends StatelessWidget {
                   title: const Text('씬 삭제'),
                   content: Text(
                     '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬을 삭제합니다.\n'
-                    '대사 ${sc.dialogues.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
+                    '비트 ${sc.dialogues.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
                     '되돌릴 수 없습니다.\n\n'
                     '(생성된 미디어 파일은 프로젝트 폴더에 남습니다)',
                   ),

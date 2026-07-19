@@ -39,6 +39,7 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _sceneTitles = {};
   final Map<String, TextEditingController> _dialogueTitles = {};
   final Map<String, TextEditingController> _notes = {};
+  final Map<String, TextEditingController> _directions = {};
   final Map<String, TextEditingController> _startPrompts = {};
   final Map<String, TextEditingController> _endPrompts = {};
   final Map<String, TextEditingController> _vprompts = {};
@@ -151,6 +152,8 @@ class StoryboardProvider extends ChangeNotifier {
       _sceneTitles[sceneId]!;
   TextEditingController titleCtrl(String dialogueId) => _dialogueTitles[dialogueId]!;
   TextEditingController noteCtrl(String dialogueId) => _notes[dialogueId]!;
+  TextEditingController directionCtrl(String dialogueId) =>
+      _directions[dialogueId]!;
   TextEditingController startCtrl(String shotId) => _startPrompts[shotId]!;
   TextEditingController endCtrl(String shotId) => _endPrompts[shotId]!;
   TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
@@ -212,11 +215,13 @@ class StoryboardProvider extends ChangeNotifier {
   void _addDialogueControllers(DialogueBeat beat) {
     _dialogueTitles[beat.id] = TextEditingController(text: beat.title);
     _notes[beat.id] = TextEditingController(text: beat.note);
+    _directions[beat.id] = TextEditingController(text: beat.direction);
   }
 
   void _disposeDialogueControllers(String dialogueId) {
     _dialogueTitles.remove(dialogueId)?.dispose();
     _notes.remove(dialogueId)?.dispose();
+    _directions.remove(dialogueId)?.dispose();
   }
 
   void _addShotControllers(Shot shot) {
@@ -237,6 +242,7 @@ class StoryboardProvider extends ChangeNotifier {
       for (final beat in scene.dialogues) {
         beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
         beat.note = _notes[beat.id]?.text ?? beat.note;
+        beat.direction = _directions[beat.id]?.text ?? beat.direction;
         for (final shot in beat.shots) {
           shot.startPrompt = _startPrompts[shot.id]?.text ?? shot.startPrompt;
           shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
@@ -465,19 +471,7 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 샷 제작 상태 지정(사용자 수동).
-  void setDialogueStatus(DialogueBeat beat, BeatStatus status) {
-    if (beat.status == status) return;
-    beat.status = status;
-    notifyListeners();
-    save();
-  }
 
-  /// 캔버스 아이콘 탭 시 다음 상태로 순환(준비→진행→검토→반려→완료→준비).
-  void cycleDialogueStatus(DialogueBeat beat) {
-    final vals = BeatStatus.values;
-    setDialogueStatus(beat, vals[(beat.status.index + 1) % vals.length]);
-  }
 
   // ───────── 샷 추가/삭제/선택 ─────────
 
@@ -697,7 +691,8 @@ class StoryboardProvider extends ChangeNotifier {
         }
         final missing = <String>[];
         if (!_hasFile(startPathOf(shot))) missing.add('시작장면');
-        if (!_hasFile(shot.endImagePath)) missing.add('끝장면');
+        // I2V는 끝 프레임을 안 쓴다 — 없어도 뽑을 수 있다.
+        if (!shot.i2v && !_hasFile(shot.endImagePath)) missing.add('끝장면');
         final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
             shot.videoPrompt;
         if (_composePrompt(shot, raw).isEmpty) missing.add('영상 프롬프트');
@@ -921,12 +916,14 @@ class StoryboardProvider extends ChangeNotifier {
         );
       case VideoBackend.serviceApi:
         final img = await _startFrameBytes(shot);
-        final endImg = await _endFrameBytes(shot);
+        // I2V면 끝 프레임을 아예 안 쓴다(있어도 무시) — 끝은 모델이 자유롭게 만든다.
+        final endImg = shot.i2v ? null : await _endFrameBytes(shot);
         if (img == null) {
-          throw Exception('시작장면을 먼저 만들어 주세요 (FE2V 첫 프레임)');
+          throw Exception('시작장면을 먼저 만들어 주세요 (첫 프레임)');
         }
-        if (endImg == null) {
-          throw Exception('끝장면을 먼저 만들어 주세요 (FE2V 마지막 프레임)');
+        if (!shot.i2v && endImg == null) {
+          throw Exception('끝장면을 먼저 만들어 주세요 (FE2V 마지막 프레임) — '
+              '끝 없이 뽑으려면 장면 탭에서 I2V로 바꾸세요');
         }
         final res = _settings.videoRes;
         final sc = sceneOf(shot); // LoRA는 씬 단위
@@ -1295,6 +1292,15 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 영상 생성 방식 전환 — I2V(시작 한 장) ↔ FE2V(시작+끝).
+  /// 끝장면 파일은 지우지 않는다: I2V로 뽑아보고 되돌릴 수 있어야 한다.
+  Future<void> setI2v(Shot shot, bool on) async {
+    if (shot.i2v == on) return;
+    shot.i2v = on;
+    await save();
+    notifyListeners();
+  }
+
   /// 연동을 끊을 때: 앞 샷의 끝장면을 이 샷의 시작 파일로 복사해 남긴다.
   Future<void> _materializeStart(Shot shot) async {
     final srcPath = prevShotOf(shot)?.endImagePath;
@@ -1438,6 +1444,9 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _notes.values) {
+      c.dispose();
+    }
+    for (final c in _directions.values) {
       c.dispose();
     }
     for (final c in _startPrompts.values) {

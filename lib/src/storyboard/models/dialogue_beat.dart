@@ -1,18 +1,6 @@
 import 'shot.dart';
 import 'dialogue.dart';
 
-/// 대사의 제작 진행 상태(순수 편집/워크플로용 — 생성과 무관). 칸반처럼 상태를 추적한다.
-enum BeatStatus {
-  ready('준비'),
-  inProgress('진행'),
-  review('검토'),
-  rejected('반려'),
-  done('완료');
-
-  const BeatStatus(this.label);
-  final String label;
-}
-
 /// 대사(DialogueBeat) = 씬 타임라인의 한 단위. **대사 내용 1개(선택) + 샷 여러 개**를 담는다.
 /// 계층: 씬 > **대사** > 샷.
 ///
@@ -31,7 +19,7 @@ class DialogueBeat {
   String id;
   String title; // 대사 제목 (비우면 '대사 n' 으로 표시)
   String note; // 사용자 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
-  BeatStatus status; // 제작 진행 상태 — 사용자가 수동으로 정함(생성과 무관)
+  String direction; // 연출 노트 — 이 비트에서 무엇을 표현할지(대사는 그중 하나). 자동 생성엔 안 물림
   Dialogue? dialogue; // 이 대사의 내용(0 또는 1). null = 무음 대사
   List<Shot> shots; // 이 대사를 화면으로 덮는 샷들(순서대로) — 각 샷 = FE2V 1회
 
@@ -39,7 +27,7 @@ class DialogueBeat {
     required this.id,
     this.title = '',
     this.note = '',
-    this.status = BeatStatus.ready,
+    this.direction = '',
     this.dialogue,
     List<Shot>? shots,
   }) : shots = shots ?? [];
@@ -65,7 +53,7 @@ class DialogueBeat {
         'id': id,
         'title': title,
         'note': note,
-        'status': status.name,
+        'direction': direction,
         'dialogue': dialogue?.toJson(), // null = 무음 대사
         'shots': shots.map((c) => c.toJson()).toList(),
       };
@@ -77,10 +65,7 @@ class DialogueBeat {
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
       note: (j['note'] as String?) ?? '',
-      status: BeatStatus.values.firstWhere(
-        (e) => e.name == j['status'],
-        orElse: () => BeatStatus.ready,
-      ),
+      direction: (j['direction'] as String?) ?? '',
       dialogue: dlg == null ? null : Dialogue.fromJson(dlg, dir),
       shots: ((j['shots'] as List?) ?? const [])
           .map((e) => Shot.fromJson((e as Map).cast<String, dynamic>(), dir))

@@ -131,15 +131,17 @@ class ApiService {
     return r.bodyBytes;
   }
 
-  /// 이미지→영상 (FE2V). 시작+끝 두 프레임 + 모션 프롬프트 + 해상도(32의 배수).
-  /// 서버가 시작을 첫 프레임, 끝을 마지막 프레임으로 고정해 그 사이를 생성한다.
+  /// 이미지→영상. 모션 프롬프트 + 해상도(32의 배수).
+  ///  - [endImage] 를 주면 **FE2V**: 시작을 첫 프레임, 끝을 마지막 프레임으로 고정해 그 사이를 생성.
+  ///  - [endImage] 가 null 이면 **I2V**: 시작 한 장만 고정하고 끝은 모델이 자유롭게.
+  /// 서버는 image_end 유무로 워크플로(video-ltx / video-ltx-i2v)를 알아서 고른다.
   ///
   /// 영상은 수 분(8초면 2~7분) 걸린다. 한 요청을 끝까지 열어두면 프록시(ngrok)가 60초쯤에
   /// 끊어버리므로(ERR_NGROK_3004), **제출 → 폴링 → 결과 수신** 3단계로 나눠 부른다.
   /// 각 요청이 1초 미만이라 프록시 타임아웃에 안 걸린다.
   Future<Uint8List> generateVideo({
     required Uint8List image,
-    required Uint8List endImage,
+    Uint8List? endImage, // null = I2V (끝 프레임 없이 생성)
     required String prompt,
     required int width,
     required int height,
@@ -158,9 +160,12 @@ class ApiService {
       ..fields['lora_url'] = loraUrl
       ..fields['lora_strength'] = '$loraStrength'
       ..files.add(
-          http.MultipartFile.fromBytes('image', image, filename: 'start.png'))
-      ..files.add(http.MultipartFile.fromBytes('image_end', endImage,
+          http.MultipartFile.fromBytes('image', image, filename: 'start.png'));
+    // I2V면 끝 프레임을 아예 안 붙인다 — 서버가 그걸 보고 i2v 워크플로로 간다.
+    if (endImage != null) {
+      req.files.add(http.MultipartFile.fromBytes('image_end', endImage,
           filename: 'end.png'));
+    }
     final sub = await http.Response.fromStream(await req.send());
     _check(sub.statusCode, sub.bodyBytes);
     final jobId =

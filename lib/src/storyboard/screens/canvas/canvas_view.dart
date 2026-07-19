@@ -32,11 +32,11 @@ class CanvasView extends StatelessWidget {
     final dialogues = p.dialogues;
     if (dialogues.isEmpty) {
       return _empty(
-        '첫 대사를 추가하세요 (대사 한 마디 = 샷 여러 개)',
+        '첫 비트를 추가하세요 (비트 하나 = 샷 여러 개)',
         FilledButton.icon(
           onPressed: p.addDialogue,
           icon: const Icon(Icons.add),
-          label: const Text('대사 추가'),
+          label: const Text('비트 추가'),
         ),
       );
     }
@@ -115,7 +115,6 @@ class _ShotCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _StatusStrip(beat: beat),
           // 헤더
           Container(
             decoration: const BoxDecoration(
@@ -134,7 +133,7 @@ class _ShotCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('대사 ${index + 1}',
+                      Text('비트 ${index + 1}',
                           style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 11,
@@ -154,7 +153,7 @@ class _ShotCard extends StatelessWidget {
                   iconSize: 18,
                   onPressed: () => p.removeDialogue(beat),
                   icon: const Icon(Icons.delete_outline),
-                  tooltip: '대사 삭제',
+                  tooltip: '비트 삭제',
                 ),
               ],
             ),
@@ -197,37 +196,7 @@ class _ShotCard extends StatelessWidget {
   }
 }
 
-/// 샷 최상단 상태 스트립 — 탭하면 다음 상태로 순환.
-class _StatusStrip extends StatelessWidget {
-  const _StatusStrip({required this.beat});
-
-  final DialogueBeat beat;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = StoryboardScope.of(context);
-    final c = statusColor(beat.status);
-    return GestureDetector(
-      onTap: () => p.cycleDialogueStatus(beat),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        color: c.withValues(alpha: 0.20),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Row(
-          children: [
-            Icon(statusIcon(beat.status), size: 13, color: c),
-            const SizedBox(width: 5),
-            Text(beat.status.label,
-                style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w800, color: c)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 대사 박스 — 화자 + 텍스트 + 음성 상태. 탭 → 이 대사를 선택(편집은 우측 '대사' 탭).
+/// 대사 박스 — 화자 + 텍스트 + 음성 상태. 탭 → 이 비트를 선택(편집은 우측 '비트' 탭).
 class _DialogueBox extends StatelessWidget {
   const _DialogueBox({required this.beat});
 

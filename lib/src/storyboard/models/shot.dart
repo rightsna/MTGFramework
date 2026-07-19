@@ -26,6 +26,11 @@ class Shot {
   /// 씬의 첫 샷은 물려받을 앞이 없어 항상 꺼진 상태다.
   bool linkStart;
 
+  /// 영상 생성 방식. 같은 모델·같은 그래프고, 끝 프레임을 박느냐만 다르다.
+  ///  - false = **FE2V**(기본): 시작·끝 두 장을 고정하고 그 사이를 생성. 끝 그림이 정해진다.
+  ///  - true  = **I2V**: 시작 한 장만 고정하고 끝은 모델이 자유롭게 — 끝장면은 안 쓴다.
+  bool i2v;
+
   Shot({
     required this.id,
     this.title = '',
@@ -38,7 +43,13 @@ class Shot {
     this.endImagePath,
     this.videoPath,
     this.linkStart = false,
+    this.i2v = false,
   }) : refCharacterIds = refCharacterIds ?? [];
+
+  /// 이 샷이 영상을 뽑을 준비가 됐는지 — I2V는 시작만, FE2V는 시작·끝 둘 다 필요.
+  bool get videoInputsReady =>
+      (startImagePath?.isNotEmpty ?? false) &&
+      (i2v || (endImagePath?.isNotEmpty ?? false));
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -57,6 +68,7 @@ class Shot {
           'prompt': videoPrompt,
           'seconds': videoSeconds,
           'file': mediaName(videoPath),
+          'i2v': i2v,
         },
       };
 
@@ -79,6 +91,8 @@ class Shot {
       // 'inherit'가 없는 옛 데이터는 꺼진 걸로 읽는다 — 켠 걸로 보면 이미 만들어 둔
       // 시작 프레임을 앞 샷 것으로 말없이 갈아치우게 된다.
       linkStart: (start?['inherit'] as bool?) ?? false,
+      // 'i2v'가 없는 옛 데이터는 FE2V(끝 프레임 사용)로 읽는다 — 지금까지 만든 게 전부 그거다.
+      i2v: (video?['i2v'] as bool?) ?? false,
     );
   }
 }
