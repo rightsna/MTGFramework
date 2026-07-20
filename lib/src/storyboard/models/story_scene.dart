@@ -16,6 +16,7 @@ class StoryScene {
   String bgmPrompt; // 이 씬의 배경음 스타일 태그(장르·분위기·악기) — ACE-Step BGM 생성용
   String? bgmPath; // 생성된 배경음(mp3) 파일 경로(런타임 절대경로)
   int bgmSeconds; // 배경음 길이(초)
+  String note; // 씬 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
 
   StoryScene({
     required this.id,
@@ -27,6 +28,7 @@ class StoryScene {
     this.bgmPrompt = '',
     this.bgmPath,
     this.bgmSeconds = 30,
+    this.note = '',
   }) : dialogues = dialogues ?? [];
 
   /// 씬 전체 길이(초) — 각 대사의 실제 길이(=샷 길이 합)의 합.
@@ -49,6 +51,7 @@ class StoryScene {
           'url': loraUrl,
           'strength': loraStrength,
         },
+        'note': note,
       };
 
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
@@ -68,6 +71,7 @@ class StoryScene {
       bgmPrompt: (bgm?['prompt'] as String?) ?? '',
       bgmPath: mediaPath(dir, bgm?['file']),
       bgmSeconds: (bgm?['seconds'] as int?) ?? 30,
+      note: (j['note'] as String?) ?? '',
     );
   }
 }

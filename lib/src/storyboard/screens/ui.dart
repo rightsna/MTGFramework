@@ -15,6 +15,6 @@ const double padX = 48;
 const double padY = 40;
 
 // 사이드 패널 폭.
-const double inspectorW = 392;
+const double inspectorW = 440;
 const double playerW = 360;
 const double sceneListW = 260;

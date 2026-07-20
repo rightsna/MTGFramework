@@ -1,0 +1,182 @@
+part of 'inspector_panel.dart';
+
+/// 씬 탭 — 선택 씬 전체 설정(제목·공통 프롬프트·일괄 생성·배경음).
+
+/// 씬 탭 — 선택 씬의 것들을 한곳에: 제목 · 공통 프롬프트 · 영상 일괄 생성 · 배경음.
+class _SceneSettingsTab extends StatelessWidget {
+  const _SceneSettingsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final sc = p.selectedScene;
+    if (sc == null) {
+      return const Center(
+        child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
+      );
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 씬 메모 — 다른 탭과 마찬가지로 최상단.
+          _ShotNote(
+              key: ValueKey('scene_note_${sc.id}'),
+              controller: p.sceneNoteCtrl(sc.id)),
+          const SizedBox(height: 16),
+          _GroupCard(
+            icon: Icons.movie_filter_outlined,
+            title: '씬',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SectionLabel('제목'),
+                const SizedBox(height: 6),
+                TextField(
+                  key: ValueKey('scene_title_${sc.id}'),
+                  controller: p.sceneTitleCtrl(sc.id),
+                  style:
+                      const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  decoration: const InputDecoration(
+                    hintText: '씬 제목 (선택)',
+                    isDense: true,
+                    filled: true,
+                    fillColor: previewBg,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => p.noteEdited(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _GroupCard(
+            icon: Icons.auto_awesome_motion_outlined,
+            title: '영상 일괄 생성',
+            child: VideoBatch(),
+          ),
+          const SizedBox(height: 16),
+          const BgmSection(),
+          const SizedBox(height: 24),
+          // 구조는 두고 생성물만 비우기 — 다시 뽑기 전 초기화용.
+          OutlinedButton.icon(
+            onPressed: () async {
+              final shots = [for (final b in sc.dialogues) ...b.shots];
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('미디어 모두 삭제'),
+                  content: Text(
+                    '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬의 '
+                    '생성물을 모두 지웁니다 — 샷 ${shots.length}개의 시작·끝 프레임과 영상, '
+                    '대사 음성, 배경음.\n'
+                    '파일도 함께 삭제되며 되돌릴 수 없습니다.\n\n'
+                    '프롬프트·제목·대사 텍스트 등 구조는 그대로 남습니다.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: Colors.redAccent),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('모두 삭제'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok == true) {
+                final n = await p.removeSceneMedia();
+                p.messenger?.call('미디어 $n개를 삭제했습니다');
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.orangeAccent,
+              side: const BorderSide(color: Color(0x55FFAB40)),
+            ),
+            icon: const Icon(Icons.cleaning_services_outlined, size: 18),
+            label: const Text('미디어 모두 삭제'),
+          ),
+          const SizedBox(height: 8),
+          // 파괴적 동작이라 맨 아래에, 확인을 거쳐서. (예전엔 씬 목록 안에 있어 오클릭이 쉬웠다.)
+          OutlinedButton.icon(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('씬 삭제'),
+                  content: Text(
+                    '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬을 삭제합니다.\n'
+                    '비트 ${sc.dialogues.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
+                    '되돌릴 수 없습니다.\n\n'
+                    '(생성된 미디어 파일은 프로젝트 폴더에 남습니다)',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('취소'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: Colors.redAccent),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('삭제'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok == true) p.removeScene(sc);
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+              side: const BorderSide(color: Color(0x55FF5252)),
+            ),
+            icon: const Icon(Icons.delete_outline, size: 18),
+            label: const Text('이 씬 삭제'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SceneCommonField extends StatefulWidget {
+  const _SceneCommonField({super.key});
+
+  @override
+  State<_SceneCommonField> createState() => _SceneCommonFieldState();
+}
+
+class _SceneCommonFieldState extends State<_SceneCommonField> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: StoryboardScope.read(context).selectedScene?.commonPrompt ?? '',
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _ctrl,
+      minLines: 3,
+      maxLines: 8,
+      style: const TextStyle(fontSize: 13, height: 1.4),
+      onChanged: (v) => StoryboardScope.read(context).setSceneCommonPrompt(v),
+      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+      decoration: const InputDecoration(
+        hintText: '예: 이 씬의 장소·분위기·시간대…',
+        isDense: true,
+        filled: true,
+        fillColor: previewBg,
+        border: OutlineInputBorder(),
+      ),
+    );
+  }
+}

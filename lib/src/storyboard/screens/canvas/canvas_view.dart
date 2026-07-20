@@ -70,6 +70,16 @@ class CanvasView extends StatelessWidget {
     }
     // 캔버스: 줌 인/아웃 + 상하좌우 팬(InteractiveViewer). 도트 그리드 배경 위에
     // 대사 카드가 가로로 이어지고 사이사이 화살표로 흐름을 표시. 카드 높이는 샷 수에 맞춰 fit.
+    // 우상단에는 씬 안의 모든 메모(씬·비트·샷)를 모은 패널이 뜬다(팬/줌과 무관하게 고정).
+    return Stack(
+      children: [
+        Positioned.fill(child: _canvas(p, dialogues)),
+        const Positioned(top: 10, right: 10, child: _MemoOverlay()),
+      ],
+    );
+  }
+
+  Widget _canvas(StoryboardProvider p, List<DialogueBeat> dialogues) {
     return InteractiveViewer(
       constrained: false,
       boundaryMargin: const EdgeInsets.all(600),
@@ -587,3 +597,106 @@ class _GridPainter extends CustomPainter {
 String fmtSeconds(double s) =>
     s == s.roundToDouble() ? '${s.toInt()}s' : '${s.toStringAsFixed(1)}s';
 
+
+
+/// 캔버스 우상단 메모 패널 — 이 씬의 씬·비트·샷 메모를 **있는 것만** 한 줄씩 모아 보여준다.
+/// 컨트롤러를 직접 읽으므로 인스펙터에서 타이핑하는 즉시([noteEdited]) 따라온다.
+class _MemoOverlay extends StatelessWidget {
+  const _MemoOverlay();
+
+  static const _amber = Color(0xFFE0A94A);
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final sc = p.selectedScene;
+    if (sc == null) return const SizedBox.shrink();
+
+    final entries = <(String, String)>[];
+    final sceneNote = p.sceneNoteCtrl(sc.id).text.trim();
+    if (sceneNote.isNotEmpty) entries.add(('씬', sceneNote));
+    for (var i = 0; i < sc.dialogues.length; i++) {
+      final beat = sc.dialogues[i];
+      final bn = p.noteCtrl(beat.id).text.trim();
+      if (bn.isNotEmpty) entries.add(('비트${i + 1}', bn));
+      for (var j = 0; j < beat.shots.length; j++) {
+        final shot = beat.shots[j];
+        final sn = p.shotNoteCtrl(shot.id).text.trim();
+        if (sn.isEmpty) continue;
+        final t = shot.title.trim();
+        entries.add((t.isEmpty ? '비트${i + 1}·샷${j + 1}' : t, sn));
+      }
+    }
+    if (entries.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: 280,
+      constraints: const BoxConstraints(maxHeight: 280),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xEE22201A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0x33E0A94A)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.sticky_note_2_outlined, size: 14, color: _amber),
+              const SizedBox(width: 6),
+              Text(
+                '메모 ${entries.length}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: _amber,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (label, text) in entries)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: '$label · ',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: _amber,
+                              ),
+                            ),
+                            TextSpan(
+                              text: text.replaceAll('\n', ' '),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                height: 1.35,
+                                color: Color(0xCCFFFFFF),
+                              ),
+                            ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -4,7 +4,7 @@
 ///
 /// 저장(JSON)은 개념별로 중첩한다 — startScene/endScene/video — 파일만 봐도 구성이 읽힌다.
 /// 미디어는 프로젝트 폴더 안 파일명(상대)만 저장하고, 런타임에는 절대경로로 다룬다.
-/// (제작 상태·메모는 샷이 아니라 상위 [DialogueBeat]에 있다.)
+/// (제작 상태는 상위 [DialogueBeat]에, 샷 자체 메모는 [note]에 있다.)
 class Shot {
   String id;
   String title; // 샷 제목 (비우면 '샷 n' 으로 표시)
@@ -39,6 +39,9 @@ class Shot {
   ///  - true  = **I2V**: 시작 한 장만 고정하고 끝은 모델이 자유롭게 — 끝장면은 안 쓴다.
   bool i2v;
 
+  /// 샷 메모(특이사항) — 비트의 note와 같은 성격. 프롬프트와 무관, 생성에 안 쓰임.
+  String note;
+
   Shot({
     required this.id,
     this.title = '',
@@ -56,6 +59,7 @@ class Shot {
     this.videoPath,
     this.linkStart = false,
     this.i2v = false,
+    this.note = '',
   }) : refCharacterIds = refCharacterIds ?? [];
 
   /// 이 샷이 영상을 뽑을 준비가 됐는지 — I2V는 시작만, FE2V는 시작·끝 둘 다 필요.
@@ -86,6 +90,7 @@ class Shot {
           'file': mediaName(videoPath),
           'i2v': i2v,
         },
+        'note': note,
       };
 
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
@@ -114,6 +119,7 @@ class Shot {
       linkStart: (start?['inherit'] as bool?) ?? false,
       // 'i2v'가 없는 옛 데이터는 FE2V(끝 프레임 사용)로 읽는다 — 지금까지 만든 게 전부 그거다.
       i2v: (video?['i2v'] as bool?) ?? false,
+      note: (j['note'] as String?) ?? '',
     );
   }
 }

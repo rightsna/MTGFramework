@@ -48,6 +48,8 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _vprompts = {};
   final Map<String, TextEditingController> _vpromptKos = {};
   final Map<String, TextEditingController> _vnegs = {};
+  final Map<String, TextEditingController> _shotNotes = {};
+  final Map<String, TextEditingController> _sceneNotes = {};
   final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
 
@@ -166,6 +168,8 @@ class StoryboardProvider extends ChangeNotifier {
   TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
   TextEditingController videoKoCtrl(String shotId) => _vpromptKos[shotId]!;
   TextEditingController videoNegCtrl(String shotId) => _vnegs[shotId]!;
+  TextEditingController shotNoteCtrl(String shotId) => _shotNotes[shotId]!;
+  TextEditingController sceneNoteCtrl(String sceneId) => _sceneNotes[sceneId]!;
 
   bool isBusy(String key) => _busy.contains(key);
   int verOf(String key) => _ver[key] ?? 0;
@@ -184,6 +188,7 @@ class StoryboardProvider extends ChangeNotifier {
     _characters = await _store.loadCharacters();
     for (final scene in scenes) {
       _sceneTitles[scene.id] = TextEditingController(text: scene.title);
+      _sceneNotes[scene.id] = TextEditingController(text: scene.note);
       for (final beat in scene.dialogues) {
         _addDialogueControllers(beat);
         for (final shot in beat.shots) {
@@ -241,6 +246,7 @@ class StoryboardProvider extends ChangeNotifier {
     _vprompts[shot.id] = TextEditingController(text: shot.videoPrompt);
     _vpromptKos[shot.id] = TextEditingController(text: shot.videoPromptKo);
     _vnegs[shot.id] = TextEditingController(text: shot.videoNegativePrompt);
+    _shotNotes[shot.id] = TextEditingController(text: shot.note);
   }
 
   void _disposeShotControllers(String shotId) {
@@ -251,11 +257,13 @@ class StoryboardProvider extends ChangeNotifier {
     _vprompts.remove(shotId)?.dispose();
     _vpromptKos.remove(shotId)?.dispose();
     _vnegs.remove(shotId)?.dispose();
+    _shotNotes.remove(shotId)?.dispose();
   }
 
   Future<void> save() async {
     for (final scene in _scenes) {
       scene.title = _sceneTitles[scene.id]?.text ?? scene.title;
+      scene.note = _sceneNotes[scene.id]?.text ?? scene.note;
       for (final beat in scene.dialogues) {
         beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
         beat.note = _notes[beat.id]?.text ?? beat.note;
@@ -272,6 +280,7 @@ class StoryboardProvider extends ChangeNotifier {
               _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
           shot.videoNegativePrompt =
               _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
+          shot.note = _shotNotes[shot.id]?.text ?? shot.note;
         }
       }
       _syncLinkedStartPrompts(scene);
@@ -312,6 +321,7 @@ class StoryboardProvider extends ChangeNotifier {
   void addScene() {
     final id = 'scene_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
     _sceneTitles[id] = TextEditingController();
+    _sceneNotes[id] = TextEditingController();
     _scenes.add(StoryScene(id: id));
     _selectedSceneId = id;
     _selectedDialogueId = null;
@@ -324,6 +334,7 @@ class StoryboardProvider extends ChangeNotifier {
     final wasSelected = _selectedSceneId == scene.id;
     _scenes.remove(scene);
     _sceneTitles.remove(scene.id)?.dispose();
+    _sceneNotes.remove(scene.id)?.dispose();
     for (final beat in scene.dialogues) {
       _disposeDialogueControllers(beat.id);
       for (final shot in beat.shots) {
@@ -374,6 +385,7 @@ class StoryboardProvider extends ChangeNotifier {
 
     // 컨트롤러 등록(새 id 기준).
     _sceneTitles[copy.id] = TextEditingController(text: copy.title);
+    _sceneNotes[copy.id] = TextEditingController(text: copy.note);
     for (final beat in copy.dialogues) {
       _addDialogueControllers(beat);
       for (final shot in beat.shots) {
@@ -1543,6 +1555,12 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _vpromptKos.values) {
+      c.dispose();
+    }
+    for (final c in _shotNotes.values) {
+      c.dispose();
+    }
+    for (final c in _sceneNotes.values) {
       c.dispose();
     }
     for (final c in _vnegs.values) {
