@@ -49,6 +49,7 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _vpromptKos = {};
   final Map<String, TextEditingController> _vnegs = {};
   final Map<String, TextEditingController> _shotNotes = {};
+  final Map<String, TextEditingController> _videoNotes = {};
   final Map<String, TextEditingController> _sceneNotes = {};
   final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
@@ -169,6 +170,7 @@ class StoryboardProvider extends ChangeNotifier {
   TextEditingController videoKoCtrl(String shotId) => _vpromptKos[shotId]!;
   TextEditingController videoNegCtrl(String shotId) => _vnegs[shotId]!;
   TextEditingController shotNoteCtrl(String shotId) => _shotNotes[shotId]!;
+  TextEditingController videoNoteCtrl(String shotId) => _videoNotes[shotId]!;
   TextEditingController sceneNoteCtrl(String sceneId) => _sceneNotes[sceneId]!;
 
   bool isBusy(String key) => _busy.contains(key);
@@ -247,6 +249,7 @@ class StoryboardProvider extends ChangeNotifier {
     _vpromptKos[shot.id] = TextEditingController(text: shot.videoPromptKo);
     _vnegs[shot.id] = TextEditingController(text: shot.videoNegativePrompt);
     _shotNotes[shot.id] = TextEditingController(text: shot.note);
+    _videoNotes[shot.id] = TextEditingController(text: shot.videoNote);
   }
 
   void _disposeShotControllers(String shotId) {
@@ -258,6 +261,7 @@ class StoryboardProvider extends ChangeNotifier {
     _vpromptKos.remove(shotId)?.dispose();
     _vnegs.remove(shotId)?.dispose();
     _shotNotes.remove(shotId)?.dispose();
+    _videoNotes.remove(shotId)?.dispose();
   }
 
   Future<void> save() async {
@@ -281,6 +285,7 @@ class StoryboardProvider extends ChangeNotifier {
           shot.videoNegativePrompt =
               _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
           shot.note = _shotNotes[shot.id]?.text ?? shot.note;
+          shot.videoNote = _videoNotes[shot.id]?.text ?? shot.videoNote;
         }
       }
       _syncLinkedStartPrompts(scene);
@@ -1171,11 +1176,27 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 인스펙터 마지막 선택 탭(0=장면, 1=영상, 2=공통) 저장.
+  /// 인스펙터 마지막 선택 탭(0=비트, 1=장면, 2=영상, 3=씬) 저장.
   void setInspectorTab(int i) {
     if (_settings.inspectorTab == i) return;
     _settings = _settings.copyWith(inspectorTab: i);
     _settingsStore.save(_settings);
+  }
+
+  int _inspectorTabReq = -1;
+  int _inspectorTabReqSeq = 0;
+
+  /// 열어 달라고 요청된 인스펙터 탭과 그 요청 횟수. 패널은 [inspectorTabReqSeq]가
+  /// 바뀐 걸 보고 탭을 옮긴다 — 같은 탭을 다시 눌러도 반응하도록 횟수를 센다.
+  int get inspectorTabReq => _inspectorTabReq;
+  int get inspectorTabReqSeq => _inspectorTabReqSeq;
+
+  /// 캔버스 등 바깥에서 인스펙터의 특정 탭을 연다(0=비트, 1=장면, 2=영상, 3=씬).
+  void openInspectorTab(int i) {
+    _inspectorTabReq = i;
+    _inspectorTabReqSeq++;
+    setInspectorTab(i);
+    notifyListeners();
   }
 
   /// 샷이 속한 씬 찾기(씬 → 대사 → 샷 탐색).
@@ -1558,6 +1579,9 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _shotNotes.values) {
+      c.dispose();
+    }
+    for (final c in _videoNotes.values) {
       c.dispose();
     }
     for (final c in _sceneNotes.values) {

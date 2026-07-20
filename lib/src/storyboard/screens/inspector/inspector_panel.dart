@@ -39,6 +39,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
   bool _restoredTab = false;
   String? _lastDialogueId; // 선택 변경 감지용(샷만 선택 시 '샷' 탭으로 전환)
   String? _lastShotId;
+  int _seenTabReqSeq = 0; // 캔버스에서 온 탭 열기 요청을 어디까지 처리했는지
 
   @override
   void initState() {
@@ -88,6 +89,19 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
             if (mounted) _tab.animateTo(0);
           });
         }
+      }
+    }
+    // 캔버스 메모 클릭 등 바깥에서 온 탭 요청은 위의 자동 전환보다 우선한다
+    // (더 늦게 등록된 post-frame 콜백이 이긴다).
+    if (p.inspectorTabReqSeq != _seenTabReqSeq) {
+      _seenTabReqSeq = p.inspectorTabReqSeq;
+      _lastDialogueId = p.selectedDialogueId;
+      _lastShotId = p.selectedShotId;
+      final want = p.inspectorTabReq.clamp(0, 3);
+      if (_tab.index != want) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _tab.animateTo(want);
+        });
       }
     }
     final shot = p.selectedShot;

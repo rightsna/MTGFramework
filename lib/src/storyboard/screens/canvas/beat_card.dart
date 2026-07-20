@@ -92,19 +92,62 @@ class _ShotCard extends StatelessWidget {
         ],
       ),
     );
-    // 메모는 샷 박스 안이 아니라, 카드 아래에 독립 라운드박스로 분리해서 붙인다.
-    final Widget content = beat.note.trim().isEmpty
+    // 메모는 샷 박스 안이 아니라 카드 아래에 독립 라운드박스로 붙인다 —
+    // 비트 메모 다음 그 비트의 샷 메모들이 순서대로 이어진다.
+    // 모델이 아니라 컨트롤러에서 읽는다: 인스펙터에서 타이핑하는 즉시 따라오게.
+    // 탭하면 인스펙터의 그 메모 자리로 간다(탭 번호: 0=비트 1=장면 2=영상).
+    final notes = <Widget>[];
+    final beatNote = p.noteCtrl(beat.id).text.trim();
+    if (beatNote.isNotEmpty) {
+      notes.add(_NoteBox(
+        text: beatNote,
+        onTap: () {
+          p.selectDialogue(beat.id);
+          p.openInspectorTab(0);
+        },
+      ));
+    }
+    for (var i = 0; i < beat.shots.length; i++) {
+      final shot = beat.shots[i];
+      final t = shot.title.trim().isEmpty ? '샷 ${i + 1}' : shot.title.trim();
+      // 장면 메모와 영상 메모는 별개다 — 있는 것만 각각 한 줄씩.
+      final sn = p.shotNoteCtrl(shot.id).text.trim();
+      if (sn.isNotEmpty) {
+        notes.add(_NoteBox(
+          label: '$t · 장면',
+          text: sn,
+          onTap: () {
+            p.selectShot(beat.id, shot.id);
+            p.openInspectorTab(1);
+          },
+        ));
+      }
+      final vn = p.videoNoteCtrl(shot.id).text.trim();
+      if (vn.isNotEmpty) {
+        notes.add(_NoteBox(
+          label: '$t · 영상',
+          text: vn,
+          onTap: () {
+            p.selectShot(beat.id, shot.id);
+            p.openInspectorTab(2);
+          },
+        ));
+      }
+    }
+    final Widget content = notes.isEmpty
         ? card
         : Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               card,
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: _NoteBox(text: beat.note.trim()),
-              ),
+              for (final n in notes) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: n,
+                ),
+              ],
             ],
           );
     // 몸통(배경) 탭 → 이 대사 선택. 앞쪽의 샷·상태 스트립·대사·삭제·＋ 버튼은
@@ -398,13 +441,19 @@ class _AddShotTile extends StatelessWidget {
 
 /// 샷 메모(특이사항) — 앰버 톤 라운드 박스.
 class _NoteBox extends StatelessWidget {
-  const _NoteBox({required this.text});
+  const _NoteBox({required this.text, this.label, this.onTap});
 
   final String text;
 
+  /// 샷 메모면 어느 샷인지(비트 메모는 null — 카드가 곧 그 비트다).
+  final String? label;
+
+  /// 탭하면 인스펙터의 그 자리로 데려간다. 카드 배경 탭보다 자식이 먼저 가져간다.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final box = Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: const Color(0x14E0A94A),
@@ -421,14 +470,31 @@ class _NoteBox extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Text(text,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 11, height: 1.35, color: Color(0xCCFFFFFF))),
+            child: Text.rich(
+              TextSpan(children: [
+                if (label != null)
+                  TextSpan(
+                    text: '$label · ',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFFE0A94A)),
+                  ),
+                TextSpan(text: text),
+              ]),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 11, height: 1.35, color: Color(0xCCFFFFFF)),
+            ),
           ),
         ],
       ),
+    );
+    if (onTap == null) return box;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(onTap: onTap, child: box),
     );
   }
 }

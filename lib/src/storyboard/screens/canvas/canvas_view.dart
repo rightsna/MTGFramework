@@ -75,16 +75,7 @@ class CanvasView extends StatelessWidget {
     }
     // 캔버스: 줌 인/아웃 + 상하좌우 팬(InteractiveViewer). 도트 그리드 배경 위에
     // 대사 카드가 가로로 이어지고 사이사이 화살표로 흐름을 표시. 카드 높이는 샷 수에 맞춰 fit.
-    // 우상단에는 씬 안의 모든 메모(씬·비트·샷)를 모은 패널이 뜬다(팬/줌과 무관하게 고정).
-    return Stack(
-      children: [
-        Positioned.fill(child: _canvas(p, dialogues)),
-        const Positioned(top: 10, right: 10, child: _MemoOverlay()),
-      ],
-    );
-  }
-
-  Widget _canvas(StoryboardProvider p, List<DialogueBeat> dialogues) {
+    // 메모(비트·샷)는 각 비트 카드 아래에 흐름 그대로 달린다 — 떠 있는 패널이 아니다.
     return InteractiveViewer(
       constrained: false,
       boundaryMargin: const EdgeInsets.all(600),

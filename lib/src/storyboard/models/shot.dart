@@ -39,8 +39,11 @@ class Shot {
   ///  - true  = **I2V**: 시작 한 장만 고정하고 끝은 모델이 자유롭게 — 끝장면은 안 쓴다.
   bool i2v;
 
-  /// 샷 메모(특이사항) — 비트의 note와 같은 성격. 프롬프트와 무관, 생성에 안 쓰임.
+  /// 장면 탭 메모(특이사항) — 프레임 작업용 기록. 프롬프트와 무관, 생성에 안 쓰임.
   String note;
+
+  /// 영상 탭 메모 — 장면 메모와 **별개**다. 프레임에 적을 말과 영상에 적을 말이 다르다.
+  String videoNote;
 
   Shot({
     required this.id,
@@ -60,6 +63,7 @@ class Shot {
     this.linkStart = false,
     this.i2v = false,
     this.note = '',
+    this.videoNote = '',
   }) : refCharacterIds = refCharacterIds ?? [];
 
   /// 이 샷이 영상을 뽑을 준비가 됐는지 — I2V는 시작만, FE2V는 시작·끝 둘 다 필요.
@@ -89,6 +93,7 @@ class Shot {
           'seconds': videoSeconds,
           'file': mediaName(videoPath),
           'i2v': i2v,
+          'note': videoNote,
         },
         'note': note,
       };
@@ -120,6 +125,7 @@ class Shot {
       // 'i2v'가 없는 옛 데이터는 FE2V(끝 프레임 사용)로 읽는다 — 지금까지 만든 게 전부 그거다.
       i2v: (video?['i2v'] as bool?) ?? false,
       note: (j['note'] as String?) ?? '',
+      videoNote: (video?['note'] as String?) ?? '',
     );
   }
 }

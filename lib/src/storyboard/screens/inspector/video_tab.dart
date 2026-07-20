@@ -150,8 +150,8 @@ class _VideoTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 샷 메모 — 장면 탭과 같은 메모(샷당 하나). 영상 작업 중 가장 먼저 눈에 들어오게 최상단.
-          _ShotNote(controller: p.shotNoteCtrl(c.id)),
+          // 영상 메모 — 장면 탭 메모와 별개다(영상에 적을 말은 프레임에 적을 말과 다르다).
+          _ShotNote(controller: p.videoNoteCtrl(c.id)),
           const SizedBox(height: 16),
           // 결과(영상)가 위, 그걸 만드는 수단(프롬프트·생성) 다음, 설정은 맨 아래.
           _GroupCard(
@@ -238,7 +238,7 @@ class _VideoTab extends StatelessWidget {
                   children: [
                     for (final r in VideoRes.values)
                       ChoiceChip(
-                        label: Text(r.label),
+                        label: Text(r.label, style: _chipLabel),
                         selected: p.settings.videoRes == r,
                         onSelected: (_) => p.setVideoRes(r),
                       ),

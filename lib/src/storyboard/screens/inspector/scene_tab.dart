@@ -88,7 +88,7 @@ class _SceneTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 샷 메모 — 비트의 메모와 같은 성격, 이 샷에만 붙는다(영상 탭 상단에도 같은 메모).
+          // 장면 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
           _ShotNote(controller: p.shotNoteCtrl(shot.id)),
           const SizedBox(height: 14),
           _VideoModeToggle(shot: shot),
@@ -148,7 +148,7 @@ class _SceneTab extends StatelessWidget {
                   children: [
                     for (final r in ImageRes.values)
                       ChoiceChip(
-                        label: Text(r.label),
+                        label: Text(r.label, style: _chipLabel),
                         selected: p.settings.imageRes == r,
                         onSelected: (_) => p.setImageRes(r),
                       ),
@@ -264,7 +264,8 @@ class _RefCharacterPicker extends StatelessWidget {
               children: [
                 for (final c in chars)
                   FilterChip(
-                    label: Text(c.name.isEmpty ? '(이름 없음)' : c.name),
+                    label: Text(c.name.isEmpty ? '(이름 없음)' : c.name,
+                        style: _chipLabel),
                     selected: sel.contains(c.id),
                     onSelected: (atCap && !sel.contains(c.id))
                         ? null
