@@ -5,11 +5,14 @@ import 'package:path_provider/path_provider.dart';
 
 /// Where videos are generated. (스크린샷=시작·끝 프레임은 자체 서버 전용 — 외부 키 생성은 걷어냄.)
 enum VideoBackend {
-  veo('Veo'),
-  serviceApi('자체 서버 (service-api)');
+  veo('Veo', 'Veo'),
+  serviceApi('자체 서버 (service-api)', '자체서버');
 
-  const VideoBackend(this.label);
+  const VideoBackend(this.label, this.shortLabel);
   final String label;
+
+  /// 좁은 자리(캔버스의 트랙 줄 등)에 붙이는 짧은 이름.
+  final String shortLabel;
 }
 
 /// Storyboard Maker settings: 영상 백엔드 옵션 + 키/URL.
@@ -25,7 +28,7 @@ enum VideoAspect {
   final String label;
 }
 
-/// 영상 해상도(Veo 옵션).
+/// 영상 해상도(Veo 옵션). 길이는 설정이 아니라 **샷마다** 정한다(Veo는 4·6·8초로 스냅).
 enum VideoResolution {
   hd720('720p', '720p'),
   hd1080('1080p', '1080p');
@@ -94,7 +97,6 @@ class MovieSettings {
   final VideoRes videoRes; // 자체 서버 FE2V 생성 해상도(비율 포함, 4종)
   final int videoSeconds; // 자체 서버 FE2V 영상 길이(초, 1~15)
   final int inspectorTab; // 인스펙터 마지막 선택 탭(0=장면, 1=영상, 2=공통)
-  final int videoDurationSeconds; // 4 | 6 | 8
   final String videoNegativePrompt; // 영상 네거티브 프롬프트
   final String geminiKey; // Veo 전용
   final String
@@ -117,7 +119,6 @@ class MovieSettings {
     this.videoRes = VideoRes.p352x640,
     this.videoSeconds = 5,
     this.inspectorTab = 0,
-    this.videoDurationSeconds = 8,
     this.videoNegativePrompt = '',
     this.geminiKey = '',
     this.civitaiToken = '',
@@ -136,7 +137,6 @@ class MovieSettings {
     VideoRes? videoRes,
     int? videoSeconds,
     int? inspectorTab,
-    int? videoDurationSeconds,
     String? videoNegativePrompt,
     String? geminiKey,
     String? civitaiToken,
@@ -153,7 +153,6 @@ class MovieSettings {
     videoRes: videoRes ?? this.videoRes,
     videoSeconds: videoSeconds ?? this.videoSeconds,
     inspectorTab: inspectorTab ?? this.inspectorTab,
-    videoDurationSeconds: videoDurationSeconds ?? this.videoDurationSeconds,
     videoNegativePrompt: videoNegativePrompt ?? this.videoNegativePrompt,
     geminiKey: geminiKey ?? this.geminiKey,
     civitaiToken: civitaiToken ?? this.civitaiToken,
@@ -172,7 +171,6 @@ class MovieSettings {
     'videoRes': videoRes.name,
     'videoSeconds': videoSeconds,
     'inspectorTab': inspectorTab,
-    'videoDurationSeconds': videoDurationSeconds,
     'videoNegativePrompt': videoNegativePrompt,
     'geminiKey': geminiKey,
     'civitaiToken': civitaiToken,
@@ -203,7 +201,6 @@ class MovieSettings {
     videoRes: _readVideoRes(j),
     videoSeconds: (j['videoSeconds'] as int?) ?? 5,
     inspectorTab: (j['inspectorTab'] as int?) ?? 0,
-    videoDurationSeconds: (j['videoDurationSeconds'] as int?) ?? 8,
     videoNegativePrompt: (j['videoNegativePrompt'] as String?) ?? '',
     geminiKey: (j['geminiKey'] as String?) ?? '',
     civitaiToken: (j['civitaiToken'] as String?) ?? '',

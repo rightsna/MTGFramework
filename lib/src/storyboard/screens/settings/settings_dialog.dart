@@ -462,24 +462,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     setState(() => _s = _s.copyWith(videoResolution: v)),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<int>(
-                initialValue: _s.videoDurationSeconds,
-                decoration: const InputDecoration(
-                  labelText: '길이',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-                items: const [
-                  DropdownMenuItem(value: 4, child: Text('4초')),
-                  DropdownMenuItem(value: 6, child: Text('6초')),
-                  DropdownMenuItem(value: 8, child: Text('8초')),
-                ],
-                onChanged: (v) =>
-                    setState(() => _s = _s.copyWith(videoDurationSeconds: v)),
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 10),

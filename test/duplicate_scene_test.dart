@@ -48,21 +48,21 @@ void main() {
     await p.addShot(beat);
 
     final src = p.selectedScene!;
-    final srcBeatIds = {for (final b in src.dialogues) b.id};
-    final srcShotIds = {for (final b in src.dialogues) ...b.shots.map((s) => s.id)};
+    final srcBeatIds = {for (final b in src.beats) b.id};
+    final srcShotIds = {for (final b in src.beats) ...b.shots.map((s) => s.id)};
 
     await p.duplicateScene();
     final copy = p.scenes.last;
 
     expect(copy.id, isNot(src.id));
-    for (final b in copy.dialogues) {
+    for (final b in copy.beats) {
       expect(srcBeatIds, isNot(contains(b.id)));
       for (final s in b.shots) {
         expect(srcShotIds, isNot(contains(s.id)));
       }
     }
     // 구조(대사·샷 개수)는 그대로.
-    expect(copy.dialogues.length, src.dialogues.length);
+    expect(copy.beats.length, src.beats.length);
     expect(copy.shotCount, src.shotCount);
   });
 
@@ -79,7 +79,7 @@ void main() {
     shot.videoPath = srcVideo.path;
 
     await p.duplicateScene();
-    final copyShot = p.scenes.last.dialogues.single.shots.single;
+    final copyShot = p.scenes.last.beats.single.shots.single;
 
     expect(copyShot.videoPath, isNotNull);
     expect(copyShot.videoPath, isNot(srcVideo.path), reason: '같은 파일을 가리키면 분리가 안 된 것');
@@ -100,7 +100,7 @@ void main() {
     beat.shots.single.endImagePath = '${dir.path}/${beat.shots.single.id}_end.png';
 
     await p.duplicateScene();
-    final copyShot = p.scenes.last.dialogues.single.shots.single;
+    final copyShot = p.scenes.last.beats.single.shots.single;
     expect(copyShot.endImagePath, isNull);
   });
 
@@ -147,7 +147,7 @@ void main() {
     s1.endImagePath = end.path;
 
     await p.duplicateScene();
-    final cShots = p.scenes.last.dialogues.single.shots;
+    final cShots = p.scenes.last.beats.single.shots;
     expect(cShots.last.linkStart, isTrue, reason: '연동 상태가 복제돼야 한다');
     // 복제본의 둘째 샷 시작 = 복제본 첫 샷의 끝(원본이 아니라).
     expect(p.startPathOf(cShots.last), cShots.first.endImagePath);

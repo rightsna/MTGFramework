@@ -20,7 +20,15 @@ class Shot {
   /// 프롬프트 본문에 "no hand" 식으로 쓰면 오히려 그게 불려 나오므로(언급이 곧 소환),
   /// 부정은 전부 이 칸으로 보낸다. 비우면 서버 워크플로의 기본 네거티브를 그대로 쓴다.
   String videoNegativePrompt;
-  int videoSeconds; // 이 샷의 영상 길이(초, 1~15)
+  int videoSeconds; // 이 샷에 **주문할** 영상 길이(초, 1~15)
+
+  /// 뽑힌 영상의 **실제 길이(초)**. 주문한 길이([videoSeconds])와 다를 수 있다 —
+  /// 백엔드가 지원하는 길이로 내려가거나(Veo는 4·6·8초만), 트림으로 잘리거나,
+  /// 모델이 몇 프레임 더 얹기도 한다. 없으면 아직 안 뽑은 것.
+  ///
+  /// **트랙마다 따로 갖는 값**이다([videoPath]와 한 몸) — 같은 콘티를 백엔드별로 뽑으면
+  /// 결과 길이가 서로 다르고, 타임라인은 각 트랙의 실제 길이로 그려져야 한다.
+  double? videoActualSeconds;
   String? startImagePath; // 생성된 시작장면 파일 경로(런타임 절대경로)
   String? endImagePath; // 생성된 끝장면 파일 경로
   String? videoPath; // 생성된 영상 파일 경로
@@ -45,6 +53,15 @@ class Shot {
   /// 영상 탭 메모 — 장면 메모와 **별개**다. 프레임에 적을 말과 영상에 적을 말이 다르다.
   String videoNote;
 
+  /// 파생 트랙(트랙2…)에서 이 샷이 비추고 있는 **기준 트랙 샷의 id**. null = 기준 트랙의 샷 자신.
+  /// 트랙끼리 구조는 항상 같으므로 파생 트랙의 샷은 반드시 짝이 있다.
+  String? baseId;
+
+  /// 파생 트랙 샷이 **자기 내용을 갖는지**. false(기본) = 기준 샷 내용을 그대로 따라간다.
+  /// 따라가는 동안 자기 것은 [videoPath] 하나뿐 — 트랙을 나눈 이유가 그것뿐이라서다.
+  /// 파생 트랙에서 내용을 고치면 그 샷만 true가 되고(기준 내용을 복사해 옴) 이후 독립한다.
+  bool detached;
+
   Shot({
     required this.id,
     this.title = '',
@@ -57,6 +74,7 @@ class Shot {
     this.videoPromptKo = '',
     this.videoNegativePrompt = '',
     this.videoSeconds = 5,
+    this.videoActualSeconds,
     this.startImagePath,
     this.endImagePath,
     this.videoPath,
@@ -64,39 +82,94 @@ class Shot {
     this.i2v = false,
     this.note = '',
     this.videoNote = '',
+    this.baseId,
+    this.detached = false,
   }) : refCharacterIds = refCharacterIds ?? [];
+
+  /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이.
+  /// 재생되는 건 파일이므로 화면·합계는 전부 이걸 봐야 한다.
+  double get playSeconds => videoActualSeconds ?? videoSeconds.toDouble();
+
+  /// 주문한 길이와 실제가 어긋났는지(0.5초 넘게) — 화면에 그대로 드러내야 할 사실.
+  bool get lengthDiffers =>
+      videoActualSeconds != null &&
+      (videoActualSeconds! - videoSeconds).abs() > 0.5;
+
+  /// 파생 트랙의 샷인지(기준 트랙이면 false).
+  bool get isDerived => baseId != null;
+
+  /// 기준 샷 내용을 그대로 따라가는 중인지 — 이 상태에서는 내용 편집이 잠긴다.
+  bool get inherits => baseId != null && !detached;
+
+  /// 기준 샷 [base]의 내용을 그대로 가져온다 — **영상([videoPath])과 정체성(id/연결정보)은 빼고**.
+  /// 따라가는 샷을 기준에 맞추는 데도, 분리(detach)할 때 출발점을 만드는 데도 같은 규칙을 쓴다.
+  void adoptContentFrom(Shot base) {
+    title = base.title;
+    refCharacterIds = [...base.refCharacterIds];
+    startPrompt = base.startPrompt;
+    startPromptKo = base.startPromptKo;
+    endPrompt = base.endPrompt;
+    endPromptKo = base.endPromptKo;
+    videoPrompt = base.videoPrompt;
+    videoPromptKo = base.videoPromptKo;
+    videoNegativePrompt = base.videoNegativePrompt;
+    videoSeconds = base.videoSeconds;
+    startImagePath = base.startImagePath;
+    endImagePath = base.endImagePath;
+    linkStart = base.linkStart;
+    i2v = base.i2v;
+    note = base.note;
+    videoNote = base.videoNote;
+  }
 
   /// 이 샷이 영상을 뽑을 준비가 됐는지 — I2V는 시작만, FE2V는 시작·끝 둘 다 필요.
   bool get videoInputsReady =>
       (startImagePath?.isNotEmpty ?? false) &&
       (i2v || (endImagePath?.isNotEmpty ?? false));
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() {
+    // 따라가는 샷은 **자기 것만** 적는다 — 내용은 기준 샷 한 곳에만 있어야 둘이 어긋나지 않는다.
+    if (inherits) {
+      return {
         'id': id,
-        'title': title,
-        'refCharacters': refCharacterIds,
-        'startScene': {
-          'prompt': startPrompt,
-          'promptKo': startPromptKo,
-          'image': mediaName(startImagePath),
-          'inherit': linkStart,
-        },
-        'endScene': {
-          'prompt': endPrompt,
-          'promptKo': endPromptKo,
-          'image': mediaName(endImagePath),
-        },
+        'base': baseId,
+        'detached': false,
         'video': {
-          'prompt': videoPrompt,
-          'promptKo': videoPromptKo,
-          'negativePrompt': videoNegativePrompt,
-          'seconds': videoSeconds,
           'file': mediaName(videoPath),
-          'i2v': i2v,
-          'note': videoNote,
+          'actualSeconds': videoActualSeconds,
         },
-        'note': note,
       };
+    }
+    return {
+      'id': id,
+      if (baseId != null) 'base': baseId,
+      if (baseId != null) 'detached': true,
+      'title': title,
+      'refCharacters': refCharacterIds,
+      'startScene': {
+        'prompt': startPrompt,
+        'promptKo': startPromptKo,
+        'image': mediaName(startImagePath),
+        'inherit': linkStart,
+      },
+      'endScene': {
+        'prompt': endPrompt,
+        'promptKo': endPromptKo,
+        'image': mediaName(endImagePath),
+      },
+      'video': {
+        'prompt': videoPrompt,
+        'promptKo': videoPromptKo,
+        'negativePrompt': videoNegativePrompt,
+        'seconds': videoSeconds,
+        'actualSeconds': videoActualSeconds, // 실제로 뽑힌 길이(주문값과 다를 수 있다)
+        'file': mediaName(videoPath),
+        'i2v': i2v,
+        'note': videoNote,
+      },
+      'note': note,
+    };
+  }
 
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
   factory Shot.fromJson(Map<String, dynamic> j, String dir) {
@@ -116,6 +189,7 @@ class Shot {
       // 'negativePrompt'가 없는 옛 데이터는 빈 값 — 서버 기본 네거티브가 그대로 쓰인다.
       videoNegativePrompt: (video?['negativePrompt'] as String?) ?? '',
       videoSeconds: (video?['seconds'] as int?) ?? 5,
+      videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),
       videoPath: mediaPath(dir, video?['file']),
@@ -126,6 +200,10 @@ class Shot {
       i2v: (video?['i2v'] as bool?) ?? false,
       note: (j['note'] as String?) ?? '',
       videoNote: (video?['note'] as String?) ?? '',
+      // 'base'가 있으면 파생 트랙의 샷 — 따라가는 중이면 위 내용은 전부 비어 있고,
+      // 불러온 뒤 기준 샷에서 채워진다([StoryboardProvider] 트랙 동기화).
+      baseId: j['base'] as String?,
+      detached: (j['detached'] as bool?) ?? false,
     );
   }
 }

@@ -39,8 +39,20 @@ class VeoVideoService implements AiVideoService {
     final key = apiKey.trim();
 
     onProgress?.call('영상 생성 시작…');
-    final opName = await _start(key, model.trim(), prompt, image, lastFrame,
-        aspectRatio, resolution, durationSeconds, negativePrompt);
+    String opName;
+    try {
+      opName = await _start(key, model.trim(), prompt, image, lastFrame,
+          aspectRatio, resolution, durationSeconds, negativePrompt);
+    } on VeoException catch (e) {
+      // 끝 프레임 고정(FE2V)은 계정·모델에 따라 **아예 열려 있지 않다** — 그럴 때 Gemini는
+      // 400 "Your use case is currently not supported."로만 답한다(2026-07 실측: 같은 요청에서
+      // lastFrame만 빼면 통과). 여기서 포기하면 Veo로는 한 컷도 못 뽑으므로,
+      // 시작 프레임만으로(I2V) 한 번 더 간다 — 끝 그림은 모델이 정하게 된다.
+      if (lastFrame == null || !_unsupportedUseCase(e.message)) rethrow;
+      onProgress?.call('끝 프레임 고정이 지원되지 않아 시작 프레임만으로 생성합니다…');
+      opName = await _start(key, model.trim(), prompt, image, null, aspectRatio,
+          resolution, durationSeconds, negativePrompt);
+    }
 
     onProgress?.call('생성 중… (수 분 소요)');
     final response = await _poll(key, opName, onProgress);
@@ -48,6 +60,10 @@ class VeoVideoService implements AiVideoService {
     onProgress?.call('영상 내려받는 중…');
     return _download(key, response);
   }
+
+  /// 400 중에서 **기능 자체가 안 열린 경우**만 골라낸다(요청이 틀린 것과 구분).
+  static bool _unsupportedUseCase(String message) =>
+      message.contains('use case is currently not supported');
 
   /// Kick off the long-running generation; returns the operation name.
   Future<String> _start(
@@ -227,11 +243,13 @@ class VeoVideoService implements AiVideoService {
     switch (code) {
       case 400:
         return 'API 요청이 잘못되었습니다 (400).$detail';
+      // 403은 "키가 틀림"만이 아니다 — 결제 미설정·모델 미허용도 여기로 온다.
+      // 서버가 준 이유를 반드시 같이 보여준다(이유를 지우면 원인 못 찾는다).
       case 401:
       case 403:
-        return 'API 키가 거부되었습니다 ($code). 키를 확인하세요.';
+        return 'API 키가 거부되었습니다 ($code).$detail';
       case 429:
-        return '요청이 너무 많습니다 (429). 잠시 후 다시 시도하세요.';
+        return '요청이 너무 많습니다 (429).$detail';
       default:
         return '오류 $code.$detail';
     }

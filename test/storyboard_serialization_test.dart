@@ -3,6 +3,7 @@ import 'package:framework/src/storyboard/models/shot.dart';
 import 'package:framework/src/storyboard/models/dialogue.dart';
 import 'package:framework/src/storyboard/models/dialogue_beat.dart';
 import 'package:framework/src/storyboard/models/story_scene.dart';
+import 'package:framework/src/storyboard/models/video_track.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// `scene<N>.json` 직렬화 검증. 씬 = 대사들의 나열, 각 대사 = 대사(0/1) + 샷들.
@@ -19,7 +20,8 @@ void main() {
         bgmPrompt: 'cinematic, ambient, calm, piano',
         bgmSeconds: 45,
         bgmPath: '$dir/scene_1_bgm.mp3',
-        dialogues: [
+        tracks: [
+          VideoTrack(id: 'track_1', name: '트랙 1', beats: [
           // 대사 있는 대사 — 샷 2개(첫 샷 립싱크 + 컷어웨이).
           DialogueBeat(
             id: 'shot_1',
@@ -56,6 +58,7 @@ void main() {
             id: 'shot_2',
             shots: [Shot(id: 'clip_3', startPrompt: '모텔 외경')],
           ),
+          ]),
         ],
       );
 
@@ -63,14 +66,18 @@ void main() {
     final j = sampleScene().toJson();
 
     expect(j.keys,
-        containsAll(['id', 'title', 'commonPrompt', 'dialogues', 'bgm', 'lora']));
+        containsAll(['id', 'title', 'commonPrompt', 'tracks', 'bgm', 'lora']));
     expect(j['bgm'], {
       'prompt': 'cinematic, ambient, calm, piano',
       'seconds': 45,
       'file': 'scene_1_bgm.mp3',
     });
 
-    final dialogues = j['dialogues'] as List;
+    // 씬 > 트랙 > 비트 — 트랙 1(기준)의 비트들을 본다.
+    final tracks = j['tracks'] as List;
+    expect(tracks.length, 1);
+    expect((tracks.first as Map)['backend'], 'serviceApi');
+    final dialogues = (tracks.first as Map)['beats'] as List;
     expect(dialogues.length, 2);
 
     // 대사1: 상태·메모·대사 + 샷 2개.
@@ -99,8 +106,10 @@ void main() {
       'promptKo': '',
       'negativePrompt': '',
       'seconds': 3,
+      'actualSeconds': null, // 아직 안 재본 것(뽑고 나면 실제 길이가 들어간다)
       'file': 'clip_1_vlow.mp4',
       'i2v': false,
+      'note': '', // 영상 탭 메모(장면 메모와 별개)
     });
 
     // 샷2: 무음(dialogue=null).
@@ -119,9 +128,9 @@ void main() {
     expect(after.commonPrompt, '세로 9:16, 애니풍');
     expect(after.loraUrl, 'https://civitai.com/x');
     expect(after.bgmPath, '$dir/scene_1_bgm.mp3');
-    expect(after.dialogues.length, 2);
+    expect(after.beats.length, 2);
 
-    final s1 = after.dialogues.first;
+    final s1 = after.beats.first;
     expect(s1.note, '역광 주의 · 클라 요청으로 톤 어둡게');
     expect(s1.hasDialogue, isTrue);
     expect(s1.dialogue!.speakerId, 'char_miles');
@@ -144,7 +153,7 @@ void main() {
     expect(c1.videoPath, '$dir/clip_1_vlow.mp4');
 
     // 무음 대사: 대사 없음 → 길이는 샷 길이 합.
-    final s2 = after.dialogues[1];
+    final s2 = after.beats[1];
     expect(s2.hasDialogue, isFalse);
     expect(s2.dialogue, isNull);
     expect(s2.seconds, s2.shotSeconds.toDouble());
@@ -177,8 +186,8 @@ void main() {
   test('폴더가 이동해도 미디어 경로가 새 dir 기준으로 복원된다', () {
     final moved = StoryScene.fromJson(sampleScene().toJson(), '/new/home');
     expect(moved.bgmPath, '/new/home/scene_1_bgm.mp3');
-    expect(moved.dialogues.first.dialogue!.voicePath, '/new/home/shot_1_voice.mp3');
-    expect(moved.dialogues.first.shots.first.startImagePath,
+    expect(moved.beats.first.dialogue!.voicePath, '/new/home/shot_1_voice.mp3');
+    expect(moved.beats.first.shots.first.startImagePath,
         '/new/home/clip_1_start.png');
   });
 
@@ -213,7 +222,8 @@ void main() {
     // 구스키마 폴백은 제거됐다(데이터는 정본 스키마로 마이그레이션 완료).
     // 키가 아예 없을 때 터지지 않고 기본값으로 읽히는지만 본다.
     final sc = StoryScene.fromJson({'id': 'scene_min'}, dir);
-    expect(sc.dialogues, isEmpty);
+    expect(sc.beats, isEmpty);
+    expect(sc.tracks.length, 1, reason: '트랙이 없으면 기준 트랙 하나로 시작한다');
     expect(sc.loraStrength, 0.8);
     expect(sc.bgmSeconds, 30);
     expect(sc.bgmPath, isNull);

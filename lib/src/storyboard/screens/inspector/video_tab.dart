@@ -145,13 +145,17 @@ class _VideoTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final c = shot;
+    // 따라가는 샷은 **내용은 잠기고 영상 생성만 열려 있다** — 트랙을 나눈 이유가 그것뿐이라서.
+    final locked = c.inherits;
+    final backend = p.backendOf(c);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _TrackLinkBar(shot: c),
           // 영상 메모 — 장면 탭 메모와 별개다(영상에 적을 말은 프레임에 적을 말과 다르다).
-          _ShotNote(controller: p.videoNoteCtrl(c.id)),
+          _ShotNote(controller: p.videoNoteCtrl(c.id), readOnly: locked),
           const SizedBox(height: 16),
           // 결과(영상)가 위, 그걸 만드는 수단(프롬프트·생성) 다음, 설정은 맨 아래.
           _GroupCard(
@@ -163,18 +167,30 @@ class _VideoTab extends StatelessWidget {
               children: [
                 _OutputBlock(
                   title: '영상',
-                  path: c.videoPath,
+                  // 아직 이 트랙에서 안 뽑았으면 기준 트랙 영상을 그대로 보여 준다.
+                  path: p.videoPathOf(c),
                   busyKey: p.busyKey(c.id, GenMode.videoLow),
                   isVideo: true,
-                  deleteTarget: (shot: c, mode: GenMode.videoLow),
-                  trimTarget: c,
+                  // 트림·삭제는 **이 트랙에서 뽑은 영상**에만 — 빌려 보여 주는 중이면
+                  // 그 파일은 기준 트랙 것이라 손대면 안 된다.
+                  deleteTarget: p.hasOwnVideo(c)
+                      ? (shot: c, mode: GenMode.videoLow)
+                      : null,
+                  trimTarget: p.hasOwnVideo(c) ? c : null,
                 ),
+                if (!p.hasOwnVideo(c) && p.videoPathOf(c) != null) ...[
+                  const SizedBox(height: 6),
+                  Text('${p.trackLabel(p.tracks.first)}의 영상입니다 — 아래에서 뽑으면 이 트랙 것이 됩니다',
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0x88FFFFFF))),
+                ],
                 const SizedBox(height: 14),
                 _SectionLabel('프롬프트'),
                 const SizedBox(height: 6),
                 _PromptField(
                   controller: p.videoCtrl(c.id),
                   hint: '움직임/카메라 등 영상 묘사',
+                  readOnly: locked,
                 ),
                 const SizedBox(height: 10),
                 _SectionLabel('프롬프트 번역 (한국어)'),
@@ -182,6 +198,7 @@ class _VideoTab extends StatelessWidget {
                 _PromptField(
                   controller: p.videoKoCtrl(c.id),
                   hint: '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임',
+                  readOnly: locked,
                 ),
                 const SizedBox(height: 10),
                 _SectionLabel('네거티브 프롬프트'),
@@ -190,35 +207,30 @@ class _VideoTab extends StatelessWidget {
                   controller: p.videoNegCtrl(c.id),
                   hint: '빼고 싶은 것만 (예: hand, text, watermark) — '
                       '위 프롬프트에 "no hand"처럼 쓰면 오히려 나온다',
+                  readOnly: locked,
                 ),
                 const SizedBox(height: 14),
                 _SectionLabel('길이 (초 · 이 샷)'),
                 const SizedBox(height: 6),
-                _SecondsField(key: ValueKey('sec_${c.id}')),
-                const SizedBox(height: 10),
-                // 백엔드를 버튼에서 직접 고른다(설정 안 들어가도 됨).
-                // 결과 슬롯은 하나라 다른 백엔드로 다시 뽑으면 덮어쓴다.
-                _GenButton(
-                  label: 'Veo로 생성',
-                  icon: Icons.auto_awesome_outlined,
-                  busyKey: p.busyKey(c.id, GenMode.videoLow),
-                  onGen: () =>
-                      p.gen(c, GenMode.videoLow, backend: VideoBackend.veo),
-                  enabled: p.videoReadyOf(VideoBackend.veo),
-                  disabledHint: p.videoBlockReasonOf(VideoBackend.veo),
-                ),
-                const SizedBox(height: 8),
-                _GenButton(
-                  label: '자체 서버로 생성',
-                  icon: Icons.movie_outlined,
-                  busyKey: p.busyKey(c.id, GenMode.videoLow),
-                  onGen: () => p.gen(
-                    c,
-                    GenMode.videoLow,
-                    backend: VideoBackend.serviceApi,
+                IgnorePointer(
+                  ignoring: locked,
+                  child: Opacity(
+                    opacity: locked ? 0.5 : 1,
+                    child: _SecondsField(key: ValueKey('sec_${c.id}')),
                   ),
-                  enabled: p.videoReadyOf(VideoBackend.serviceApi),
-                  disabledHint: p.videoBlockReasonOf(VideoBackend.serviceApi),
+                ),
+                const SizedBox(height: 10),
+                // 백엔드는 **트랙이 정한다** — 같은 콘티를 트랙별로 다른 백엔드로 뽑아 비교하는 게
+                // 트랙의 전부다(바꾸려면 트랙 줄의 ⋯ 메뉴에서).
+                _GenButton(
+                  label: '${backend.label}로 생성',
+                  icon: backend == VideoBackend.veo
+                      ? Icons.auto_awesome_outlined
+                      : Icons.movie_outlined,
+                  busyKey: p.busyKey(c.id, GenMode.videoLow),
+                  onGen: () => p.gen(c, GenMode.videoLow),
+                  enabled: p.videoReadyOf(backend),
+                  disabledHint: p.videoBlockReasonOf(backend),
                 ),
               ],
             ),

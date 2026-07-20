@@ -62,7 +62,7 @@ class _SceneSettingsTab extends StatelessWidget {
           // 구조는 두고 생성물만 비우기 — 다시 뽑기 전 초기화용.
           OutlinedButton.icon(
             onPressed: () async {
-              final shots = [for (final b in sc.dialogues) ...b.shots];
+              final shots = [for (final b in sc.beats) ...b.shots];
               final ok = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
@@ -71,6 +71,7 @@ class _SceneSettingsTab extends StatelessWidget {
                     '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬의 '
                     '생성물을 모두 지웁니다 — 샷 ${shots.length}개의 시작·끝 프레임과 영상, '
                     '대사 음성, 배경음.\n'
+                    '${sc.tracks.length > 1 ? '트랙 ${sc.tracks.length}개에서 뽑은 영상이 전부 사라집니다.\n' : ''}'
                     '파일도 함께 삭제되며 되돌릴 수 없습니다.\n\n'
                     '프롬프트·제목·대사 텍스트 등 구조는 그대로 남습니다.',
                   ),
@@ -110,7 +111,7 @@ class _SceneSettingsTab extends StatelessWidget {
                   title: const Text('씬 삭제'),
                   content: Text(
                     '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬을 삭제합니다.\n'
-                    '비트 ${sc.dialogues.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
+                    '비트 ${sc.beats.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
                     '되돌릴 수 없습니다.\n\n'
                     '(생성된 미디어 파일은 프로젝트 폴더에 남습니다)',
                   ),

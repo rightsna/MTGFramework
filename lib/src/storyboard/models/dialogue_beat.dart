@@ -23,6 +23,11 @@ class DialogueBeat {
   Dialogue? dialogue; // 이 대사의 내용(0 또는 1). null = 무음 대사
   List<Shot> shots; // 이 대사를 화면으로 덮는 샷들(순서대로) — 각 샷 = FE2V 1회
 
+  /// 파생 트랙(트랙2…)에서 이 비트가 비추고 있는 **기준 트랙 비트의 id**. null = 기준 트랙 자신.
+  /// 비트 내용(대본·연출·음성)은 트랙이 갈라도 같은 것이라 **항상 기준을 따라간다** —
+  /// 트랙마다 달라지는 건 샷의 영상뿐이다([Shot.detached]).
+  String? baseId;
+
   DialogueBeat({
     required this.id,
     this.title = '',
@@ -30,16 +35,30 @@ class DialogueBeat {
     this.direction = '',
     this.dialogue,
     List<Shot>? shots,
+    this.baseId,
   }) : shots = shots ?? [];
 
   bool get hasDialogue => dialogue != null;
 
-  /// 이 대사의 샷 길이 합(초).
+  /// 파생 트랙의 비트인지(기준 트랙이면 false).
+  bool get isDerived => baseId != null;
+
+  /// 기준 비트 [base]의 내용을 따라간다(샷 목록은 트랙별로 따로 관리하므로 건드리지 않는다).
+  /// 대사는 같은 객체를 공유한다 — 대본도 음성도 트랙 사이에서 하나여야 한다.
+  void adoptContentFrom(DialogueBeat base) {
+    title = base.title;
+    note = base.note;
+    direction = base.direction;
+    dialogue = base.dialogue;
+  }
+
+  /// 이 대사에 **주문한** 샷 길이 합(초).
   int get shotSeconds => shots.fold(0, (a, c) => a + c.videoSeconds);
 
   /// 이 대사의 **실제 길이(초) = 샷 길이 합**. 재생되는 건 영상이고, 음성은 그 위에 얹히는
-  /// 트랙일 뿐이라 영상 합계가 진짜 길이다.
-  double get seconds => shotSeconds.toDouble();
+  /// 트랙일 뿐이라 영상 합계가 진짜 길이다. 뽑힌 샷은 주문값이 아니라 **실제 길이**로 센다
+  /// (백엔드마다 지원 길이가 달라 주문대로 안 나오는 일이 흔하다).
+  double get seconds => shots.fold(0.0, (a, c) => a + c.playSeconds);
 
   /// 음성 길이(초). 실제 길이가 아니라 **샷들이 덮어야 할 목표치**다. 0 = 음성 없음.
   double get targetSeconds => dialogue?.voiceSeconds ?? 0;
@@ -51,10 +70,14 @@ class DialogueBeat {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'title': title,
-        'note': note,
-        'direction': direction,
-        'dialogue': dialogue?.toJson(), // null = 무음 대사
+        if (baseId != null) 'base': baseId,
+        // 파생 트랙의 비트는 내용을 안 적는다 — 기준 비트 한 곳에만 둔다(샷은 트랙별로 다르다).
+        if (baseId == null) ...{
+          'title': title,
+          'note': note,
+          'direction': direction,
+          'dialogue': dialogue?.toJson(), // null = 무음 대사
+        },
         'shots': shots.map((c) => c.toJson()).toList(),
       };
 
@@ -70,6 +93,7 @@ class DialogueBeat {
       shots: ((j['shots'] as List?) ?? const [])
           .map((e) => Shot.fromJson((e as Map).cast<String, dynamic>(), dir))
           .toList(),
+      baseId: j['base'] as String?,
     );
   }
 }

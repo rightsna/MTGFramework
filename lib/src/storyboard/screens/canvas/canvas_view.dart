@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../models/shot.dart';
 import '../../models/dialogue_beat.dart';
+import '../../models/video_track.dart';
 import '../../providers/storyboard_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/movie_settings.dart';
 import '../common/output_preview.dart';
 import '../common/voice_play_button.dart';
 import '../ui.dart';
@@ -12,6 +14,8 @@ import '../ui.dart';
 // 라이브러리 하나(part)로 묶는다.
 part 'beat_card.dart';
 part 'canvas_chrome.dart';
+part 'track_lane.dart';
+part 'track_menu.dart';
 
 /// 대사(TTS·샷) 식별색.
 const _voiceColor = Color(0xFFE0678A);
@@ -44,8 +48,9 @@ Future<bool> confirmDelete(
   return ok == true;
 }
 
-/// 가운데 캔버스: 선택 씬을 **샷들의 가로 타임라인**으로 그린다.
-/// 각 대사 = [상태] + [대사 내용(0/1)] + [샷들]. 대사 한 마디 아래 샷들이 화면을 덮는다.
+/// 가운데 캔버스: 선택 씬을 **트랙 줄들**로 그린다 — 트랙 하나가 씬 한 벌(비트 카드의 가로
+/// 타임라인)이고, 트랙 수만큼 아래로 쌓여 같은 칸끼리 위아래로 견줄 수 있다.
+/// 각 대사 = [헤더] + [대사 내용(0/1)] + [샷들]. 대사 한 마디 아래 샷들이 화면을 덮는다.
 class CanvasView extends StatelessWidget {
   const CanvasView({super.key});
 
@@ -62,7 +67,8 @@ class CanvasView extends StatelessWidget {
         ),
       );
     }
-    final dialogues = p.dialogues;
+    // 구조(비트 수)는 기준 트랙이 정본 — 트랙끼리 같으므로 비었는지도 이걸로 본다.
+    final dialogues = p.baseBeats;
     if (dialogues.isEmpty) {
       return _empty(
         '첫 비트를 추가하세요 (비트 하나 = 샷 여러 개)',
@@ -74,8 +80,8 @@ class CanvasView extends StatelessWidget {
       );
     }
     // 캔버스: 줌 인/아웃 + 상하좌우 팬(InteractiveViewer). 도트 그리드 배경 위에
-    // 대사 카드가 가로로 이어지고 사이사이 화살표로 흐름을 표시. 카드 높이는 샷 수에 맞춰 fit.
-    // 메모(비트·샷)는 각 비트 카드 아래에 흐름 그대로 달린다 — 떠 있는 패널이 아니다.
+    // **트랙 하나가 씬 한 벌**이다 — 비트 카드가 가로로 이어진 줄이 트랙 수만큼 아래로 쌓인다.
+    // 카드 높이는 샷 수에 맞춰 fit. 메모(비트·샷)는 각 카드 아래에 흐름 그대로 달린다.
     return InteractiveViewer(
       constrained: false,
       boundaryMargin: const EdgeInsets.all(600),
@@ -86,27 +92,24 @@ class CanvasView extends StatelessWidget {
           const Positioned.fill(child: CustomPaint(painter: _GridPainter())),
           Padding(
             padding: const EdgeInsets.all(44),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                for (var i = 0; i < dialogues.length; i++) ...[
-                  SizedBox(
-                      width: 286, child: _ShotCard(beat: dialogues[i], index: i)),
-                  if (i < dialogues.length - 1) const _ShotArrow(),
+                for (var t = 0; t < p.tracks.length; t++) ...[
+                  if (t > 0) const SizedBox(height: 26),
+                  _TrackLane(track: p.tracks[t], trackIndex: t),
                 ],
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(top: 34),
-                  child: SizedBox(
-                    width: 56,
-                    child: OutlinedButton(
-                      onPressed: p.addDialogue,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        side: const BorderSide(color: Color(0x33FFFFFF)),
-                      ),
-                      child: const Icon(Icons.add),
-                    ),
+                const SizedBox(height: 20),
+                // 트랙 추가 — 씬을 한 벌 더 깔아 다른 조건으로 뽑아 보는 자리.
+                OutlinedButton.icon(
+                  onPressed: p.addTrack,
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('트랙 추가'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accent2,
+                    side: const BorderSide(color: Color(0x338B7BFF)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
               ],

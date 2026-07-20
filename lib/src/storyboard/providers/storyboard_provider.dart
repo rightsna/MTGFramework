@@ -12,6 +12,7 @@ import '../models/shot.dart';
 import '../models/dialogue.dart';
 import '../models/dialogue_beat.dart';
 import '../models/story_scene.dart';
+import '../models/video_track.dart';
 import '../services/api_service.dart';
 import '../services/elevenlabs_service.dart';
 import '../services/movie_settings.dart';
@@ -56,6 +57,7 @@ class StoryboardProvider extends ChangeNotifier {
 
   List<StoryScene> _scenes = []; // 씬 리스트
   String? _selectedSceneId;
+  int _trackIndex = 0; // 보고 있는 트랙(씬이 바뀌어도 유지 — 트랙끼리 구조가 같으므로)
   String? _selectedDialogueId; // 선택된 샷(비트)
   String? _selectedShotId; // 선택된 샷(선택 대사 안에서)
   int _seq = 0;
@@ -133,8 +135,288 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
-  /// 현재 선택 씬의 대사들(캔버스가 타임라인으로 그리는 대상).
-  List<DialogueBeat> get dialogues => selectedScene?.dialogues ?? const [];
+  // ───────── 트랙(같은 콘티를 백엔드별로 뽑아 비교) ─────────
+
+  /// 선택 씬의 트랙들(첫 번째가 기준 트랙).
+  List<VideoTrack> get tracks => selectedScene?.tracks ?? const [];
+
+  /// 보고 있는 트랙의 번호(0=기준). 씬마다 트랙 수가 다를 수 있어 범위를 잘라 읽는다.
+  int get trackIndex {
+    final n = tracks.length;
+    if (n == 0) return 0;
+    return _trackIndex.clamp(0, n - 1);
+  }
+
+  /// 보고 있는 트랙 — 캔버스·인스펙터·플레이어가 전부 이 트랙을 그린다.
+  VideoTrack? get selectedTrack {
+    final sc = selectedScene;
+    if (sc == null) return null;
+    return sc.tracks[trackIndex];
+  }
+
+  /// 기준 트랙을 보고 있는지 — 비트·샷 추가/삭제는 여기서만 된다(구조는 트랙끼리 같아야 하므로).
+  bool get onBaseTrack => trackIndex == 0;
+
+  /// 씬의 구조(기준 트랙의 비트들) — 캔버스가 카드 한 장씩 그리는 단위.
+  /// 카드 안에서는 트랙마다 같은 자리의 비트를 찾아 샷 줄을 쌓는다([beatAt]).
+  List<DialogueBeat> get baseBeats => selectedScene?.beats ?? const [];
+
+  /// [track]에서 [index]번째 비트(없으면 null). 트랙끼리 구조가 같으므로 자리로 짝을 짓는다.
+  DialogueBeat? beatAt(VideoTrack track, int index) =>
+      index < track.beats.length ? track.beats[index] : null;
+
+  /// 선택된 비트가 몇 번째 자리인지 — 카드 강조에 쓴다(어느 트랙의 비트든 같은 자리).
+  int? get selectedBeatIndex {
+    final sc = selectedScene;
+    return sc == null ? null : _indexOfSelectedBeat(sc);
+  }
+
+  void selectTrack(int i) {
+    if (i < 0 || i >= tracks.length || i == trackIndex) return;
+    _trackIndex = i;
+    // 선택은 트랙마다 다른 객체다 — 같은 자리(기준 id)의 비트·샷으로 옮겨 준다.
+    _carrySelectionToTrack();
+    notifyListeners();
+  }
+
+
+  /// 트랙을 바꿔도 **보고 있던 자리를 유지**한다 — 트랙끼리 구조가 같으니 같은 순서의
+  /// 비트·샷을 다시 고르면 된다(비교하려고 왔다 갔다 하는 게 주 동선이라 자리가 튀면 곤란).
+  void _carrySelectionToTrack() {
+    final sc = selectedScene;
+    if (sc == null) return;
+    final beatIdx = _indexOfSelectedBeat(sc);
+    final beats = sc.tracks[trackIndex].beats;
+    if (beatIdx == null || beatIdx >= beats.length) {
+      _selectedDialogueId = beats.isNotEmpty ? beats.first.id : null;
+      _selectedShotId = null;
+      return;
+    }
+    final beat = beats[beatIdx];
+    final shotIdx = _selectedShotIndexIn(sc, beatIdx);
+    _selectedDialogueId = beat.id;
+    _selectedShotId = (shotIdx != null && shotIdx < beat.shots.length)
+        ? beat.shots[shotIdx].id
+        : null;
+  }
+
+  /// 선택된 비트가 (어느 트랙에서든) 몇 번째인지.
+  int? _indexOfSelectedBeat(StoryScene sc) {
+    for (final t in sc.tracks) {
+      final i = t.beats.indexWhere((b) => b.id == _selectedDialogueId);
+      if (i >= 0) return i;
+    }
+    return null;
+  }
+
+  int? _selectedShotIndexIn(StoryScene sc, int beatIdx) {
+    for (final t in sc.tracks) {
+      if (beatIdx >= t.beats.length) continue;
+      final i = t.beats[beatIdx].shots.indexWhere((s) => s.id == _selectedShotId);
+      if (i >= 0) return i;
+    }
+    return null;
+  }
+
+  /// 트랙 추가 — 기준 트랙 구조를 그대로 비추는 빈 트랙. **아무것도 안 건드리면 트랙 1과 똑같이
+  /// 보이고**, 영상만 비어 있다. 백엔드는 아직 안 쓴 것 하나를 골라 준다(비교가 목적이므로).
+  Future<void> addTrack() async {
+    final sc = selectedScene;
+    if (sc == null) return;
+    // 백엔드는 **기준 트랙과 같은 것으로** 시작한다 — 무엇으로 뽑을지는 사람이 정할 일이고,
+    // 말없이 다른 백엔드를 물려 두면 자기도 모르게 그쪽으로 생성이 나간다.
+    final track = VideoTrack(
+      id: _newId('track'),
+      name: '트랙 ${sc.tracks.length + 1}',
+      backend: sc.baseTrack.backend,
+    );
+    sc.tracks.add(track);
+    _syncTracks(sc); // 기준 구조를 비추는 비트·샷을 여기서 만들어 붙인다
+    _trackIndex = sc.tracks.length - 1;
+    _carrySelectionToTrack();
+    notifyListeners();
+    await save();
+  }
+
+  /// 트랙 삭제 — 기준 트랙(트랙 1)은 지울 수 없다(구조의 정본이라서).
+  Future<void> removeTrack(VideoTrack track) async {
+    final sc = selectedScene;
+    if (sc == null || sc.tracks.length <= 1) return;
+    if (identical(track, sc.baseTrack)) return;
+    sc.tracks.remove(track);
+    for (final beat in track.beats) {
+      _disposeDialogueControllers(beat.id);
+      for (final shot in beat.shots) {
+        _disposeShotControllers(shot.id);
+      }
+    }
+    _trackIndex = _trackIndex.clamp(0, sc.tracks.length - 1);
+    _carrySelectionToTrack();
+    notifyListeners();
+    await save();
+  }
+
+  void setTrackName(VideoTrack track, String name) {
+    track.name = name.trim();
+    notifyListeners();
+    save();
+  }
+
+  void setTrackBackend(VideoTrack track, VideoBackend b) {
+    track.backend = b;
+    notifyListeners();
+    save();
+  }
+
+  /// 트랙 표시 이름 — 비어 있으면 순서로 부른다.
+  String trackLabel(VideoTrack t) {
+    if (t.name.trim().isNotEmpty) return t.name.trim();
+    final i = tracks.indexOf(t);
+    return '트랙 ${i < 0 ? '?' : i + 1}';
+  }
+
+  /// 이 샷이 속한 트랙(어느 씬이든).
+  VideoTrack? trackOf(Shot shot) {
+    for (final sc in _scenes) {
+      for (final t in sc.tracks) {
+        for (final beat in t.beats) {
+          if (beat.shots.contains(shot)) return t;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 파생 트랙 샷이 따라가고 있는 **기준 트랙의 짝**. 기준 트랙 샷이면 null.
+  Shot? baseShotOf(Shot shot) {
+    final baseId = shot.baseId;
+    if (baseId == null) return null;
+    final sc = sceneOf(shot);
+    if (sc == null) return null;
+    for (final beat in sc.baseTrack.beats) {
+      for (final s in beat.shots) {
+        if (s.id == baseId) return s;
+      }
+    }
+    return null;
+  }
+
+  /// 파생 트랙의 비트가 따라가고 있는 기준 비트.
+  DialogueBeat? baseBeatOf(DialogueBeat beat) {
+    final baseId = beat.baseId;
+    if (baseId == null) return null;
+    final sc = sceneOf2(beat);
+    if (sc == null) return null;
+    for (final b in sc.baseTrack.beats) {
+      if (b.id == baseId) return b;
+    }
+    return null;
+  }
+
+  /// 이 비트가 속한 씬.
+  StoryScene? sceneOf2(DialogueBeat beat) {
+    for (final sc in _scenes) {
+      for (final t in sc.tracks) {
+        if (t.beats.contains(beat)) return sc;
+      }
+    }
+    return null;
+  }
+
+  /// 파생 트랙 샷을 **이 트랙에서 수정**할 수 있게 분리한다 — 기준 내용을 복사해 오고
+  /// 프레임 파일도 자기 것으로 떠 온다(기준 샷을 지워도 이 트랙이 안 깨진다).
+  Future<void> detachShot(Shot shot) async {
+    final base = baseShotOf(shot);
+    if (base == null || shot.detached) return;
+    shot.adoptContentFrom(base);
+    shot.startImagePath =
+        await _copyMedia(base.startImagePath, '${shot.id}_start');
+    shot.endImagePath = await _copyMedia(base.endImagePath, '${shot.id}_end');
+    shot.detached = true;
+    _syncShotControllers(shot);
+    for (final m in GenMode.values) {
+      final k = busyKey(shot.id, m);
+      _ver[k] = (_ver[k] ?? 0) + 1;
+    }
+    notifyListeners();
+    await save();
+  }
+
+  /// 분리했던 샷을 다시 기준 트랙에 붙인다 — 내용은 기준 것으로 돌아가고,
+  /// **이 트랙에서 뽑아 둔 영상은 그대로 둔다**(트랙의 결과물이니까).
+  /// 분리 중 만든 프레임 파일은 프로젝트 폴더에 남는다(참조만 끊는다).
+  Future<void> relinkShot(Shot shot) async {
+    final base = baseShotOf(shot);
+    if (base == null || !shot.detached) return;
+    shot.detached = false;
+    shot.adoptContentFrom(base);
+    _syncShotControllers(shot);
+    for (final m in GenMode.values) {
+      final k = busyKey(shot.id, m);
+      _ver[k] = (_ver[k] ?? 0) + 1;
+    }
+    notifyListeners();
+    await save();
+  }
+
+  /// 파생 트랙들을 기준 트랙에 맞춘다 — **구조(비트·샷 개수·순서)를 그대로 비추고**,
+  /// 따라가는 중인 샷의 내용을 기준 것으로 덮는다. 자기 것으로 남는 건 영상뿐.
+  ///
+  /// 불러온 직후·구조가 바뀐 뒤·저장 직전에 부른다. 여기가 "트랙끼리 구조가 같다"를
+  /// 실제로 지키는 유일한 곳이다.
+  void _syncTracks(StoryScene scene) {
+    final base = scene.baseTrack;
+    for (var i = 1; i < scene.tracks.length; i++) {
+      _syncTrack(base, scene.tracks[i]);
+    }
+  }
+
+  void _syncTrack(VideoTrack base, VideoTrack track) {
+    // 기준 id로 짝을 찾는다 — 순서가 바뀌어도 뽑아 둔 영상이 엉뚱한 샷에 붙지 않게.
+    final oldBeats = {for (final b in track.beats) b.baseId ?? b.id: b};
+    final beats = <DialogueBeat>[];
+    for (final baseBeat in base.beats) {
+      final beat = oldBeats.remove(baseBeat.id) ?? _mirrorBeat(baseBeat);
+      beat.adoptContentFrom(baseBeat);
+      final oldShots = {for (final s in beat.shots) s.baseId ?? s.id: s};
+      final shots = <Shot>[];
+      for (final baseShot in baseBeat.shots) {
+        final shot = oldShots.remove(baseShot.id) ?? _mirrorShot(baseShot);
+        if (!shot.detached) {
+          shot.adoptContentFrom(baseShot);
+          _syncShotControllers(shot);
+        }
+        shots.add(shot);
+      }
+      for (final gone in oldShots.values) {
+        _disposeShotControllers(gone.id); // 기준에서 사라진 샷
+      }
+      beat.shots = shots;
+      beats.add(beat);
+    }
+    for (final gone in oldBeats.values) {
+      _disposeDialogueControllers(gone.id);
+      for (final s in gone.shots) {
+        _disposeShotControllers(s.id);
+      }
+    }
+    track.beats = beats;
+  }
+
+  /// 파생 트랙의 비트는 편집칸을 따로 갖지 않는다 — 글은 기준 비트 한 벌뿐이고
+  /// 편집칸 접근자([titleCtrl] 등)가 거기로 넘겨준다.
+  DialogueBeat _mirrorBeat(DialogueBeat base) =>
+      DialogueBeat(id: _newId('beat'), baseId: base.id);
+
+  /// 파생 트랙 샷은 **자기 id**를 갖는다 — 영상 파일명이 `<id>_vlow.mp4`라 id가 곧 슬롯이다.
+  Shot _mirrorShot(Shot base) {
+    final shot = Shot(id: _newId('clip'), baseId: base.id);
+    _addShotControllers(shot);
+    return shot;
+  }
+
+  /// 현재 선택 씬의 대사들(캔버스가 타임라인으로 그리는 대상 = 보고 있는 트랙의 비트들).
+  List<DialogueBeat> get dialogues => selectedTrack?.beats ?? const [];
 
   DialogueBeat? get selectedDialogue {
     for (final s in dialogues) {
@@ -158,10 +440,14 @@ class StoryboardProvider extends ChangeNotifier {
 
   TextEditingController sceneTitleCtrl(String sceneId) =>
       _sceneTitles[sceneId]!;
-  TextEditingController titleCtrl(String dialogueId) => _dialogueTitles[dialogueId]!;
-  TextEditingController noteCtrl(String dialogueId) => _notes[dialogueId]!;
+  // 비트의 글(제목·메모·연출)은 대사와 마찬가지로 **트랙끼리 하나**다 — 파생 트랙에서 열어도
+  // 기준 비트의 편집칸을 그대로 내준다. 어느 트랙에서 고쳐도 같이 바뀐다.
+  TextEditingController titleCtrl(String dialogueId) =>
+      _dialogueTitles[_scriptBeatId(dialogueId)]!;
+  TextEditingController noteCtrl(String dialogueId) =>
+      _notes[_scriptBeatId(dialogueId)]!;
   TextEditingController directionCtrl(String dialogueId) =>
-      _directions[dialogueId]!;
+      _directions[_scriptBeatId(dialogueId)]!;
   TextEditingController startCtrl(String shotId) => _startPrompts[shotId]!;
   TextEditingController startKoCtrl(String shotId) => _startPromptKos[shotId]!;
   TextEditingController endCtrl(String shotId) => _endPrompts[shotId]!;
@@ -177,7 +463,19 @@ class StoryboardProvider extends ChangeNotifier {
   int verOf(String key) => _ver[key] ?? 0;
   String busyKey(String id, GenMode m) => '$id:${m.name}';
 
-  String? videoPathOf(Shot c) => c.videoPath;
+  /// 이 샷 자리에 **보여 줄** 영상 — 자기 트랙에서 뽑은 게 있으면 그것,
+  /// 아직 안 뽑았고 기준을 그대로 따라가는 중이면 기준 트랙의 영상을 보여 준다.
+  /// (트랙을 막 추가하면 트랙 1과 똑같이 보이고, 여기서 뽑는 순간 그 샷만 자기 것으로 갈린다.)
+  /// 분리한 샷은 내용이 이미 달라졌으므로 기준 영상을 빌려 오지 않는다.
+  String? videoPathOf(Shot c) =>
+      c.videoPath ?? (c.inherits ? baseShotOf(c)?.videoPath : null);
+
+  /// 이 샷의 영상이 **그 트랙에서 실제로 뽑힌 것**인지(빌려 보여 주는 중이 아닌지).
+  bool hasOwnVideo(Shot c) => c.videoPath != null;
+
+  /// 이 샷을 뽑을 백엔드 = 놓여 있는 트랙의 백엔드(트랙 밖이면 설정 기본값).
+  VideoBackend backendOf(Shot shot) =>
+      trackOf(shot)?.backend ?? _settings.videoBackend;
 
   // ───────── 로드/저장 ─────────
 
@@ -191,16 +489,20 @@ class StoryboardProvider extends ChangeNotifier {
     for (final scene in scenes) {
       _sceneTitles[scene.id] = TextEditingController(text: scene.title);
       _sceneNotes[scene.id] = TextEditingController(text: scene.note);
-      for (final beat in scene.dialogues) {
-        _addDialogueControllers(beat);
-        for (final shot in beat.shots) {
-          _addShotControllers(shot);
+      for (final track in scene.tracks) {
+        for (final beat in track.beats) {
+          if (!beat.isDerived) _addDialogueControllers(beat); // 글은 기준 비트에만
+          for (final shot in beat.shots) {
+            _addShotControllers(shot);
+          }
         }
       }
+      // 파일에는 따라가는 샷의 내용이 안 적혀 있다 — 기준 트랙에서 채운다.
+      _syncTracks(scene);
     }
     final firstScene = scenes.isNotEmpty ? scenes.first : null;
-    final firstShot = (firstScene != null && firstScene.dialogues.isNotEmpty)
-        ? firstScene.dialogues.first
+    final firstShot = (firstScene != null && firstScene.beats.isNotEmpty)
+        ? firstScene.beats.first
         : null;
     _selectedSceneId = firstScene?.id;
     _selectedDialogueId = firstShot?.id;
@@ -209,11 +511,39 @@ class StoryboardProvider extends ChangeNotifier {
         : null;
     _savePath = path;
     notifyListeners();
+    unawaited(_backfillActualSeconds()); // 옛 영상의 실제 길이를 뒤에서 채운다
     checkConnection();
     _statusTimer ??= Timer.periodic(
       const Duration(seconds: 15),
       (_) => checkConnection(),
     );
+  }
+
+  /// 이미 뽑아 둔 영상 중 **실제 길이를 모르는 것**을 파일에서 재어 채운다.
+  /// 길이를 안 적던 시절의 데이터가 있어서 한 번은 훑어야 한다 — 화면에 주문값이 그대로
+  /// 남아 있으면 4초짜리를 10초로 알고 타임라인을 그리게 된다.
+  /// 화면을 막지 않도록 로드 뒤 뒤에서 돌고, 다 재고 나서 한 번만 저장한다.
+  Future<void> _backfillActualSeconds() async {
+    var changed = false;
+    for (final scene in _scenes) {
+      for (final track in scene.tracks) {
+        for (final beat in track.beats) {
+          for (final shot in beat.shots) {
+            final path = shot.videoPath;
+            if (path == null || shot.videoActualSeconds != null) continue;
+            final f = File(path);
+            if (!await f.exists()) continue;
+            final sec = await _measureSeconds(f);
+            if (sec == null) continue;
+            shot.videoActualSeconds = sec;
+            changed = true;
+          }
+        }
+      }
+    }
+    if (!changed) return;
+    notifyListeners();
+    await save();
   }
 
   Future<void> checkConnection() async {
@@ -252,6 +582,25 @@ class StoryboardProvider extends ChangeNotifier {
     _videoNotes[shot.id] = TextEditingController(text: shot.videoNote);
   }
 
+  /// 따라가는(상속) 샷의 편집칸을 모델 값에 맞춘다. 상속 중엔 읽기 전용이라
+  /// 사용자가 타이핑하고 있을 리 없다 — 그냥 덮어써도 안전하다.
+  void _syncShotControllers(Shot shot) {
+    _setCtrl(_startPrompts[shot.id], shot.startPrompt);
+    _setCtrl(_startPromptKos[shot.id], shot.startPromptKo);
+    _setCtrl(_endPrompts[shot.id], shot.endPrompt);
+    _setCtrl(_endPromptKos[shot.id], shot.endPromptKo);
+    _setCtrl(_vprompts[shot.id], shot.videoPrompt);
+    _setCtrl(_vpromptKos[shot.id], shot.videoPromptKo);
+    _setCtrl(_vnegs[shot.id], shot.videoNegativePrompt);
+    _setCtrl(_shotNotes[shot.id], shot.note);
+    _setCtrl(_videoNotes[shot.id], shot.videoNote);
+  }
+
+  void _setCtrl(TextEditingController? c, String text) {
+    if (c == null || c.text == text) return;
+    c.text = text;
+  }
+
   void _disposeShotControllers(String shotId) {
     _startPrompts.remove(shotId)?.dispose();
     _startPromptKos.remove(shotId)?.dispose();
@@ -268,27 +617,38 @@ class StoryboardProvider extends ChangeNotifier {
     for (final scene in _scenes) {
       scene.title = _sceneTitles[scene.id]?.text ?? scene.title;
       scene.note = _sceneNotes[scene.id]?.text ?? scene.note;
-      for (final beat in scene.dialogues) {
-        beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
-        beat.note = _notes[beat.id]?.text ?? beat.note;
-        beat.direction = _directions[beat.id]?.text ?? beat.direction;
-        for (final shot in beat.shots) {
-          shot.startPrompt = _startPrompts[shot.id]?.text ?? shot.startPrompt;
-          shot.startPromptKo =
-              _startPromptKos[shot.id]?.text ?? shot.startPromptKo;
-          shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
-          shot.endPromptKo =
-              _endPromptKos[shot.id]?.text ?? shot.endPromptKo;
-          shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
-          shot.videoPromptKo =
-              _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
-          shot.videoNegativePrompt =
-              _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
-          shot.note = _shotNotes[shot.id]?.text ?? shot.note;
-          shot.videoNote = _videoNotes[shot.id]?.text ?? shot.videoNote;
+      for (final track in scene.tracks) {
+        for (final beat in track.beats) {
+          // 파생 트랙의 비트·따라가는 샷은 편집칸이 잠겨 있다(내용은 기준 트랙의 것) —
+          // 되돌려 쓰지 않고 아래 _syncTracks가 기준에서 다시 채운다.
+          if (!beat.isDerived) {
+            beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
+            beat.note = _notes[beat.id]?.text ?? beat.note;
+            beat.direction = _directions[beat.id]?.text ?? beat.direction;
+          }
+          for (final shot in beat.shots) {
+            if (shot.inherits) continue;
+            shot.startPrompt = _startPrompts[shot.id]?.text ?? shot.startPrompt;
+            shot.startPromptKo =
+                _startPromptKos[shot.id]?.text ?? shot.startPromptKo;
+            shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
+            shot.endPromptKo =
+                _endPromptKos[shot.id]?.text ?? shot.endPromptKo;
+            shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
+            shot.videoPromptKo =
+                _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
+            shot.videoNegativePrompt =
+                _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
+            shot.note = _shotNotes[shot.id]?.text ?? shot.note;
+            shot.videoNote = _videoNotes[shot.id]?.text ?? shot.videoNote;
+          }
         }
       }
-      _syncLinkedStartPrompts(scene);
+      // 기준 트랙이 방금 바뀌었을 수 있다 — 파생 트랙을 다시 맞춘 뒤 쓴다.
+      _syncTracks(scene);
+      for (final track in scene.tracks) {
+        _syncLinkedStartPrompts(track);
+      }
     }
     await _store.save(_scenes);
   }
@@ -296,8 +656,9 @@ class StoryboardProvider extends ChangeNotifier {
   /// 시작장면을 연동한 샷의 프롬프트를 앞 샷의 끝 프롬프트에 맞춘다.
   /// 이미지는 앞 샷의 끝이 만들어질 때 복사되지만 프롬프트는 그냥 타이핑이라 그 계기가 없다 —
   /// 저장(=글자 하나 칠 때마다)마다 맞춰야 연동이 실제로 살아 있다.
-  void _syncLinkedStartPrompts(StoryScene scene) {
-    final all = [for (final beat in scene.dialogues) ...beat.shots];
+  /// 연동은 **트랙 안에서** 이어진다(앞 샷 = 같은 트랙의 앞 샷).
+  void _syncLinkedStartPrompts(VideoTrack track) {
+    final all = [for (final beat in track.beats) ...beat.shots];
     for (var i = 1; i < all.length; i++) {
       final shot = all[i];
       if (!shot.linkStart) continue;
@@ -340,10 +701,12 @@ class StoryboardProvider extends ChangeNotifier {
     _scenes.remove(scene);
     _sceneTitles.remove(scene.id)?.dispose();
     _sceneNotes.remove(scene.id)?.dispose();
-    for (final beat in scene.dialogues) {
-      _disposeDialogueControllers(beat.id);
-      for (final shot in beat.shots) {
-        _disposeShotControllers(shot.id);
+    for (final track in scene.tracks) {
+      for (final beat in track.beats) {
+        _disposeDialogueControllers(beat.id);
+        for (final shot in beat.shots) {
+          _disposeShotControllers(shot.id);
+        }
       }
     }
     if (wasSelected) {
@@ -367,36 +730,55 @@ class StoryboardProvider extends ChangeNotifier {
     copy.title = _dupTitle(src.title);
     copy.bgmPath = await _copyMedia(copy.bgmPath, '${copy.id}_bgm');
 
-    for (final beat in copy.dialogues) {
-      final newBeatId = _newId('shot');
-      final voice = beat.dialogue?.voicePath;
-      if (voice != null) {
-        beat.dialogue!.voicePath =
-            await _copyMedia(voice, '${newBeatId}_voice');
+    // 옛 id → 새 id. 파생 트랙이 기준 트랙을 가리키는 연결(baseId)을 복제본 안으로 다시 잇는다.
+    final idMap = <String, String>{};
+    for (final track in copy.tracks) {
+      track.id = _newId('track');
+      for (final beat in track.beats) {
+        final newBeatId = _newId('beat');
+        idMap[beat.id] = newBeatId;
+        final voice = beat.dialogue?.voicePath;
+        if (voice != null) {
+          beat.dialogue!.voicePath =
+              await _copyMedia(voice, '${newBeatId}_voice');
+        }
+        for (final shot in beat.shots) {
+          final newShotId = _newId('clip');
+          idMap[shot.id] = newShotId;
+          // 연동(linkStart) 중인 시작장면은 자기 파일이 없다(앞 샷 끝을 가리킴) — 복사할 것도 없다.
+          // 따라가는 샷의 프레임도 기준 샷 파일을 가리키고 있을 뿐이라 여기서 다시 이어 준다.
+          shot.startImagePath =
+              await _copyMedia(shot.startImagePath, '${newShotId}_start');
+          shot.endImagePath =
+              await _copyMedia(shot.endImagePath, '${newShotId}_end');
+          shot.videoPath =
+              await _copyMedia(shot.videoPath, '${newShotId}_vlow');
+          shot.id = newShotId;
+        }
+        beat.id = newBeatId;
       }
-      for (final shot in beat.shots) {
-        final newShotId = _newId('clip');
-        // 연동(linkStart) 중인 시작장면은 자기 파일이 없다(앞 샷 끝을 가리킴) — 복사할 것도 없다.
-        shot.startImagePath =
-            await _copyMedia(shot.startImagePath, '${newShotId}_start');
-        shot.endImagePath =
-            await _copyMedia(shot.endImagePath, '${newShotId}_end');
-        shot.videoPath =
-            await _copyMedia(shot.videoPath, '${newShotId}_vlow');
-        shot.id = newShotId;
+    }
+    for (final track in copy.tracks) {
+      for (final beat in track.beats) {
+        beat.baseId = idMap[beat.baseId] ?? beat.baseId;
+        for (final shot in beat.shots) {
+          shot.baseId = idMap[shot.baseId] ?? shot.baseId;
+        }
       }
-      beat.id = newBeatId;
     }
 
     // 컨트롤러 등록(새 id 기준).
     _sceneTitles[copy.id] = TextEditingController(text: copy.title);
     _sceneNotes[copy.id] = TextEditingController(text: copy.note);
-    for (final beat in copy.dialogues) {
-      _addDialogueControllers(beat);
-      for (final shot in beat.shots) {
-        _addShotControllers(shot);
+    for (final track in copy.tracks) {
+      for (final beat in track.beats) {
+        if (!beat.isDerived) _addDialogueControllers(beat);
+        for (final shot in beat.shots) {
+          _addShotControllers(shot);
+        }
       }
     }
+    _syncTracks(copy); // 따라가는 샷의 프레임을 복제본의 기준 샷 파일로 다시 맞춘다
 
     _scenes.add(copy);
     _selectSceneInternal(copy.id);
@@ -459,9 +841,8 @@ class StoryboardProvider extends ChangeNotifier {
   void _selectSceneInternal(String? id) {
     _selectedSceneId = id;
     final scene = selectedScene;
-    final firstShot = (scene != null && scene.dialogues.isNotEmpty)
-        ? scene.dialogues.first
-        : null;
+    final beats = selectedTrack?.beats ?? const <DialogueBeat>[];
+    final firstShot = (scene != null && beats.isNotEmpty) ? beats.first : null;
     _selectedDialogueId = firstShot?.id;
     _selectedShotId = (firstShot != null && firstShot.shots.isNotEmpty)
         ? firstShot.shots.first.id
@@ -471,14 +852,15 @@ class StoryboardProvider extends ChangeNotifier {
   // ───────── 샷(비트) 추가/삭제/선택 ─────────
 
   /// 새 대사 추가 — 빈 대사(샷 0개). 샷은 캔버스의 ＋ 로 직접 추가한다.
+  /// 구조는 트랙끼리 같아야 하므로 **기준 트랙에 넣고** 파생 트랙에는 같은 자리를 비춰 준다.
   void addDialogue() {
     final scene = selectedScene;
     if (scene == null) return; // 씬 먼저 선택/추가
-    final dialogueId = 'shot_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
-    final beat = DialogueBeat(id: dialogueId);
+    final beat = DialogueBeat(id: _newId('beat'));
     _addDialogueControllers(beat);
-    scene.dialogues.add(beat);
-    _selectedDialogueId = dialogueId;
+    scene.baseTrack.beats.add(beat);
+    _syncTracks(scene);
+    _selectedDialogueId = _sameSpotId(scene, beat);
     _selectedShotId = null; // 샷 없음
     notifyListeners();
     save();
@@ -487,14 +869,18 @@ class StoryboardProvider extends ChangeNotifier {
   void removeDialogue(DialogueBeat beat) {
     final scene = selectedScene;
     if (scene == null) return;
+    final base = beat.isDerived ? baseBeatOf(beat) : beat;
+    if (base == null) return;
     final wasSelected = _selectedDialogueId == beat.id;
-    scene.dialogues.remove(beat);
-    _disposeDialogueControllers(beat.id);
-    for (final shot in beat.shots) {
+    scene.baseTrack.beats.remove(base);
+    _disposeDialogueControllers(base.id);
+    for (final shot in base.shots) {
       _disposeShotControllers(shot.id);
     }
+    _syncTracks(scene); // 파생 트랙에서도 같은 자리를 걷어낸다(컨트롤러 정리 포함)
     if (wasSelected) {
-      final next = scene.dialogues.isNotEmpty ? scene.dialogues.last : null;
+      final beats = selectedTrack?.beats ?? const <DialogueBeat>[];
+      final next = beats.isNotEmpty ? beats.last : null;
       _selectedDialogueId = next?.id;
       _selectedShotId = (next != null && next.shots.isNotEmpty)
           ? next.shots.first.id
@@ -504,38 +890,70 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
+  /// 보고 있는 트랙에서 기준 비트 [base]와 **같은 자리**의 비트 id(기준 트랙이면 그대로).
+  String? _sameSpotId(StoryScene scene, DialogueBeat base) {
+    final i = scene.baseTrack.beats.indexOf(base);
+    final beats = selectedTrack?.beats ?? const <DialogueBeat>[];
+    if (i < 0 || i >= beats.length) return base.id;
+    return beats[i].id;
+  }
+
   /// 대사 선택(몸통 탭). 샷은 선택하지 않는다 — 샷 편집은 캔버스에서 샷을 직접 클릭.
   /// 샷 선택을 비우면 오른쪽 패널이 '대사' 탭으로 전환되고, 장면/영상 탭은 "샷을 선택하세요"로 안내한다.
   void selectDialogue(String id) {
     if (_selectedDialogueId == id && _selectedShotId == null) return;
+    _followTrackOf(id);
     _selectedDialogueId = id;
     _selectedShotId = null;
     notifyListeners();
+  }
+
+  /// 고른 비트가 놓인 트랙을 **보고 있는 트랙으로 삼는다**.
+  /// 캔버스가 모든 트랙을 한 카드 안에 쌓아 보여주므로 트랙을 고르는 자리가 따로 없다 —
+  /// 무엇을 눌렀는지가 곧 트랙 선택이고, 인스펙터·플레이어가 그 트랙을 따라간다.
+  void _followTrackOf(String beatId) {
+    final sc = selectedScene;
+    if (sc == null) return;
+    for (var i = 0; i < sc.tracks.length; i++) {
+      if (sc.tracks[i].beats.any((b) => b.id == beatId)) {
+        _trackIndex = i;
+        return;
+      }
+    }
   }
 
 
 
   // ───────── 샷 추가/삭제/선택 ─────────
 
+  /// 샷 추가 — 비트와 마찬가지로 **기준 트랙에 넣고** 파생 트랙에 같은 자리를 비춘다.
   Future<void> addShot(DialogueBeat beat) async {
-    final id = 'clip_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
-    final shot = Shot(id: id, videoSeconds: _settings.videoSeconds);
+    final scene = selectedScene;
+    final base = beat.isDerived ? baseBeatOf(beat) : beat;
+    if (scene == null || base == null) return;
+    final shot = Shot(id: _newId('clip'), videoSeconds: _settings.videoSeconds);
     _addShotControllers(shot);
-    beat.shots.add(shot);
-    _selectedDialogueId = beat.id;
-    _selectedShotId = id;
+    base.shots.add(shot);
     // FE2V 컷 연속성: 컷은 이어지는 게 기본이라 앞 샷이 있으면 시작장면을 연동해서 시작한다.
     // (씬의 첫 샷은 물려받을 앞이 없으니 꺼진 채로 둔다.) 연동은 앞 샷의 끝을 그대로
     // 가리키는 것이라 여기서 옮겨올 파일이 없다.
     shot.linkStart = prevShotOf(shot) != null;
+    _syncTracks(scene);
+    _selectedDialogueId = beat.id;
+    _selectedShotId = beat.shots.isNotEmpty ? beat.shots.last.id : shot.id;
     await save(); // 프롬프트 연동이 여기서 걸리므로 알리기 전에 저장한다
     notifyListeners();
   }
 
   void removeShot(DialogueBeat beat, Shot shot) {
+    final scene = selectedScene;
+    final baseBeat = beat.isDerived ? baseBeatOf(beat) : beat;
+    final baseShot = shot.isDerived ? baseShotOf(shot) : shot;
+    if (scene == null || baseBeat == null || baseShot == null) return;
     final wasSelected = _selectedShotId == shot.id;
-    beat.shots.remove(shot);
-    _disposeShotControllers(shot.id);
+    baseBeat.shots.remove(baseShot);
+    _disposeShotControllers(baseShot.id);
+    _syncTracks(scene); // 파생 트랙의 같은 샷도 함께 사라진다
     if (wasSelected) {
       _selectedShotId = beat.shots.isNotEmpty ? beat.shots.last.id : null;
     }
@@ -543,15 +961,25 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
-  /// 샷 선택 — 소속 대사도 함께 선택된다.
+  /// 샷 선택 — 소속 대사도, **그 샷이 놓인 트랙도** 함께 선택된다.
   void selectShot(String dialogueId, String shotId) {
+    _followTrackOf(dialogueId);
     _selectedDialogueId = dialogueId;
     _selectedShotId = shotId;
     notifyListeners();
   }
 
+  /// 따라가는 샷을 고치려 하면 **먼저 분리**한다 — "엎으면 수정된다"가 그대로 동작하도록.
+  /// (평소엔 UI가 잠가 두므로 여기까지 오는 건 되돌리기 어려운 조작뿐이다.)
+  Future<void> _ensureEditable(Shot shot) async {
+    if (!shot.inherits) return;
+    await detachShot(shot);
+    messenger?.call('${trackLabel(trackOf(shot) ?? tracks.first)}에서 이 샷을 분리했습니다');
+  }
+
   /// 샷별 영상 길이(초, 1~15) 저장. 마지막 값은 새 샷 기본값으로도 기억한다.
-  void setShotSeconds(Shot shot, int sec) {
+  Future<void> setShotSeconds(Shot shot, int sec) async {
+    await _ensureEditable(shot);
     final v = sec.clamp(1, 15);
     shot.videoSeconds = v;
     _settings = _settings.copyWith(videoSeconds: v);
@@ -562,29 +990,46 @@ class StoryboardProvider extends ChangeNotifier {
   // ───────── 대사(샷 소유, 0/1) ─────────
   // 대사는 샷이 소유한다(샷 하나 = 대사 1개 또는 없음). 편집은 모달에서 값만 반영.
 
+  /// 대사·음성은 **트랙이 갈라도 하나**다(같은 대본을 다른 백엔드로 뽑는 것이므로) —
+  /// 파생 트랙에서 편집해도 기준 비트를 고친다. 어느 트랙에서 보든 같이 바뀐다.
+  DialogueBeat _scriptBeat(DialogueBeat beat) =>
+      beat.isDerived ? (baseBeatOf(beat) ?? beat) : beat;
+
   /// 이 샷의 대사 텍스트 저장(대사 없으면 새로 만든다).
   void setShotDialogueText(DialogueBeat beat, String text) {
-    (beat.dialogue ??= Dialogue()).text = text;
+    (_scriptBeat(beat).dialogue ??= Dialogue()).text = text;
     notifyListeners();
     save();
   }
 
   /// 이 샷의 대사 화자(Character.id, null=내레이션) 저장(대사 없으면 새로 만든다).
   void setShotDialogueSpeaker(DialogueBeat beat, String? speakerId) {
-    (beat.dialogue ??= Dialogue()).speakerId = speakerId;
+    (_scriptBeat(beat).dialogue ??= Dialogue()).speakerId = speakerId;
     notifyListeners();
     save();
   }
 
   /// 이 샷의 대사 제거(무음 샷으로).
   void removeShotDialogue(DialogueBeat beat) {
-    beat.dialogue = null;
+    _scriptBeat(beat).dialogue = null;
     notifyListeners();
     save();
   }
 
-  /// 대사 음성 진행 상태 키(샷 단위).
-  String voiceBusyKey(String dialogueId) => '$dialogueId:voice';
+  /// 대사 음성 진행 상태 키(샷 단위). 음성은 트랙끼리 공유하므로 **기준 비트 기준**으로 잡는다 —
+  /// 어느 트랙에서 보고 있든 같은 진행 표시·같은 미리보기 캐시를 쓴다.
+  String voiceBusyKey(String dialogueId) => '${_scriptBeatId(dialogueId)}:voice';
+
+  String _scriptBeatId(String beatId) {
+    for (final sc in _scenes) {
+      for (final t in sc.tracks) {
+        for (final b in t.beats) {
+          if (b.id == beatId) return b.baseId ?? b.id;
+        }
+      }
+    }
+    return beatId;
+  }
 
   /// 이 대사에 쓸 보이스: 화자에 보이스가 있으면 그것, 없으면 설정 기본(내레이션) 보이스.
   String? _voiceIdFor(Dialogue d) {
@@ -594,8 +1039,8 @@ class StoryboardProvider extends ChangeNotifier {
     return def.isEmpty ? null : def;
   }
 
-  /// 오디오 파일 길이(초) 실측. 음성 길이가 대사(비트)의 타임라인 길이를 정하므로,
-  /// 불러온 파일도 반드시 재어 둔다. (재생에 이미 쓰는 video_player로 잰다 — 오디오도 된다.)
+  /// 미디어 파일 길이(초) 실측 — 음성이든 영상이든. 길이가 타임라인을 정하므로
+  /// 만든 것도 불러온 것도 반드시 재어 둔다. (재생에 이미 쓰는 video_player로 잰다.)
   Future<double> _audioSeconds(File f) async {
     final c = VideoPlayerController.file(f);
     try {
@@ -606,8 +1051,19 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
+  /// 파일 길이(초)를 재되, 못 재면 null — 길이 하나 때문에 생성 결과를 날릴 순 없다.
+  Future<double?> _measureSeconds(File f) async {
+    try {
+      return await _audioSeconds(f);
+    } catch (e) {
+      debugPrint('[measure] 길이 실측 실패(무시): $e');
+      return null;
+    }
+  }
+
   /// 대사 음성을 기존 오디오 파일에서 불러온다(기본 동선 — 생성은 부가).
-  Future<void> loadVoice(DialogueBeat beat) async {
+  Future<void> loadVoice(DialogueBeat displayed) async {
+    final beat = _scriptBeat(displayed); // 음성은 트랙 공유 — 기준 비트에 붙인다
     const typeGroup = fs.XTypeGroup(
       label: 'audio',
       extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'],
@@ -643,7 +1099,8 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 이 샷의 대사 음성(일레븐랩스 TTS) 생성 → mp3 저장 + 길이(voiceSeconds) 실측.
-  Future<void> genVoice(DialogueBeat beat) async {
+  Future<void> genVoice(DialogueBeat displayed) async {
+    final beat = _scriptBeat(displayed); // 음성은 트랙 공유 — 기준 비트에 붙인다
     final d = beat.dialogue;
     if (d == null || d.text.trim().isEmpty) {
       messenger?.call('대사를 먼저 입력하세요');
@@ -688,7 +1145,8 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(voiceBlockReason!);
       return;
     }
-    for (final beat in List<DialogueBeat>.from(scene.dialogues)) {
+    // 음성은 트랙 공유 — 기준 트랙의 비트만 한 번씩 돌면 된다.
+    for (final beat in List<DialogueBeat>.from(scene.baseTrack.beats)) {
       if ((beat.dialogue?.text.trim().isNotEmpty) ?? false) {
         await genVoice(beat);
       }
@@ -719,13 +1177,14 @@ class StoryboardProvider extends ChangeNotifier {
   ///
   /// FE2V는 시작·끝 프레임이 둘 다 있어야 하고 프롬프트도 필요하다 — 하나라도 없으면
   /// 그 샷은 blocked로 가고, 호출부는 경고로 띄운다.
+  /// (보고 있는 트랙만 본다 — 일괄 생성은 그 트랙의 영상을 채우는 일이다.)
   SceneVideoPlan sceneVideoPlan({required bool skipExisting}) {
-    final scene = selectedScene;
-    if (scene == null) return const SceneVideoPlan([], [], []);
+    final track = selectedTrack;
+    if (track == null) return const SceneVideoPlan([], [], []);
     final ready = <Shot>[];
     final blocked = <BlockedShot>[];
     final skipped = <Shot>[];
-    for (final beat in scene.dialogues) {
+    for (final beat in track.beats) {
       for (final shot in beat.shots) {
         if (skipExisting && shot.videoPath != null) {
           skipped.add(shot);
@@ -753,13 +1212,13 @@ class StoryboardProvider extends ChangeNotifier {
   bool _hasFile(String? path) =>
       path != null && path.isNotEmpty && File(path).existsSync();
 
-  /// 사람이 알아볼 샷 이름 — 제목이 없으면 씬 안에서 몇 번째 샷인지로 부른다.
+  /// 사람이 알아볼 샷 이름 — 제목이 없으면 트랙 안에서 몇 번째 샷인지로 부른다.
   String shotLabel(Shot shot) {
     if (shot.title.trim().isNotEmpty) return shot.title.trim();
-    final scene = sceneOf(shot);
-    if (scene == null) return '샷';
+    final track = trackOf(shot);
+    if (track == null) return '샷';
     var n = 0;
-    for (final beat in scene.dialogues) {
+    for (final beat in track.beats) {
       for (final s in beat.shots) {
         n++;
         if (identical(s, shot)) return '샷 $n';
@@ -818,13 +1277,21 @@ class StoryboardProvider extends ChangeNotifier {
         GenMode.videoLow => _vprompts[shotId],
       };
 
-  /// [backend] 영상 생성에만 의미 있음 — 어느 백엔드로 뽑을지 호출 시점에 고른다.
-  /// null이면 설정의 기본 백엔드. (결과 슬롯은 하나라 백엔드를 바꿔 다시 뽑으면 덮어쓴다.)
+  /// [backend] 영상 생성에만 의미 있음 — 생략하면 **이 샷이 놓인 트랙의 백엔드**로 뽑는다
+  /// (트랙을 가르는 기준이 백엔드라서). 결과는 그 트랙의 영상 슬롯에만 들어가므로,
+  /// 다른 트랙에서 뽑아 둔 영상은 그대로 남는다 — 그게 비교의 전부다.
+  ///
+  /// 프레임(시작·끝)은 따라가는 샷에서 뽑을 수 없다 — 기준 트랙의 프레임을 그대로 쓰는 중이라
+  /// 여기서 만들면 비교 조건이 어긋난다. 먼저 분리(detach)해야 한다.
   Future<void> gen(
     Shot shot,
     GenMode mode, {
     VideoBackend? backend,
   }) async {
+    if (!mode.isVideo && shot.inherits) {
+      messenger?.call('트랙 1의 프레임을 함께 쓰는 샷입니다 — 이 트랙에서 수정한 뒤 만드세요');
+      return;
+    }
     final raw = _promptCtrlFor(shot.id, mode)?.text.trim() ?? '';
     final prompt = _composePrompt(shot, raw, mode);
     if (prompt.isEmpty) {
@@ -852,6 +1319,9 @@ class StoryboardProvider extends ChangeNotifier {
           shot.endImagePath = f.path;
         case GenMode.videoLow:
           shot.videoPath = f.path;
+          // 주문한 길이와 실제가 다른 일이 흔하다(백엔드 지원 길이·모델이 얹는 몇 프레임).
+          // 타임라인은 재생되는 길이로 그려져야 하므로 파일에서 직접 잰다.
+          shot.videoActualSeconds = await _measureSeconds(f);
       }
       if (mode == GenMode.imageEnd) _refreshLinkedNext(shot);
       _ver[key] = (_ver[key] ?? 0) + 1;
@@ -868,6 +1338,7 @@ class StoryboardProvider extends ChangeNotifier {
   /// 시작/끝장면을 기존 이미지 파일에서 불러온다(생성 대신).
   Future<void> loadFrame(Shot shot, GenMode mode) async {
     if (mode.isVideo) return;
+    await _ensureEditable(shot); // 프레임을 갈아 끼우는 건 곧 이 트랙만의 내용이 된다
     const typeGroup = fs.XTypeGroup(
       label: 'images',
       extensions: ['png', 'jpg', 'jpeg', 'webp'],
@@ -936,15 +1407,15 @@ class StoryboardProvider extends ChangeNotifier {
       ).generateImage(prompt, width: res.width, height: res.height);
     }
     // 영상 생성(저) = FE2V: 시작·끝 두 프레임이 입력(둘 다 필수).
-    switch (backend ?? _settings.videoBackend) {
+    switch (backend ?? backendOf(shot)) {
       case VideoBackend.veo:
         final start = await _startFrame(shot);
-        final end = await _endFrame(shot);
+        // 끝 프레임은 **있으면 보낸다**. I2V로 잡아 뒀거나 아직 안 만들었으면 시작만으로 간다 —
+        // Veo 쪽 끝 프레임 고정은 계정에 따라 막혀 있고(400 use case not supported),
+        // 그때는 서비스가 알아서 시작 프레임만으로 다시 시도한다.
+        final end = shot.i2v ? null : await _endFrame(shot);
         if (start == null) {
-          throw Exception('시작장면을 먼저 만들어 주세요 (FE2V 첫 프레임)');
-        }
-        if (end == null) {
-          throw Exception('끝장면을 먼저 만들어 주세요 (FE2V 마지막 프레임)');
+          throw Exception('시작장면을 먼저 만들어 주세요 (첫 프레임)');
         }
         return VeoVideoService().generate(
           apiKey: _settings.geminiKey,
@@ -954,7 +1425,9 @@ class StoryboardProvider extends ChangeNotifier {
           lastFrame: end,
           aspectRatio: _settings.videoAspect.value,
           resolution: _settings.videoResolution.value,
-          durationSeconds: _settings.videoDurationSeconds,
+          // 길이는 **샷이 정한다**. Veo는 4·6·8초만 되므로 가장 가까운 값으로 내려간다
+          // (그래서 뽑고 나면 실제 길이를 다시 재서 적는다 — gen() 참고).
+          durationSeconds: _veoSeconds(shot.videoSeconds),
           negativePrompt: _settings.videoNegativePrompt,
           onProgress: (st) => messenger?.call(st),
         );
@@ -988,6 +1461,20 @@ class StoryboardProvider extends ChangeNotifier {
           onProgress: (st) => messenger?.call(st),
         );
     }
+  }
+
+  /// Veo가 받아 주는 길이(4·6·8초) 중 [wanted]에 가장 가까운 값.
+  /// 주문한 길이를 그대로 못 쓰는 건 사실이므로, 달라지면 화면에 알린다.
+  int _veoSeconds(int wanted) {
+    const allowed = [4, 6, 8];
+    var best = allowed.first;
+    for (final v in allowed) {
+      if ((v - wanted).abs() < (best - wanted).abs()) best = v;
+    }
+    if (best != wanted) {
+      messenger?.call('Veo는 4·6·8초만 됩니다 — $wanted초 대신 $best초로 뽑습니다');
+    }
+    return best;
   }
 
   /// 영상 생성 해상도(비율 포함) 선택 저장.
@@ -1068,7 +1555,8 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 이 샷의 참조 인물 토글(있으면 제거, 없으면 추가 · 최대 3).
-  void toggleShotRefCharacter(Shot shot, String id) {
+  Future<void> toggleShotRefCharacter(Shot shot, String id) async {
+    await _ensureEditable(shot);
     if (shot.refCharacterIds.contains(id)) {
       shot.refCharacterIds.remove(id);
     } else if (shot.refCharacterIds.length < 3) {
@@ -1199,11 +1687,13 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 샷이 속한 씬 찾기(씬 → 대사 → 샷 탐색).
+  /// 샷이 속한 씬 찾기(씬 → 트랙 → 대사 → 샷 탐색).
   StoryScene? sceneOf(Shot shot) {
     for (final sc in _scenes) {
-      for (final beat in sc.dialogues) {
-        if (beat.shots.contains(shot)) return sc;
+      for (final t in sc.tracks) {
+        for (final beat in t.beats) {
+          if (beat.shots.contains(shot)) return sc;
+        }
       }
     }
     return null;
@@ -1231,8 +1721,17 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 샷의 생성물 하나(시작 프레임 · 끝 프레임 · 영상)를 지운다 — 파일까지 삭제.
   /// 다른 샷이 같은 파일을 참조할 수 있으므로(FE 체이닝은 **복사**본을 쓴다) 여기선
-  /// 이 샷 소유 파일만 지운다.
+  /// 이 샷 소유 파일만 지운다. 따라가는 샷의 프레임은 기준 트랙 것이라 지우지 않는다.
   Future<void> removeMedia(Shot shot, GenMode mode) async {
+    if (!mode.isVideo && shot.inherits) {
+      messenger?.call('트랙 1의 프레임입니다 — 트랙 1에서 지우거나 이 트랙에서 수정하세요');
+      return;
+    }
+    if (mode.isVideo && shot.videoPath == null) {
+      // 이 트랙에서 뽑은 게 없다 — 지금 보이는 건 기준 트랙 영상을 빌려 보여 주는 것뿐이다.
+      if (shot.isDerived) messenger?.call('이 트랙에서 뽑은 영상이 아직 없습니다');
+      return;
+    }
     final path = switch (mode) {
       GenMode.imageStart => shot.startImagePath,
       GenMode.imageEnd => shot.endImagePath,
@@ -1261,10 +1760,11 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 트림 결과를 반영한다 — 파일은 이미 [VideoEdit.trim]이 덮어썼고, 여기서는 상태만 맞춘다.
-  /// 잘린 만큼 샷 길이도 줄어드니 [Shot.videoSeconds]를 실제 길이로 맞춘다(1~15 정수 모델이라
-  /// 반올림된다). 미리보기는 경로가 같으므로 _ver을 올려 캐시를 무효화해야 갱신된다.
+  /// 잘린 결과는 **그 트랙 영상의 실제 길이**다(주문값 [Shot.videoSeconds]는 그대로 둔다 —
+  /// 트랙끼리 공유하는 값이라 여기서 건드리면 다른 트랙의 계획까지 바뀐다).
+  /// 미리보기는 경로가 같으므로 _ver을 올려 캐시를 무효화해야 갱신된다.
   Future<void> applyTrim(Shot shot, double seconds) async {
-    shot.videoSeconds = seconds.round().clamp(1, 15);
+    shot.videoActualSeconds = seconds;
     final k = busyKey(shot.id, GenMode.videoLow);
     _ver[k] = (_ver[k] ?? 0) + 1;
     notifyListeners();
@@ -1290,26 +1790,32 @@ class StoryboardProvider extends ChangeNotifier {
       n++;
     }
 
-    for (final beat in scene.dialogues) {
-      for (final shot in beat.shots) {
-        await kill(shot.startImagePath);
-        await kill(shot.endImagePath);
-        await kill(shot.videoPath);
-        shot.startImagePath = null;
-        shot.endImagePath = null;
-        shot.videoPath = null;
-        for (final m in GenMode.values) {
-          final k = busyKey(shot.id, m);
+    // 트랙 전부를 훑는다 — 비교하려고 뽑아 둔 다른 트랙 영상도 같이 비운다.
+    // 따라가는 샷의 프레임은 기준 트랙 파일을 가리킬 뿐이라(자기 것이 아니다) 건드리지 않는다.
+    for (final track in scene.tracks) {
+      for (final beat in track.beats) {
+        for (final shot in beat.shots) {
+          if (!shot.inherits) {
+            await kill(shot.startImagePath);
+            await kill(shot.endImagePath);
+            shot.startImagePath = null;
+            shot.endImagePath = null;
+          }
+          await kill(shot.videoPath);
+          shot.videoPath = null;
+          for (final m in GenMode.values) {
+            final k = busyKey(shot.id, m);
+            _ver[k] = (_ver[k] ?? 0) + 1;
+          }
+        }
+        final d = beat.dialogue;
+        if (d != null && !beat.isDerived) {
+          await kill(d.voicePath);
+          d.voicePath = null;
+          d.voiceSeconds = 0;
+          final k = voiceBusyKey(beat.id);
           _ver[k] = (_ver[k] ?? 0) + 1;
         }
-      }
-      final d = beat.dialogue;
-      if (d != null) {
-        await kill(d.voicePath);
-        d.voicePath = null;
-        d.voiceSeconds = 0;
-        final k = voiceBusyKey(beat.id);
-        _ver[k] = (_ver[k] ?? 0) + 1;
       }
     }
     await kill(scene.bgmPath);
@@ -1324,12 +1830,13 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// [srcPath]의 이미지를 [target]의 **시작 프레임**으로 복사해 같은 프레임으로 맞춘다.
   /// 성공하면 true. (FE2V 컷 연속성 양방향의 공통 부분.)
-  /// [shot]이 속한 씬의 샷 전체를 순서대로(대사 경계 무시). [sceneShots]와 달리
-  /// **선택된 씬이 아니라 그 샷의 씬**을 본다 — 일괄 생성은 안 열어 본 씬도 훑는다.
+  /// [shot]이 속한 **트랙**의 샷 전체를 순서대로(대사 경계 무시). [sceneShots]와 달리
+  /// 선택된 씬이 아니라 그 샷이 놓인 자리를 본다 — 일괄 생성은 안 열어 본 씬도 훑는다.
+  /// 컷 연속성(시작장면 연동)은 트랙 안에서 이어진다.
   List<Shot> _shotsAround(Shot shot) {
-    final scene = sceneOf(shot);
-    if (scene == null) return const [];
-    return [for (final beat in scene.dialogues) ...beat.shots];
+    final track = trackOf(shot);
+    if (track == null) return const [];
+    return [for (final beat in track.beats) ...beat.shots];
   }
 
   /// 씬 나열 기준 [shot]의 바로 앞 샷 — 없으면(첫 샷) null. 대사 경계는 건너뛴다.
@@ -1358,6 +1865,7 @@ class StoryboardProvider extends ChangeNotifier {
   /// 끄자마자 프레임이 사라지면 당황스럽다.
   Future<void> setLinkStart(Shot shot, bool on) async {
     if (on && prevShotOf(shot) == null) return; // 첫 샷은 물려받을 앞이 없다
+    await _ensureEditable(shot);
     if (!on && shot.linkStart && shot.startImagePath == null) {
       await _materializeStart(shot);
     }
@@ -1372,6 +1880,7 @@ class StoryboardProvider extends ChangeNotifier {
   /// 끝장면 파일은 지우지 않는다: I2V로 뽑아보고 되돌릴 수 있어야 한다.
   Future<void> setI2v(Shot shot, bool on) async {
     if (shot.i2v == on) return;
+    await _ensureEditable(shot);
     shot.i2v = on;
     await save();
     notifyListeners();
@@ -1507,10 +2016,13 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(VideoEdit.missingHint);
       return;
     }
+    // 보고 있는 트랙으로 잇는다 — 아직 안 뽑은 샷은 기준 트랙 영상이 대신 들어간다
+    // (트랙을 막 만든 상태에서도 씬 무비가 온전히 나온다).
     final all = sceneShots;
     final clips = <String>[
       for (final s in all)
-        if (s.videoPath != null && File(s.videoPath!).existsSync()) s.videoPath!,
+        if (videoPathOf(s) case final path?)
+          if (File(path).existsSync()) path,
     ];
     if (clips.isEmpty) {
       messenger?.call('이 씬에는 생성된 영상이 없습니다');

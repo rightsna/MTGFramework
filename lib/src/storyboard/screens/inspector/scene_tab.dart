@@ -83,13 +83,14 @@ class _SceneTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
+    // 따라가는 샷의 프레임은 기준 트랙 것을 함께 쓴다 — 여기서 고치면 비교 조건이 어긋나므로
+    // 통째로 잠근다(위 띠의 '이 트랙에서 수정'으로 분리한 뒤에 손댄다).
+    final locked = shot.inherits;
+    final body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 장면 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
-          _ShotNote(controller: p.shotNoteCtrl(shot.id)),
+          _ShotNote(controller: p.shotNoteCtrl(shot.id), readOnly: locked),
           const SizedBox(height: 14),
           _VideoModeToggle(shot: shot),
           const SizedBox(height: 14),
@@ -192,6 +193,18 @@ class _SceneTab extends StatelessWidget {
               ],
             ),
           ),
+        ],
+    );
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _TrackLinkBar(shot: shot),
+          if (locked)
+            IgnorePointer(child: Opacity(opacity: 0.55, child: body))
+          else
+            body,
         ],
       ),
     );

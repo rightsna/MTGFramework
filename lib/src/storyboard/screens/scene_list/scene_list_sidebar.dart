@@ -72,7 +72,7 @@ class SceneListSidebar extends StatelessWidget {
                                   fontWeight:
                                       sel ? FontWeight.w800 : FontWeight.w600)),
                           subtitle: Text(
-                              '${scene.dialogues.length} 비트 · ${scene.shotCount} 샷',
+                              '${scene.beats.length} 비트 · ${scene.shotCount} 샷',
                               style: const TextStyle(
                                   fontSize: 11, color: Color(0x99FFFFFF))),
                           // 삭제는 우측 '씬' 탭 최하단으로 옮겼다 — 목록에서 실수로 누르기 쉬웠다.

@@ -26,7 +26,9 @@ class _VideoBatchState extends State<VideoBatch> {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final plan = p.sceneVideoPlan(skipExisting: _skipExisting);
-    final backend = p.settings.videoBackend;
+    final track = p.selectedTrack;
+    // 일괄 생성도 **보고 있는 트랙**에 채운다 — 백엔드는 그 트랙이 정한다.
+    final backend = track?.backend ?? p.settings.videoBackend;
     final blockReason = p.videoBlockReasonOf(backend);
     final running = p.batchRunning;
     final n = plan.ready.length;
@@ -36,7 +38,8 @@ class _VideoBatchState extends State<VideoBatch> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '이 씬의 모든 샷 영상을 한 번에 만듭니다 (${backend.label}).',
+          '이 씬의 모든 샷 영상을 한 번에 만듭니다 '
+          '(${track == null ? '' : '${p.trackLabel(track)} · '}${backend.label}).',
           style: const TextStyle(fontSize: 11, color: Colors.white38),
         ),
         const SizedBox(height: 10),

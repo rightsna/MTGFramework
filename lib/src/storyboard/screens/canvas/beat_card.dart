@@ -1,8 +1,9 @@
 part of 'canvas_view.dart';
 
-/// 캔버스의 비트 카드 — 카드 몸통과 그 안(대사 상자·샷 영역·샷 썸네일·샷 추가·노트).
+/// 캔버스의 비트 카드 — 카드 몸통과 그 안(대사 상자·트랙별 샷 줄·샷 썸네일·샷 추가·노트).
 
-/// 대사 카드: [상태 스트립] + [헤더] + [대사] + [샷들] + [메모].
+/// 대사 카드: [헤더] + [대사] + [트랙별 샷 줄] + [메모].
+/// [beat]은 **기준 트랙**의 비트다(구조·대사의 정본). 트랙별 샷은 같은 자리의 비트에서 가져온다.
 class _ShotCard extends StatelessWidget {
   const _ShotCard({required this.beat, required this.index});
 
@@ -59,6 +60,9 @@ class _ShotCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // 비트 삭제는 **기준 트랙 줄에서만** — 구조를 건드리는 일이라 정본 줄에 둔다
+                // (지우면 모든 트랙에서 같이 사라진다).
+                if (!beat.isDerived)
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
@@ -68,7 +72,7 @@ class _ShotCard extends StatelessWidget {
                       title: '비트 삭제',
                       body:
                           '"${beat.title.trim().isEmpty ? '(제목 없음)' : beat.title.trim()}" 비트를 삭제합니다.\n'
-                          '샷 ${beat.shots.length}개가 함께 사라집니다. 되돌릴 수 없습니다.',
+                          '샷 ${beat.shots.length}개가 모든 트랙에서 함께 사라집니다. 되돌릴 수 없습니다.',
                     )) {
                       p.removeDialogue(beat);
                     }
@@ -303,8 +307,15 @@ class _ShotsArea extends StatelessWidget {
           childAspectRatio: 1, // 정사각
           children: [
             for (var i = 0; i < beat.shots.length; i++)
-              _ShotThumb(beat: beat, shot: beat.shots[i], index: i),
-            _AddShotTile(beat: beat),
+              _ShotThumb(
+                key: ValueKey('shot_${beat.shots[i].id}'),
+                beat: beat,
+                shot: beat.shots[i],
+                index: i,
+              ),
+            // 샷 추가는 기준 트랙에서만 — 구조는 트랙끼리 같아야 한다.
+            if (!beat.isDerived)
+              _AddShotTile(key: const ValueKey('addShot'), beat: beat),
           ],
         ),
       ],
@@ -315,7 +326,7 @@ class _ShotsArea extends StatelessWidget {
 /// 정사각 샷 썸네일 — 시작이미지 + 오버레이(번호·삭제·하단 영상상태/길이). 그리드 셀을 꽉 채운다.
 class _ShotThumb extends StatelessWidget {
   const _ShotThumb(
-      {required this.beat, required this.shot, required this.index});
+      {super.key, required this.beat, required this.shot, required this.index});
 
   final DialogueBeat beat;
   final Shot shot;
@@ -325,7 +336,10 @@ class _ShotThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final selected = shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
-    final hasVideo = shot.videoPath != null;
+    // 이 트랙에서 실제로 뽑은 영상이 있는지 / 트랙 1 것을 빌려 보여 주는 중인지를 가른다 —
+    // 비교하러 온 화면이라 "여기서 뽑힌 건가"가 한눈에 보여야 한다.
+    final ownVideo = p.hasOwnVideo(shot);
+    final borrowed = !ownVideo && p.videoPathOf(shot) != null;
     return GestureDetector(
       onTap: () => p.selectShot(beat.id, shot.id),
       child: Container(
@@ -360,30 +374,48 @@ class _ShotThumb extends StatelessWidget {
                         fontSize: 9, fontWeight: FontWeight.w800)),
               ),
             ),
-            Positioned(
-              right: 1,
-              top: 1,
-              child: GestureDetector(
-                onTap: () async {
-                  if (await confirmDelete(
-                    context,
-                    title: '샷 삭제',
-                    body:
-                        '"${shot.title.trim().isEmpty ? '샷 ${index + 1}' : shot.title.trim()}" 을 삭제합니다.\n'
-                        '되돌릴 수 없습니다.',
-                  )) {
-                    p.removeShot(beat, shot);
-                  }
-                },
+            // 분리한 샷 표시 — 이 트랙만의 내용이라는 뜻(따라가는 샷은 표시가 없다 = 트랙 1 그대로).
+            if (shot.detached)
+              Positioned(
+                left: 3,
+                bottom: 16,
                 child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: const BoxDecoration(
-                      color: Color(0xAA000000), shape: BoxShape.circle),
-                  child: const Icon(Icons.close,
-                      size: 11, color: Colors.white70),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xCC000000),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(Icons.edit_outlined,
+                      size: 9, color: Color(0xFFE0A94A)),
                 ),
               ),
-            ),
+            // 샷 삭제도 기준 트랙에서만 — 지우면 모든 트랙에서 같이 사라지는 구조 변경이다.
+            if (!shot.isDerived)
+              Positioned(
+                right: 1,
+                top: 1,
+                child: GestureDetector(
+                  onTap: () async {
+                    if (await confirmDelete(
+                      context,
+                      title: '샷 삭제',
+                      body:
+                          '"${shot.title.trim().isEmpty ? '샷 ${index + 1}' : shot.title.trim()}" 을 삭제합니다.\n'
+                          '모든 트랙에서 같이 사라집니다. 되돌릴 수 없습니다.',
+                    )) {
+                      p.removeShot(beat, shot);
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                        color: Color(0xAA000000), shape: BoxShape.circle),
+                    child: const Icon(Icons.close,
+                        size: 11, color: Colors.white70),
+                  ),
+                ),
+              ),
             // 하단 상태 스트립: 영상 생성 여부 + 길이.
             Positioned(
               left: 0,
@@ -394,12 +426,27 @@ class _ShotThumb extends StatelessWidget {
                 color: const Color(0x99000000),
                 child: Row(
                   children: [
-                    Icon(hasVideo ? Icons.check_circle : Icons.movie_outlined,
-                        size: 9, color: hasVideo ? accent2 : Colors.white38),
+                    Icon(
+                        ownVideo
+                            ? Icons.check_circle
+                            : borrowed
+                                ? Icons.link // 트랙 1 영상을 그대로 보여 주는 중
+                                : Icons.movie_outlined,
+                        size: 9,
+                        color: ownVideo
+                            ? accent2
+                            : borrowed
+                                ? Colors.white54
+                                : Colors.white38),
                     const SizedBox(width: 3),
-                    Text('${shot.videoSeconds}s',
-                        style: const TextStyle(
-                            fontSize: 9, color: Colors.white70)),
+                    // 길이는 **재생되는 길이**로 적는다. 주문값과 다르면(백엔드가 지원하는
+                    // 길이로 내려간 경우 등) 색으로 티를 낸다 — 비교할 때 놓치면 안 되는 사실.
+                    Text(fmtSeconds(shot.playSeconds),
+                        style: TextStyle(
+                            fontSize: 9,
+                            color: shot.lengthDiffers
+                                ? const Color(0xFFE0A94A)
+                                : Colors.white70)),
                   ],
                 ),
               ),
@@ -413,7 +460,7 @@ class _ShotThumb extends StatelessWidget {
 
 /// 샷 추가 타일 — 그리드 셀 가운데의 원형 + 버튼.
 class _AddShotTile extends StatelessWidget {
-  const _AddShotTile({required this.beat});
+  const _AddShotTile({super.key, required this.beat});
 
   final DialogueBeat beat;
 
