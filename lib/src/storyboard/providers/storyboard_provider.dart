@@ -1022,10 +1022,12 @@ class StoryboardProvider extends ChangeNotifier {
   String _composePrompt(Shot shot, String shotPrompt, GenMode mode) {
     if (mode == GenMode.videoLow) return shotPrompt.trim();
     final sc = sceneOf(shot);
+    // 씬 공통과 샷 프롬프트는 빈 줄로 확실히 구분한다 — 쉼표로 이으면 문장 경계가
+    // 뭉개져 어디까지가 공통 블록인지 모델도 사람도 못 가른다.
     return [
       (sc?.commonPrompt ?? '').trim(),
       shotPrompt.trim(),
-    ].where((e) => e.isNotEmpty).join(', ');
+    ].where((e) => e.isNotEmpty).join('\n\n');
   }
 
   /// 복사 버튼용 — 이 프레임이 생성에 실제로 쓰는 최종 프롬프트(씬 공통 포함).
