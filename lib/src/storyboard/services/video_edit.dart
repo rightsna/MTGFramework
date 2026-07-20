@@ -125,6 +125,65 @@ class VideoEdit {
     await tmp.rename(path);
     return (last - first + 1) / fps;
   }
+
+  /// [inputs]를 순서대로 이어붙여 [outPath]로 쓴다(씬 무비 내보내기).
+  ///
+  /// 1차: concat demuxer + 스트림 복사(재인코딩 없음 — 같은 파이프라인 산출물이면 이걸로 끝).
+  /// 실패하면 2차: concat 필터로 재인코딩 — 첫 클립의 해상도·24fps로 통일하고, 오디오가
+  /// 없는 클립은 무음을 깔아 트랙 수를 맞춘다(트랙 수가 다르면 concat 필터가 거부한다).
+  static Future<void> concat(List<String> inputs, String outPath) async {
+    final ffmpeg = toolPath('ffmpeg');
+    if (ffmpeg == null) throw Exception(missingHint);
+    if (inputs.isEmpty) throw Exception('이어붙일 영상이 없습니다.');
+
+    // 1차 — 무재인코딩. 목록 파일의 경로는 concat demuxer 규칙대로 작은따옴표 이스케이프.
+    final list = File('$outPath.list.txt');
+    await list.writeAsString(
+        inputs.map((p) => "file '${p.replaceAll("'", r"'\''")}'").join('\n'));
+    var r = await Process.run(ffmpeg,
+        ['-y', '-f', 'concat', '-safe', '0', '-i', list.path, '-c', 'copy', outPath]);
+    await list.delete();
+    if (r.exitCode == 0) return;
+
+    // 2차 — 재인코딩 폴백. 기준 해상도 = 첫 클립.
+    final infos = <VideoInfo?>[for (final p in inputs) await probe(p)];
+    final w = (infos.first?.width ?? 0) > 0 ? infos.first!.width : 704;
+    final h = (infos.first?.height ?? 0) > 0 ? infos.first!.height : 1280;
+
+    final args = <String>['-y'];
+    for (final p in inputs) {
+      args.addAll(['-i', p]);
+    }
+    final fc = StringBuffer();
+    for (var i = 0; i < inputs.length; i++) {
+      fc.write('[$i:v]scale=$w:$h:force_original_aspect_ratio=decrease,'
+          'pad=$w:$h:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24[v$i];');
+      if (infos[i]?.hasAudio ?? false) {
+        fc.write('[$i:a]aresample=48000[a$i];');
+      } else {
+        // 무음 클립: A/V 길이가 어긋나지 않게 그 클립의 영상 길이만큼 무음을 깐다.
+        final dur = infos[i]?.duration ?? 3.0;
+        fc.write('anullsrc=r=48000:cl=stereo,atrim=0:$dur[a$i];');
+      }
+    }
+    for (var i = 0; i < inputs.length; i++) {
+      fc.write('[v$i][a$i]');
+    }
+    fc.write('concat=n=${inputs.length}:v=1:a=1[v][a]');
+    args.addAll([
+      '-filter_complex', fc.toString(),
+      '-map', '[v]', '-map', '[a]',
+      '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k',
+      outPath,
+    ]);
+    r = await Process.run(ffmpeg, args);
+    if (r.exitCode != 0) {
+      final f = File(outPath);
+      if (await f.exists()) await f.delete();
+      throw Exception('합치기 실패: ${(r.stderr as String).trim().split('\n').last}');
+    }
+  }
 }
 
 /// [VideoEdit.probe] 결과.

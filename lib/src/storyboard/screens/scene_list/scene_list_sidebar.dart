@@ -82,7 +82,7 @@ class SceneListSidebar extends StatelessWidget {
                   ),
           ),
           // (씬 제목 편집은 우측 '씬' 탭으로 옮겼다.)
-          // 선택 씬 조작 — 복제 | 위로 | 아래로. 아이콘만.
+          // 선택 씬 조작 — 복제 | 위로 | 아래로 | 씬 무비 내보내기. 아이콘만.
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Row(
@@ -111,6 +111,17 @@ class SceneListSidebar extends StatelessWidget {
                     icon: Icons.keyboard_arrow_down,
                     tooltip: '아래로',
                     onPressed: p.canMoveSceneDown ? () => p.moveScene(1) : null,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _SceneOpButton(
+                    // 씬의 클립을 샷 순서대로 하나의 mp4로 합쳐 저장한다.
+                    icon: Icons.movie_outlined,
+                    tooltip: '씬 무비 내보내기',
+                    onPressed: p.selectedScene == null
+                        ? null
+                        : () => p.exportSceneMovie(),
                   ),
                 ),
               ],

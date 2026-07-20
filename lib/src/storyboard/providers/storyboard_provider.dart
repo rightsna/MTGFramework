@@ -16,6 +16,7 @@ import '../services/api_service.dart';
 import '../services/elevenlabs_service.dart';
 import '../services/movie_settings.dart';
 import '../services/storyboard_store.dart';
+import '../services/video_edit.dart';
 
 /// 스토리보드 화면 전체가 공유하는 상태/로직 홀더.
 /// 구조: 스토리보드 → 씬(StoryScene) → 대사(DialogueBeat: 대사 내용 0/1 + 샷 여러 개) → 샷(Shot).
@@ -1027,6 +1028,11 @@ class StoryboardProvider extends ChangeNotifier {
     ].where((e) => e.isNotEmpty).join(', ');
   }
 
+  /// 복사 버튼용 — 이 프레임이 생성에 실제로 쓰는 최종 프롬프트(씬 공통 포함).
+  /// 조립 규칙이 바뀌면 [_composePrompt] 한 곳만 고치면 되도록 그대로 태운다.
+  String composedFramePrompt(Shot shot, String shotPrompt, GenMode mode) =>
+      _composePrompt(shot, shotPrompt, mode);
+
   // ───────── 인물 참조(샷 화면의 캐릭터 레퍼런스) ─────────
 
   Future<void> reloadCharacters() async {
@@ -1454,6 +1460,41 @@ class StoryboardProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('[export] 실패: $e\n$st');
       messenger?.call('내보내기 실패: $e');
+    }
+  }
+
+  /// 선택 씬의 클립을 샷 순서대로 하나의 mp4로 이어붙여 내보낸다(씬 무비).
+  /// 영상이 없는 샷은 건너뛰고, 몇 개를 건너뛰었는지 알려준다.
+  Future<void> exportSceneMovie() async {
+    final sc = selectedScene;
+    if (sc == null) return;
+    if (!VideoEdit.available) {
+      messenger?.call(VideoEdit.missingHint);
+      return;
+    }
+    final all = sceneShots;
+    final clips = <String>[
+      for (final s in all)
+        if (s.videoPath != null && File(s.videoPath!).existsSync()) s.videoPath!,
+    ];
+    if (clips.isEmpty) {
+      messenger?.call('이 씬에는 생성된 영상이 없습니다');
+      return;
+    }
+    // 파일명에 못 쓰는 문자만 걸러낸 씬 제목을 기본 이름으로.
+    final title = sc.title.trim().isEmpty ? sc.id : sc.title.trim();
+    final safe = title.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
+    final loc = await fs.getSaveLocation(suggestedName: '$safe.mp4');
+    if (loc == null) return;
+    messenger?.call('씬 무비 합치는 중… (${clips.length}클립)');
+    try {
+      await VideoEdit.concat(clips, loc.path);
+      final skipped = all.length - clips.length;
+      messenger?.call('씬 무비 저장: ${loc.path}'
+          '${skipped > 0 ? ' (영상 없는 $skipped샷 제외)' : ''}');
+    } catch (e, st) {
+      debugPrint('[sceneMovie] 실패: $e\n$st');
+      messenger?.call('씬 무비 실패: $e');
     }
   }
 

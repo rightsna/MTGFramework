@@ -1390,8 +1390,29 @@ class _FrameSection extends StatelessWidget {
             deleteTarget: linked ? null : (shot: shot, mode: mode),
           ),
           const SizedBox(height: 14),
-          _SectionLabel('프롬프트'),
-          const SizedBox(height: 6),
+          Row(
+            children: [
+              const _SectionLabel('프롬프트'),
+              const Spacer(),
+              IconButton(
+                tooltip: '프롬프트 복사 (씬 공통 포함)',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.copy, size: 16),
+                onPressed: () {
+                  // 생성에 실제로 들어가는 형태 그대로 — 씬 공통 + 이 프레임 프롬프트.
+                  final t =
+                      p.composedFramePrompt(shot, controller.text, mode).trim();
+                  if (t.isEmpty) {
+                    p.messenger?.call('복사할 프롬프트가 없습니다');
+                    return;
+                  }
+                  Clipboard.setData(ClipboardData(text: t));
+                  p.messenger?.call('$title 프롬프트 복사됨 (씬 공통 포함)');
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
           _PromptField(
             controller: controller,
             hint: linked ? '앞 샷의 끝장면 프롬프트가 들어옵니다' : hint,
