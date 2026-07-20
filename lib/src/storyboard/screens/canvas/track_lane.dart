@@ -93,15 +93,19 @@ class _TrackHeader extends StatelessWidget {
               color: color,
             )),
         const SizedBox(width: 8),
-        // 백엔드 = 이 줄의 영상을 뽑는 곳. 무엇으로든 둘 수 있다(같은 백엔드로 두 줄도 가능).
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-          decoration: BoxDecoration(
-            color: const Color(0x14FFFFFF),
-            borderRadius: BorderRadius.circular(6),
+        // 이 줄의 **기본** 백엔드 — 일괄 생성이 쓰는 값이고, 샷마다 다른 걸로 뽑아도 된다.
+        // (그래서 결과가 무엇으로 나왔는지는 영상 탭의 결과 옆에 따로 적힌다.)
+        Tooltip(
+          message: '이 트랙의 기본 백엔드 (일괄 생성에 쓰임)\n샷마다 다른 백엔드로도 뽑을 수 있습니다',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0x14FFFFFF),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(track.backend.shortLabel,
+                style: const TextStyle(fontSize: 10.5, color: Colors.white70)),
           ),
-          child: Text(track.backend.shortLabel,
-              style: const TextStyle(fontSize: 10.5, color: Colors.white70)),
         ),
         const SizedBox(width: 8),
         Text('영상 ${track.filledCount}/${track.shotCount}',

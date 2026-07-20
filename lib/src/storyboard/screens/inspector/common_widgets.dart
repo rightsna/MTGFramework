@@ -86,8 +86,6 @@ class _CenterNote extends StatelessWidget {
   }
 }
 
-/// 메모(특이사항) 상자. 프롬프트와 무관한 자유 기록 — 생성에 쓰이지 않는다.
-/// 비트·샷 어디든 [controller]만 물리면 같은 생김새로 쓴다.
 /// 파생 트랙에서 이 샷이 **기준 트랙을 따라가는 중**인지 알려주는 띠 + 분리/되돌리기 버튼.
 /// 기준 트랙이거나 트랙이 하나뿐이면 아무것도 그리지 않는다.
 class _TrackLinkBar extends StatelessWidget {
@@ -165,17 +163,26 @@ class _TrackLinkBar extends StatelessWidget {
   }
 }
 
+/// 따라가는(상속) 샷의 편집 영역을 통째로 잠근다 — 칸마다 readOnly를 물리는 대신 한 겹으로.
+/// 잠긴 동안에도 **보이기는 그대로**여야 한다(트랙 1과 같은 내용을 쓰고 있다는 게 요점).
+class _LockIfInherited extends StatelessWidget {
+  const _LockIfInherited({required this.locked, required this.child});
+
+  final bool locked;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => locked
+      ? IgnorePointer(child: Opacity(opacity: 0.55, child: child))
+      : child;
+}
+
+/// 메모(특이사항) 상자. 프롬프트와 무관한 자유 기록 — 생성에 쓰이지 않는다.
+/// 비트·샷 어디든 [controller]만 물리면 같은 생김새로 쓴다.
 class _ShotNote extends StatelessWidget {
-  const _ShotNote({
-    super.key,
-    required this.controller,
-    this.readOnly = false,
-  });
+  const _ShotNote({super.key, required this.controller});
 
   final TextEditingController controller;
-
-  /// 기준 트랙을 따라가는 샷의 메모 — 보여주기만 한다(고치려면 먼저 분리).
-  final bool readOnly;
 
   static const _amber = Color(0xFFE0A94A);
 
@@ -215,14 +222,9 @@ class _ShotNote extends StatelessWidget {
           const SizedBox(height: 8),
           TextField(
             controller: controller,
-            readOnly: readOnly,
             minLines: 2,
             maxLines: 6,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.4,
-              color: readOnly ? Colors.white54 : null,
-            ),
+            style: const TextStyle(fontSize: 13, height: 1.4),
             decoration: const InputDecoration(
               hintText: '이 샷의 특이사항·참고를 자유롭게 기록 (프롬프트 아님)',
               isDense: true,
@@ -231,7 +233,7 @@ class _ShotNote extends StatelessWidget {
               border: OutlineInputBorder(),
             ),
             // 저장 + 즉시 갱신 — 캔버스의 메모 패널이 입력을 실시간으로 비춘다.
-            onChanged: readOnly ? null : (_) => p.noteEdited(),
+            onChanged: (_) => p.noteEdited(),
           ),
         ],
       ),

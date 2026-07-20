@@ -33,7 +33,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     // 재생 가능한 영상 샷만 순서대로(씬 전체 = 대사들의 샷 평탄화).
     final shots = <({Shot shot, String path})>[];
     for (final s in p.sceneShots) {
-      final path = p.videoPathOf(s);
+      final path = s.videoPath;
       if (path != null && _videoExts.any(path.toLowerCase().endsWith)) {
         shots.add((shot: s, path: path));
       }

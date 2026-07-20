@@ -101,41 +101,45 @@ class _ShotCard extends StatelessWidget {
     // 모델이 아니라 컨트롤러에서 읽는다: 인스펙터에서 타이핑하는 즉시 따라오게.
     // 탭하면 인스펙터의 그 메모 자리로 간다(탭 번호: 0=비트 1=장면 2=영상).
     final notes = <Widget>[];
-    final beatNote = p.noteCtrl(beat.id).text.trim();
-    if (beatNote.isNotEmpty) {
-      notes.add(_NoteBox(
-        text: beatNote,
-        onTap: () {
-          p.selectDialogue(beat.id);
-          p.openInspectorTab(0);
-        },
-      ));
-    }
-    for (var i = 0; i < beat.shots.length; i++) {
-      final shot = beat.shots[i];
-      final t = shot.title.trim().isEmpty ? '샷 ${i + 1}' : shot.title.trim();
-      // 장면 메모와 영상 메모는 별개다 — 있는 것만 각각 한 줄씩.
-      final sn = p.shotNoteCtrl(shot.id).text.trim();
-      if (sn.isNotEmpty) {
+    // 메모는 **기준 트랙 줄에만** 붙인다 — 트랙끼리 같은 내용이라
+    // 줄마다 반복해 봐야 캔버스만 길어진다.
+    if (!beat.isDerived) {
+      final beatNote = p.noteCtrl(beat.id).text.trim();
+      if (beatNote.isNotEmpty) {
         notes.add(_NoteBox(
-          label: '$t · 장면',
-          text: sn,
+          text: beatNote,
           onTap: () {
-            p.selectShot(beat.id, shot.id);
-            p.openInspectorTab(1);
+            p.selectDialogue(beat.id);
+            p.openInspectorTab(0);
           },
         ));
       }
-      final vn = p.videoNoteCtrl(shot.id).text.trim();
-      if (vn.isNotEmpty) {
-        notes.add(_NoteBox(
-          label: '$t · 영상',
-          text: vn,
-          onTap: () {
-            p.selectShot(beat.id, shot.id);
-            p.openInspectorTab(2);
-          },
-        ));
+      for (var i = 0; i < beat.shots.length; i++) {
+        final shot = beat.shots[i];
+        final t = shot.title.trim().isEmpty ? '샷 ${i + 1}' : shot.title.trim();
+        // 장면 메모와 영상 메모는 별개다 — 있는 것만 각각 한 줄씩.
+        final sn = p.shotNoteCtrl(shot.id).text.trim();
+        if (sn.isNotEmpty) {
+          notes.add(_NoteBox(
+            label: '$t · 장면',
+            text: sn,
+            onTap: () {
+              p.selectShot(beat.id, shot.id);
+              p.openInspectorTab(1);
+            },
+          ));
+        }
+        final vn = p.videoNoteCtrl(shot.id).text.trim();
+        if (vn.isNotEmpty) {
+          notes.add(_NoteBox(
+            label: '$t · 영상',
+            text: vn,
+            onTap: () {
+              p.selectShot(beat.id, shot.id);
+              p.openInspectorTab(2);
+            },
+          ));
+        }
       }
     }
     final Widget content = notes.isEmpty
@@ -336,10 +340,7 @@ class _ShotThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final selected = shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
-    // 이 트랙에서 실제로 뽑은 영상이 있는지 / 트랙 1 것을 빌려 보여 주는 중인지를 가른다 —
-    // 비교하러 온 화면이라 "여기서 뽑힌 건가"가 한눈에 보여야 한다.
-    final ownVideo = p.hasOwnVideo(shot);
-    final borrowed = !ownVideo && p.videoPathOf(shot) != null;
+    final hasVideo = shot.videoPath != null;
     return GestureDetector(
       onTap: () => p.selectShot(beat.id, shot.id),
       child: Container(
@@ -426,27 +427,13 @@ class _ShotThumb extends StatelessWidget {
                 color: const Color(0x99000000),
                 child: Row(
                   children: [
-                    Icon(
-                        ownVideo
-                            ? Icons.check_circle
-                            : borrowed
-                                ? Icons.link // 트랙 1 영상을 그대로 보여 주는 중
-                                : Icons.movie_outlined,
-                        size: 9,
-                        color: ownVideo
-                            ? accent2
-                            : borrowed
-                                ? Colors.white54
-                                : Colors.white38),
+                    Icon(hasVideo ? Icons.check_circle : Icons.movie_outlined,
+                        size: 9, color: hasVideo ? accent2 : Colors.white38),
                     const SizedBox(width: 3),
-                    // 길이는 **재생되는 길이**로 적는다. 주문값과 다르면(백엔드가 지원하는
-                    // 길이로 내려간 경우 등) 색으로 티를 낸다 — 비교할 때 놓치면 안 되는 사실.
+                    // 뽑힌 게 있으면 그 실제 길이, 없으면 주문한 길이([Shot.playSeconds]).
                     Text(fmtSeconds(shot.playSeconds),
-                        style: TextStyle(
-                            fontSize: 9,
-                            color: shot.lengthDiffers
-                                ? const Color(0xFFE0A94A)
-                                : Colors.white70)),
+                        style: const TextStyle(
+                            fontSize: 9, color: Colors.white70)),
                   ],
                 ),
               ),

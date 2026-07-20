@@ -463,17 +463,8 @@ class StoryboardProvider extends ChangeNotifier {
   int verOf(String key) => _ver[key] ?? 0;
   String busyKey(String id, GenMode m) => '$id:${m.name}';
 
-  /// 이 샷 자리에 **보여 줄** 영상 — 자기 트랙에서 뽑은 게 있으면 그것,
-  /// 아직 안 뽑았고 기준을 그대로 따라가는 중이면 기준 트랙의 영상을 보여 준다.
-  /// (트랙을 막 추가하면 트랙 1과 똑같이 보이고, 여기서 뽑는 순간 그 샷만 자기 것으로 갈린다.)
-  /// 분리한 샷은 내용이 이미 달라졌으므로 기준 영상을 빌려 오지 않는다.
-  String? videoPathOf(Shot c) =>
-      c.videoPath ?? (c.inherits ? baseShotOf(c)?.videoPath : null);
-
-  /// 이 샷의 영상이 **그 트랙에서 실제로 뽑힌 것**인지(빌려 보여 주는 중이 아닌지).
-  bool hasOwnVideo(Shot c) => c.videoPath != null;
-
-  /// 이 샷을 뽑을 백엔드 = 놓여 있는 트랙의 백엔드(트랙 밖이면 설정 기본값).
+  /// 이 샷을 뽑을 때의 **기본** 백엔드 = 놓여 있는 트랙의 백엔드(트랙 밖이면 설정값).
+  /// 생성 버튼은 다른 백엔드도 고를 수 있다 — 트랙은 결과가 들어가는 자리일 뿐이다.
   VideoBackend backendOf(Shot shot) =>
       trackOf(shot)?.backend ?? _settings.videoBackend;
 
@@ -1727,11 +1718,6 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call('트랙 1의 프레임입니다 — 트랙 1에서 지우거나 이 트랙에서 수정하세요');
       return;
     }
-    if (mode.isVideo && shot.videoPath == null) {
-      // 이 트랙에서 뽑은 게 없다 — 지금 보이는 건 기준 트랙 영상을 빌려 보여 주는 것뿐이다.
-      if (shot.isDerived) messenger?.call('이 트랙에서 뽑은 영상이 아직 없습니다');
-      return;
-    }
     final path = switch (mode) {
       GenMode.imageStart => shot.startImagePath,
       GenMode.imageEnd => shot.endImagePath,
@@ -2016,13 +2002,10 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(VideoEdit.missingHint);
       return;
     }
-    // 보고 있는 트랙으로 잇는다 — 아직 안 뽑은 샷은 기준 트랙 영상이 대신 들어간다
-    // (트랙을 막 만든 상태에서도 씬 무비가 온전히 나온다).
     final all = sceneShots;
     final clips = <String>[
       for (final s in all)
-        if (videoPathOf(s) case final path?)
-          if (File(path).existsSync()) path,
+        if (s.videoPath != null && File(s.videoPath!).existsSync()) s.videoPath!,
     ];
     if (clips.isEmpty) {
       messenger?.call('이 씬에는 생성된 영상이 없습니다');

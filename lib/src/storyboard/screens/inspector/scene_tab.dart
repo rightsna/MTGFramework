@@ -90,7 +90,7 @@ class _SceneTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 장면 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
-          _ShotNote(controller: p.shotNoteCtrl(shot.id), readOnly: locked),
+          _ShotNote(controller: p.shotNoteCtrl(shot.id)),
           const SizedBox(height: 14),
           _VideoModeToggle(shot: shot),
           const SizedBox(height: 14),
@@ -201,10 +201,7 @@ class _SceneTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _TrackLinkBar(shot: shot),
-          if (locked)
-            IgnorePointer(child: Opacity(opacity: 0.55, child: body))
-          else
-            body,
+          _LockIfInherited(locked: locked, child: body),
         ],
       ),
     );

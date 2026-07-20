@@ -90,11 +90,6 @@ class Shot {
   /// 재생되는 건 파일이므로 화면·합계는 전부 이걸 봐야 한다.
   double get playSeconds => videoActualSeconds ?? videoSeconds.toDouble();
 
-  /// 주문한 길이와 실제가 어긋났는지(0.5초 넘게) — 화면에 그대로 드러내야 할 사실.
-  bool get lengthDiffers =>
-      videoActualSeconds != null &&
-      (videoActualSeconds! - videoSeconds).abs() > 0.5;
-
   /// 파생 트랙의 샷인지(기준 트랙이면 false).
   bool get isDerived => baseId != null;
 

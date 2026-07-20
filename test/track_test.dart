@@ -5,7 +5,7 @@ import 'package:framework/storyboard.dart';
 
 /// 트랙 = 같은 콘티를 백엔드별로 뽑아 **비교하는 단위**.
 /// 지켜야 할 약속은 셋이다:
-///  1. 트랙을 추가하고 아무것도 안 건드리면 **트랙 1과 똑같이 보인다**(영상까지).
+///  1. 트랙을 추가하고 아무것도 안 건드리면 **트랙 1과 똑같은 내용**이다(영상만 비어 있다).
 ///  2. 거기서 영상만 다시 뽑으면 **그 트랙의 영상만** 갈린다 — 트랙 1은 그대로.
 ///  3. 구조(비트·샷 개수)는 트랙끼리 항상 같다.
 void main() {
@@ -66,9 +66,8 @@ void main() {
       expect(shots[i].startPrompt, base[i].startPrompt);
       expect(shots[i].startImagePath, base[i].startImagePath);
       expect(p.videoCtrl(shots[i].id).text, '카메라가 밀려든다');
-      // 영상도 트랙 1 것을 그대로 보여 준다(빌려 온 것 — 자기 것은 아직 없다).
-      expect(p.videoPathOf(shots[i]), base[i].videoPath);
-      expect(p.hasOwnVideo(shots[i]), isFalse);
+      // 영상만 비어 있다 — 트랙을 나눈 이유가 그것뿐이다.
+      expect(shots[i].videoPath, isNull);
     }
     // 샷 id는 트랙마다 다르다 — 영상 파일이 서로 덮어쓰지 않도록.
     expect(shots.first.id, isNot(base.first.id));
@@ -84,8 +83,6 @@ void main() {
     derived.videoPath = (await file('${derived.id}_vlow.mp4')).path;
     await p.save();
 
-    expect(p.hasOwnVideo(derived), isTrue);
-    expect(p.videoPathOf(derived), derived.videoPath);
     expect(base.videoPath, baseVideo, reason: '트랙 1 영상은 건드리지 않는다');
     // 내용은 여전히 따라간다 — 갈린 건 영상뿐.
     expect(derived.inherits, isTrue);
@@ -130,8 +127,6 @@ void main() {
     // 프레임은 자기 파일로 떠 온다 — 기준 샷을 지워도 안 깨지도록.
     expect(derived.startImagePath, contains(derived.id));
     expect(File(derived.startImagePath!).existsSync(), isTrue);
-    // 분리한 샷은 기준 영상을 빌려 오지 않는다(내용이 이미 달라졌으므로).
-    expect(p.videoPathOf(derived), isNull);
 
     p.videoCtrl(derived.id).text = '핸드헬드로 흔들린다';
     await p.save();
@@ -207,7 +202,6 @@ void main() {
     expect(derived.playSeconds, 4.0);
     expect(base.playSeconds, 10.0);
     expect(derived.videoSeconds, 10, reason: '주문값은 트랙끼리 공유(내용)');
-    expect(derived.lengthDiffers, isTrue, reason: '주문 10초 → 실제 4초는 티를 내야 한다');
     // 타임라인(비트 길이)도 그 트랙의 실제 길이로 잡힌다.
     expect(p.tracks[1].beats.single.seconds, 4.0 + p.tracks[1].beats.single.shots[1].playSeconds);
     expect(p.tracks.first.beats.single.seconds, 10.0 + beat.shots[1].playSeconds);

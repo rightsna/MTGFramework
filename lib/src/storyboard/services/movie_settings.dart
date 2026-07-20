@@ -4,9 +4,10 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 
 /// Where videos are generated. (스크린샷=시작·끝 프레임은 자체 서버 전용 — 외부 키 생성은 걷어냄.)
+/// 선언 순서 = 화면에 늘어놓는 순서(생성 버튼·트랙 메뉴). 자체 서버가 기본이라 위에 온다.
 enum VideoBackend {
-  veo('Veo', 'Veo'),
-  serviceApi('자체 서버 (service-api)', '자체서버');
+  serviceApi('자체 서버 (service-api)', '자체서버'),
+  veo('Veo', 'Veo');
 
   const VideoBackend(this.label, this.shortLabel);
   final String label;
