@@ -124,6 +124,12 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
             actions: [
               const _ConnStatus(),
               IconButton(
+                tooltip: '파일에서 다시 불러오기 '
+                    '(다른 곳에서 수정된 scene*.json을 새로 읽음 · 저장 안 한 편집은 사라짐)',
+                icon: const Icon(Icons.refresh),
+                onPressed: _provider.reloadFromDisk,
+              ),
+              IconButton(
                 tooltip: '프로젝트 폴더 열기 (영상·이미지·음성이 저장되는 곳)',
                 icon: const Icon(Icons.folder_open_outlined),
                 onPressed: _provider.openProjectFolder,

@@ -98,6 +98,7 @@ class MovieSettings {
   final VideoRes videoRes; // 자체 서버 FE2V 생성 해상도(비율 포함, 4종)
   final int videoSeconds; // 자체 서버 FE2V 영상 길이(초, 1~15)
   final int inspectorTab; // 인스펙터 마지막 선택 탭(0=장면, 1=영상, 2=공통)
+  final bool promptShowKo; // 프롬프트 칸을 번역(한국어)으로 보고 있는지 — 토글 상태 유지용
   final String videoNegativePrompt; // 영상 네거티브 프롬프트
   final String geminiKey; // Veo 전용
   final String
@@ -120,6 +121,7 @@ class MovieSettings {
     this.videoRes = VideoRes.p352x640,
     this.videoSeconds = 5,
     this.inspectorTab = 0,
+    this.promptShowKo = false,
     this.videoNegativePrompt = '',
     this.geminiKey = '',
     this.civitaiToken = '',
@@ -138,6 +140,7 @@ class MovieSettings {
     VideoRes? videoRes,
     int? videoSeconds,
     int? inspectorTab,
+    bool? promptShowKo,
     String? videoNegativePrompt,
     String? geminiKey,
     String? civitaiToken,
@@ -154,6 +157,7 @@ class MovieSettings {
     videoRes: videoRes ?? this.videoRes,
     videoSeconds: videoSeconds ?? this.videoSeconds,
     inspectorTab: inspectorTab ?? this.inspectorTab,
+    promptShowKo: promptShowKo ?? this.promptShowKo,
     videoNegativePrompt: videoNegativePrompt ?? this.videoNegativePrompt,
     geminiKey: geminiKey ?? this.geminiKey,
     civitaiToken: civitaiToken ?? this.civitaiToken,
@@ -172,6 +176,7 @@ class MovieSettings {
     'videoRes': videoRes.name,
     'videoSeconds': videoSeconds,
     'inspectorTab': inspectorTab,
+    'promptShowKo': promptShowKo,
     'videoNegativePrompt': videoNegativePrompt,
     'geminiKey': geminiKey,
     'civitaiToken': civitaiToken,
@@ -202,6 +207,7 @@ class MovieSettings {
     videoRes: _readVideoRes(j),
     videoSeconds: (j['videoSeconds'] as int?) ?? 5,
     inspectorTab: (j['inspectorTab'] as int?) ?? 0,
+    promptShowKo: (j['promptShowKo'] as bool?) ?? false,
     videoNegativePrompt: (j['videoNegativePrompt'] as String?) ?? '',
     geminiKey: (j['geminiKey'] as String?) ?? '',
     civitaiToken: (j['civitaiToken'] as String?) ?? '',

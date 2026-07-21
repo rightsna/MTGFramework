@@ -50,7 +50,7 @@ class _SecondsFieldState extends State<_SecondsField> {
 
 /// LoRA URL 입력 + 강도 슬라이더 (씬 단위 — 같은 씬 샷들끼리 공유).
 class _LoraField extends StatefulWidget {
-  const _LoraField({super.key});
+  const _LoraField({required super.key});
 
   @override
   State<_LoraField> createState() => _LoraFieldState();
@@ -166,14 +166,19 @@ class _VideoTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _OutputBlock(
-                  title: '영상',
-                  path: c.videoPath,
-                  busyKey: p.busyKey(c.id, GenMode.videoLow),
-                  isVideo: true,
-                  deleteTarget: (shot: c, mode: GenMode.videoLow),
-                  trimTarget: c,
-                ),
+                // 영상이 있으면 영상을, 없으면 **생성에 쓸 장면**을 대신 보여준다
+                // (FE2V면 시작·끝 두 장, I2V면 시작 한 장) — 무엇으로 뽑는지 바로 보이게.
+                if (c.videoPath != null)
+                  _OutputBlock(
+                    title: '영상',
+                    path: c.videoPath,
+                    busyKey: p.busyKey(c.id, GenMode.videoLow),
+                    isVideo: true,
+                    deleteTarget: (shot: c, mode: GenMode.videoLow),
+                    trimTarget: c,
+                  )
+                else
+                  _VideoInputFrames(shot: c),
                 const SizedBox(height: 14),
                 // 내용(프롬프트·길이)은 따라가는 동안 잠긴다. 생성 버튼은 그 아래에 열려 있다.
                 _LockIfInherited(
@@ -181,18 +186,11 @@ class _VideoTab extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _SectionLabel('프롬프트'),
-                      const SizedBox(height: 6),
-                      _PromptField(
+                      _PromptPair(
+                        label: '프롬프트',
                         controller: p.videoCtrl(c.id),
+                        koController: p.videoKoCtrl(c.id),
                         hint: '움직임/카메라 등 영상 묘사',
-                      ),
-                      const SizedBox(height: 10),
-                      _SectionLabel('프롬프트 번역 (한국어)'),
-                      const SizedBox(height: 6),
-                      _PromptField(
-                        controller: p.videoKoCtrl(c.id),
-                        hint: '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임',
                       ),
                       const SizedBox(height: 10),
                       _SectionLabel('네거티브 프롬프트'),
@@ -228,36 +226,75 @@ class _VideoTab extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          _GroupCard(
-            icon: Icons.tune,
-            title: '설정',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _SectionLabel('생성 해상도'),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final r in VideoRes.values)
-                      ChoiceChip(
-                        label: Text(r.label, style: _chipLabel),
-                        selected: p.settings.videoRes == r,
-                        onSelected: (_) => p.setVideoRes(r),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                const _SectionLabel('LoRA (선택 · LTX-2.3용)'),
-                const SizedBox(height: 6),
-                _LoraField(key: ValueKey('lora_${p.selectedSceneId}')),
-              ],
-            ),
-          ),
+          // 해상도·LoRA는 씬 단위라 씬 탭의 '생성 설정'으로 옮겼다.
         ],
       ),
+    );
+  }
+}
+
+/// 영상이 아직 없을 때 영상칸에 대신 놓는 **생성 입력 장면** 미리보기.
+/// FE2V면 시작·끝 두 장, I2V면 시작 한 장. 탭하면 확대. 읽기만 하고 편집은 장면 탭에서.
+class _VideoInputFrames extends StatelessWidget {
+  const _VideoInputFrames({required this.shot});
+
+  final Shot shot;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final start = p.startPathOf(shot); // 연동 중이면 앞 샷의 끝장면
+    final end = shot.i2v ? null : shot.endImagePath;
+
+    Widget frame(String label, String? path, GenMode mode) {
+      final key = p.busyKey(shot.id, mode);
+      return Expanded(
+        child: Container(
+          height: 150,
+          decoration: BoxDecoration(
+            color: previewBg,
+            borderRadius: BorderRadius.circular(10),
+            // 영상이 아니라 장면을 대신 보여주는 중 — **빨간 테두리**로 아직 미생성임을 강조.
+            border: Border.all(color: Colors.redAccent, width: 2),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: OutputPreview(
+            path: path,
+            version: p.verOf(key),
+            busy: p.isBusy(key),
+            fit: BoxFit.contain,
+            onImageTap: path == null
+                ? null
+                : () => showImageZoomDialog(context,
+                    path: path, version: p.verOf(key), title: label),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const _SectionLabel('영상'),
+            const SizedBox(width: 8),
+            const Text('아직 없음 — 생성에 쓸 장면',
+                style: TextStyle(fontSize: 11, color: Color(0x66FFFFFF))),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            frame('시작', start, GenMode.imageStart),
+            if (!shot.i2v) ...[
+              const SizedBox(width: 8),
+              frame('끝', end, GenMode.imageEnd),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }

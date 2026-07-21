@@ -473,8 +473,28 @@ class StoryboardProvider extends ChangeNotifier {
   Future<void> _load() async {
     _settings = await _settingsStore.load();
     _settingsLoaded = true;
+    await _readFromDisk(keepSelection: false);
+    checkConnection();
+    _statusTimer ??= Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => checkConnection(),
+    );
+  }
+
+  /// 디스크에서 씬·인물을 다시 읽어 화면을 갈아끼운다 — **다른 곳(에디터·다른 세션)에서 파일이
+  /// 바뀐 뒤 새로 불러오는 용도**. 편집 컨트롤러를 전부 새로 만들므로 옛것은 버린다.
+  /// [keepSelection]이면 같은 id가 아직 있으면 그 선택을 유지한다(리프레시가 자리를 튀게 하지 않게).
+  Future<void> _readFromDisk({required bool keepSelection}) async {
+    final prevScene = _selectedSceneId;
+    final prevBeat = _selectedDialogueId;
+    final prevShot = _selectedShotId;
+
+    _disposeAllItemControllers();
+
     final scenes = await _store.load();
-    final path = _store.path();
+    // 다른 세션·에디터가 씬을 복사하며 같은 id를 남기면(중복 id) 목록에 같은 씬이 두 번 뜨고
+    // 클릭도 함께 먹는다(선택이 id 기준). 나중에 본 쪽을 새 id로 갈라 준다.
+    final remapped = _ensureUniqueIds(scenes);
     _scenes = scenes;
     _characters = await _store.loadCharacters();
     for (final scene in scenes) {
@@ -491,23 +511,107 @@ class StoryboardProvider extends ChangeNotifier {
       // 파일에는 따라가는 샷의 내용이 안 적혀 있다 — 기준 트랙에서 채운다.
       _syncTracks(scene);
     }
-    final firstScene = scenes.isNotEmpty ? scenes.first : null;
-    final firstShot = (firstScene != null && firstScene.beats.isNotEmpty)
-        ? firstScene.beats.first
-        : null;
-    _selectedSceneId = firstScene?.id;
-    _selectedDialogueId = firstShot?.id;
-    _selectedShotId = (firstShot != null && firstShot.shots.isNotEmpty)
-        ? firstShot.shots.first.id
-        : null;
-    _savePath = path;
+
+    final keep = keepSelection && scenes.any((s) => s.id == prevScene);
+    if (keep) {
+      _selectedSceneId = prevScene;
+      final beats = selectedTrack?.beats ?? const <DialogueBeat>[];
+      _selectedDialogueId =
+          beats.any((b) => b.id == prevBeat) ? prevBeat : beats.firstOrNull?.id;
+      _selectedShotId =
+          shots.any((s) => s.id == prevShot) ? prevShot : shots.firstOrNull?.id;
+    } else {
+      final firstScene = scenes.isNotEmpty ? scenes.first : null;
+      final firstShot = (firstScene != null && firstScene.beats.isNotEmpty)
+          ? firstScene.beats.first
+          : null;
+      _selectedSceneId = firstScene?.id;
+      _selectedDialogueId = firstShot?.id;
+      _selectedShotId = (firstShot != null && firstShot.shots.isNotEmpty)
+          ? firstShot.shots.first.id
+          : null;
+    }
+    _savePath = _store.path();
     notifyListeners();
+    // 중복 id를 갈랐으면 갈라진 상태로 굳혀 둔다(다음에 또 겹쳐 보이지 않게).
+    if (remapped) {
+      messenger?.call('같은 id의 씬이 겹쳐 있어 하나를 새 id로 분리했습니다');
+      unawaited(save());
+    }
     unawaited(_backfillActualSeconds()); // 옛 영상의 실제 길이를 뒤에서 채운다
-    checkConnection();
-    _statusTimer ??= Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => checkConnection(),
-    );
+  }
+
+  /// 프로젝트 전체에서 **id가 유일**하도록 보장한다. 중복이면 나중에 본 쪽을 새 id로 바꾸고,
+  /// 파생 트랙의 참조(baseId)도 같은 씬 안에서 다시 잇는다. 하나라도 바꿨으면 true.
+  bool _ensureUniqueIds(List<StoryScene> scenes) {
+    final seen = <String>{};
+    var changed = false;
+    for (final sc in scenes) {
+      final map = <String, String>{}; // 이 씬에서 바뀐 옛id→새id
+      String uniq(String id, String prefix) {
+        if (seen.add(id)) return id; // 처음 본 id — 그대로
+        final nid = _newId(prefix);
+        seen.add(nid);
+        map[id] = nid;
+        changed = true;
+        return nid;
+      }
+
+      sc.id = uniq(sc.id, 'scene');
+      for (final t in sc.tracks) {
+        for (final b in t.beats) {
+          b.id = uniq(b.id, 'beat');
+          for (final s in b.shots) {
+            s.id = uniq(s.id, 'clip');
+          }
+        }
+      }
+      // baseId가 방금 바뀐 id를 가리키면 새 id로 잇는다(파생 트랙 내부 참조 유지).
+      if (map.isNotEmpty) {
+        for (final t in sc.tracks) {
+          for (final b in t.beats) {
+            b.baseId = map[b.baseId] ?? b.baseId;
+            for (final s in b.shots) {
+              s.baseId = map[s.baseId] ?? s.baseId;
+            }
+          }
+        }
+      }
+    }
+    return changed;
+  }
+
+  /// 파일에서 다시 불러오기(리프레시). 다른 세션·에디터에서 scene*.json을 고쳤을 때 호출.
+  /// 저장하지 않은 편집 중 내용은 사라진다 — 리프레시는 디스크를 정본으로 삼는 동작이다.
+  Future<void> reloadFromDisk() async {
+    await _readFromDisk(keepSelection: true);
+    messenger?.call('파일에서 다시 불러왔습니다');
+  }
+
+  /// 씬·비트·샷의 편집 컨트롤러를 전부 정리한다(재로딩 전 옛것 비우기).
+  /// 설정·연결 상태 등 프로젝트 밖 상태는 건드리지 않는다.
+  void _disposeAllItemControllers() {
+    for (final m in [
+      _sceneTitles,
+      _sceneNotes,
+      _dialogueTitles,
+      _notes,
+      _directions,
+      _startPrompts,
+      _startPromptKos,
+      _endPrompts,
+      _endPromptKos,
+      _vprompts,
+      _vpromptKos,
+      _vnegs,
+      _shotNotes,
+      _videoNotes,
+    ]) {
+      for (final c in m.values) {
+        c.dispose();
+      }
+      m.clear();
+    }
   }
 
   /// 이미 뽑아 둔 영상 중 **실제 길이를 모르는 것**을 파일에서 재어 채운다.
@@ -1659,6 +1763,15 @@ class StoryboardProvider extends ChangeNotifier {
   void setInspectorTab(int i) {
     if (_settings.inspectorTab == i) return;
     _settings = _settings.copyWith(inspectorTab: i);
+    _settingsStore.save(_settings);
+  }
+
+  /// 프롬프트 칸의 원본/번역 토글 상태 — 한 번 고르면 유지된다(다음 샷·앱 재시작 후에도).
+  bool get promptShowKo => _settings.promptShowKo;
+  void setPromptShowKo(bool ko) {
+    if (_settings.promptShowKo == ko) return;
+    _settings = _settings.copyWith(promptShowKo: ko);
+    notifyListeners();
     _settingsStore.save(_settings);
   }
 

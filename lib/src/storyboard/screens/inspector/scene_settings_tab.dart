@@ -51,6 +51,56 @@ class _SceneSettingsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          // 해상도·LoRA는 전부 씬(프로젝트) 단위 — 샷마다가 아니라 여기서 한 번에 정한다.
+          _GroupCard(
+            icon: Icons.tune,
+            title: '생성 설정',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _SectionLabel('프레임 해상도 (시작·끝 장면)'),
+                const SizedBox(height: 2),
+                const Text(
+                  'FE2V 입력이라 영상과 비율을 맞추세요. '
+                  '인물참조가 있는 샷은 무시되고 참조 사진 크기로 나옵니다.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final r in ImageRes.values)
+                      ChoiceChip(
+                        label: Text(r.label, style: _chipLabel),
+                        selected: p.settings.imageRes == r,
+                        onSelected: (_) => p.setImageRes(r),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _SectionLabel('영상 해상도'),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final r in VideoRes.values)
+                      ChoiceChip(
+                        label: Text(r.label, style: _chipLabel),
+                        selected: p.settings.videoRes == r,
+                        onSelected: (_) => p.setVideoRes(r),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _SectionLabel('LoRA (씬 단위 · LTX-2.3용)'),
+                const SizedBox(height: 6),
+                _LoraField(key: ValueKey('lora_${sc.id}')),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
           const _GroupCard(
             icon: Icons.auto_awesome_motion_outlined,
             title: '영상 일괄 생성',

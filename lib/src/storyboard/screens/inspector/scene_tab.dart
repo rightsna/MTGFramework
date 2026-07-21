@@ -129,52 +129,7 @@ class _SceneTab extends StatelessWidget {
           ],
           const SizedBox(height: 16),
           _RefCharacterPicker(shot: shot),
-          const SizedBox(height: 16),
-          _GroupCard(
-            icon: Icons.tune,
-            title: '설정',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _SectionLabel('생성 해상도'),
-                const SizedBox(height: 2),
-                const Text(
-                  'FE2V 입력이라 영상과 비율을 맞추세요.',
-                  style: TextStyle(fontSize: 11, color: Colors.white38),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final r in ImageRes.values)
-                      ChoiceChip(
-                        label: Text(r.label, style: _chipLabel),
-                        selected: p.settings.imageRes == r,
-                        onSelected: (_) => p.setImageRes(r),
-                      ),
-                  ],
-                ),
-                if (shot.refCharacterIds.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  const Row(
-                    children: [
-                      Icon(Icons.info_outline,
-                          size: 13, color: Colors.orangeAccent),
-                      SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          '인물참조가 있으면 이 해상도가 무시되고 참조 사진 크기로 나옵니다',
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.orangeAccent),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
+          // 해상도(프레임·영상)는 씬 탭의 '생성 설정'에 모아 뒀다 — 여기선 이 샷의 것만 다룬다.
           const SizedBox(height: 16),
           _GroupCard(
             icon: Icons.layers_outlined,
@@ -356,41 +311,28 @@ class _FrameSection extends StatelessWidget {
             deleteTarget: linked ? null : (shot: shot, mode: mode),
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              const _SectionLabel('프롬프트'),
-              const Spacer(),
-              IconButton(
-                tooltip: '프롬프트 복사 (씬 공통 포함)',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.copy, size: 16),
-                onPressed: () {
-                  // 생성에 실제로 들어가는 형태 그대로 — 씬 공통 + 이 프레임 프롬프트.
-                  final t =
-                      p.composedFramePrompt(shot, controller.text, mode).trim();
-                  if (t.isEmpty) {
-                    p.messenger?.call('복사할 프롬프트가 없습니다');
-                    return;
-                  }
-                  Clipboard.setData(ClipboardData(text: t));
-                  p.messenger?.call('$title 프롬프트 복사됨 (씬 공통 포함)');
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          _PromptField(
+          _PromptPair(
+            label: '프롬프트',
             controller: controller,
+            koController: koController,
             hint: linked ? '앞 샷의 끝장면 프롬프트가 들어옵니다' : hint,
             readOnly: linked,
-          ),
-          const SizedBox(height: 10),
-          _SectionLabel('프롬프트 번역 (한국어)'),
-          const SizedBox(height: 6),
-          _PromptField(
-            controller: koController,
-            hint: '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임',
-            readOnly: linked,
+            trailing: IconButton(
+              tooltip: '프롬프트 복사 (씬 공통 포함)',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.copy, size: 16),
+              onPressed: () {
+                // 생성에 실제로 들어가는 형태 그대로 — 씬 공통 + 이 프레임 프롬프트.
+                final t =
+                    p.composedFramePrompt(shot, controller.text, mode).trim();
+                if (t.isEmpty) {
+                  p.messenger?.call('복사할 프롬프트가 없습니다');
+                  return;
+                }
+                Clipboard.setData(ClipboardData(text: t));
+                p.messenger?.call('$title 프롬프트 복사됨 (씬 공통 포함)');
+              },
+            ),
           ),
           const SizedBox(height: 10),
           // 연동 중이면 만들 게 없다 — 앞 샷의 끝장면이 곧 이 샷의 시작이다.

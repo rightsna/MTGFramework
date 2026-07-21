@@ -362,7 +362,8 @@ class _PromptField extends StatelessWidget {
       controller: controller,
       readOnly: readOnly,
       minLines: 4,
-      maxLines: 10,
+      // 길어도 칸이 같이 늘어나 내부 스크롤을 최대한 안 만든다(패널 자체 스크롤로 본다).
+      maxLines: 40,
       style: TextStyle(
         fontSize: 14,
         height: 1.4,
@@ -376,6 +377,103 @@ class _PromptField extends StatelessWidget {
         border: const OutlineInputBorder(),
       ),
       onChanged: readOnly ? null : (_) => p.save(),
+    );
+  }
+}
+
+/// 원문 프롬프트와 한국어 번역을 **한 칸으로** — 위의 [원본|번역] 토글로 전환한다.
+/// 두 칸을 쌓으면 패널만 길어져, 실제로 보는 하나만 띄운다. 토글 선택은 **유지된다**
+/// (설정에 저장 — 다음 샷·다음 실행에도 마지막으로 본 쪽으로 열린다). 기본은 원문.
+class _PromptPair extends StatelessWidget {
+  const _PromptPair({
+    required this.label,
+    required this.controller,
+    required this.koController,
+    required this.hint,
+    this.readOnly = false,
+    this.trailing,
+  });
+
+  final String label;
+  final TextEditingController controller; // 원문(생성에 실제로 쓰임)
+  final TextEditingController koController; // 번역(확인용)
+  final String hint;
+  final bool readOnly;
+  final Widget? trailing; // 라벨 우측(복사 버튼 등)
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final ko = p.promptShowKo;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            _SectionLabel(label),
+            const SizedBox(width: 8),
+            _MiniToggle(
+              left: '원본',
+              right: '번역',
+              rightSelected: ko,
+              onChanged: p.setPromptShowKo,
+            ),
+            const Spacer(),
+            ?trailing,
+          ],
+        ),
+        const SizedBox(height: 6),
+        _PromptField(
+          controller: ko ? koController : controller,
+          hint: ko ? '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임' : hint,
+          readOnly: readOnly,
+        ),
+      ],
+    );
+  }
+}
+
+/// 작은 2단 토글 알약 — 프롬프트 원본/번역 전환용.
+class _MiniToggle extends StatelessWidget {
+  const _MiniToggle({
+    required this.left,
+    required this.right,
+    required this.rightSelected,
+    required this.onChanged,
+  });
+
+  final String left;
+  final String right;
+  final bool rightSelected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(String t, bool selected, VoidCallback onTap) => GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: selected ? accent2 : Colors.transparent,
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Text(t,
+                style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? Colors.black : const Color(0x88FFFFFF))),
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: const Color(0x14FFFFFF),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        seg(left, !rightSelected, () => onChanged(false)),
+        seg(right, rightSelected, () => onChanged(true)),
+      ]),
     );
   }
 }
@@ -445,78 +543,35 @@ class _OutputBlock extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _SectionLabel(title),
-        const SizedBox(height: 6),
-        Container(
-          height: 180,
-          decoration: BoxDecoration(
-            color: previewBg,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: path != null
-                  ? const Color(0x335BD1C0)
-                  : const Color(0x14FFFFFF),
-            ),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: OutputPreview(
-            path: path,
-            version: p.verOf(busyKey),
-            busy: p.isBusy(busyKey),
-            isVideo: isVideo,
-            fit: BoxFit.contain,
-            onOpen: path == null ? null : () => p.openFile(path!),
-            // 이미지(시작·끝장면)는 클릭하면 확대 팝업 — 영상은 탭이 재생이라 제외.
-            onImageTap: (isVideo || path == null)
-                ? null
-                : () => showImageZoomDialog(
-                      context,
-                      path: path!,
-                      version: p.verOf(busyKey),
-                      title: title,
-                    ),
-            // 영상은 그 자리서 재생하지 말고 팝업으로 크게 재생.
-            onVideoTap: (isVideo && path != null)
-                ? () => showVideoPlayDialog(context, path: path!, title: title)
-                : null,
-          ),
-        ),
-        // 결과가 위, 그걸 다루는 수단은 아래. 왼쪽에 열기·폴더·트림(넘치면 접힘),
-        // 삭제만 오른쪽 끝으로 떼어 둔다 — 되돌릴 수 없는 동작이라 실수로 안 눌리게.
-        if (path != null) ...[
-          const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Wrap(
-                  spacing: 2,
-                  children: [
-                    _MediaAction(
-                      icon: Icons.open_in_new,
-                      label: '열기',
-                      onTap: () => p.openFile(path!),
-                    ),
-                    _MediaAction(
-                      icon: Icons.folder_open_outlined,
-                      label: '폴더',
-                      onTap: () => p.revealInFinder(path!),
-                    ),
-                    if (trimTarget != null)
-                      _MediaAction(
-                        icon: Icons.content_cut,
-                        label: '트림',
-                        onTap: () async {
-                          final seconds =
-                              await showVideoTrimDialog(context, path: path!);
-                          if (seconds != null) {
-                            await p.applyTrim(trimTarget!, seconds);
-                          }
-                        },
-                      ),
-                  ],
-                ),
+        // 제목 오른쪽에 다루기 버튼(열기·폴더·트림·삭제)을 아이콘만 붙인다 — 미리보기 아래에
+        // 따로 줄을 두면 패널만 길어진다. 생성물이 있을 때만 보인다.
+        Row(
+          children: [
+            _SectionLabel(title),
+            const Spacer(),
+            if (path != null) ...[
+              _MediaAction(
+                icon: Icons.open_in_new,
+                label: '열기',
+                onTap: () => p.openFile(path!),
               ),
+              _MediaAction(
+                icon: Icons.folder_open_outlined,
+                label: '폴더에서 보기',
+                onTap: () => p.revealInFinder(path!),
+              ),
+              if (trimTarget != null)
+                _MediaAction(
+                  icon: Icons.content_cut,
+                  label: '트림',
+                  onTap: () async {
+                    final seconds =
+                        await showVideoTrimDialog(context, path: path!);
+                    if (seconds != null) {
+                      await p.applyTrim(trimTarget!, seconds);
+                    }
+                  },
+                ),
               if (deleteTarget != null)
                 _MediaAction(
                   icon: Icons.delete_outline,
@@ -553,14 +608,49 @@ class _OutputBlock extends StatelessWidget {
                   },
                 ),
             ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Container(
+          height: 180,
+          decoration: BoxDecoration(
+            color: previewBg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: path != null
+                  ? const Color(0x335BD1C0)
+                  : const Color(0x14FFFFFF),
+            ),
           ),
-        ],
+          clipBehavior: Clip.antiAlias,
+          child: OutputPreview(
+            path: path,
+            version: p.verOf(busyKey),
+            busy: p.isBusy(busyKey),
+            isVideo: isVideo,
+            fit: BoxFit.contain,
+            onOpen: path == null ? null : () => p.openFile(path!),
+            // 이미지(시작·끝장면)는 클릭하면 확대 팝업 — 영상은 탭이 재생이라 제외.
+            onImageTap: (isVideo || path == null)
+                ? null
+                : () => showImageZoomDialog(
+                      context,
+                      path: path!,
+                      version: p.verOf(busyKey),
+                      title: title,
+                    ),
+            // 영상은 그 자리서 재생하지 말고 팝업으로 크게 재생.
+            onVideoTap: (isVideo && path != null)
+                ? () => showVideoPlayDialog(context, path: path!, title: title)
+                : null,
+          ),
+        ),
       ],
     );
   }
 }
 
-/// 미리보기 아래 액션 버튼 하나(열기·폴더·트림·삭제) — 생김새를 한 군데로 모은다.
+/// 제목 옆 액션 아이콘 하나(열기·폴더·트림·삭제) — 라벨은 툴팁으로만.
 class _MediaAction extends StatelessWidget {
   const _MediaAction({
     required this.icon,
@@ -570,19 +660,19 @@ class _MediaAction extends StatelessWidget {
   });
 
   final IconData icon;
-  final String label;
+  final String label; // 툴팁
   final VoidCallback onTap;
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => TextButton.icon(
+  Widget build(BuildContext context) => IconButton(
         onPressed: onTap,
-        style: TextButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          foregroundColor: color,
-        ),
-        icon: Icon(icon, size: 15),
-        label: Text(label),
+        tooltip: label,
+        visualDensity: VisualDensity.compact,
+        iconSize: 16,
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints(),
+        color: color ?? Colors.white70,
+        icon: Icon(icon),
       );
 }
