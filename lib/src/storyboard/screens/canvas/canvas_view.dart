@@ -21,7 +21,7 @@ part 'track_menu.dart';
 const _voiceColor = Color(0xFFE0678A);
 
 /// 삭제 전 확인. 되돌릴 수 없는 삭제는 전부 이걸 거친다 — 클릭 한 번에 사라지면 안 된다.
-/// 미디어 파일은 프로젝트 폴더에 남으므로 그 사실도 같이 알린다.
+/// 삭제하면 참조가 끊긴 미디어 파일도 함께 정리되므로 그 사실을 알린다.
 Future<bool> confirmDelete(
   BuildContext context, {
   required String title,
@@ -31,7 +31,7 @@ Future<bool> confirmDelete(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(title),
-      content: Text('$body\n\n(생성된 미디어 파일은 프로젝트 폴더에 남습니다)'),
+      content: Text('$body\n\n(더 이상 안 쓰는 미디어 파일도 함께 삭제됩니다)'),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),

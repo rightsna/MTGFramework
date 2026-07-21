@@ -152,6 +152,22 @@ class _SceneSettingsTab extends StatelessWidget {
             label: const Text('미디어 모두 삭제'),
           ),
           const SizedBox(height: 8),
+          // 참조가 끊긴 고아 미디어를 프로젝트 전체에서 쓸어 담는다(옛 삭제로 남은 파일 정리).
+          OutlinedButton.icon(
+            onPressed: () async {
+              final n = await p.sweepOrphanMedia();
+              p.messenger?.call(n == 0
+                  ? '정리할 고아 미디어가 없습니다'
+                  : '고아 미디어 $n개를 삭제했습니다');
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white70,
+              side: const BorderSide(color: Color(0x33FFFFFF)),
+            ),
+            icon: const Icon(Icons.auto_delete_outlined, size: 18),
+            label: const Text('고아 미디어 정리 (프로젝트 전체)'),
+          ),
+          const SizedBox(height: 8),
           // 파괴적 동작이라 맨 아래에, 확인을 거쳐서. (예전엔 씬 목록 안에 있어 오클릭이 쉬웠다.)
           OutlinedButton.icon(
             onPressed: () async {
@@ -163,7 +179,7 @@ class _SceneSettingsTab extends StatelessWidget {
                     '"${sc.title.trim().isEmpty ? '(제목 없음)' : sc.title.trim()}" 씬을 삭제합니다.\n'
                     '비트 ${sc.beats.length}개 · 샷 ${sc.shotCount}개가 함께 사라집니다. '
                     '되돌릴 수 없습니다.\n\n'
-                    '(생성된 미디어 파일은 프로젝트 폴더에 남습니다)',
+                    '(이 씬의 미디어 파일도 함께 삭제됩니다)',
                   ),
                   actions: [
                     TextButton(

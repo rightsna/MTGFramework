@@ -253,6 +253,7 @@ class StoryboardProvider extends ChangeNotifier {
     _carrySelectionToTrack();
     notifyListeners();
     await save();
+    _sweepAfterDelete(); // 지운 트랙에서 뽑은 영상 정리(기준 트랙 공유 프레임은 참조가 남아 보존)
   }
 
   void setTrackName(VideoTrack track, String name) {
@@ -493,6 +494,91 @@ class StoryboardProvider extends ChangeNotifier {
     return _busy.contains(bgmBusyKey(scene.id));
   }
 
+  /// 프로젝트 폴더에서 **아무 데서도 참조하지 않는 미디어 파일**을 지운다(고아 정리).
+  /// 삭제(샷·비트·트랙·씬)는 참조만 끊고 파일은 남기므로, 그 뒤 이걸 돌려 실제 파일을 정리한다.
+  /// 지금 씬·인물이 실제로 가리키는 파일명만 살리고 나머지 미디어를 지운다 — 지운 개수 반환.
+  /// (characters.json 등 json과, 인물 대표·사진은 건드리지 않는다.)
+  Future<int> sweepOrphanMedia() async {
+    final live = <String>{};
+    void keep(String? path) {
+      final n = mediaName(path);
+      if (n != null) live.add(n);
+    }
+
+    for (final sc in _scenes) {
+      keep(sc.bgmPath);
+      for (final t in sc.tracks) {
+        for (final b in t.beats) {
+          keep(b.dialogue?.voicePath);
+          for (final s in b.shots) {
+            keep(s.startImagePath);
+            keep(s.endImagePath);
+            keep(s.videoPath);
+          }
+        }
+      }
+    }
+    // 인물 미디어도 살린다 — 씬과 무관하게 같은 폴더에 있다.
+    for (final c in _characters) {
+      keep(c.cover);
+      for (final ph in c.photoPaths) {
+        keep(ph);
+      }
+    }
+
+    const mediaExt = {
+      '.png', '.jpg', '.jpeg', '.webp', //
+      '.mp4', '.mov', '.m4v', '.webm', //
+      '.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg',
+    };
+    final dir = Directory(projectDirPath);
+    if (!await dir.exists()) return 0;
+    var n = 0;
+    try {
+      await for (final e in dir.list()) {
+        if (e is! File) continue;
+        final name = e.uri.pathSegments.last;
+        final dot = name.lastIndexOf('.');
+        final ext = dot < 0 ? '' : name.substring(dot).toLowerCase();
+        if (!mediaExt.contains(ext)) continue; // json 등은 손대지 않는다
+        if (live.contains(name)) continue;
+        try {
+          await e.delete();
+          await FileImage(File(e.path)).evict();
+          n++;
+        } catch (err) {
+          debugPrint('[sweepOrphan] 삭제 실패: $err');
+        }
+      }
+    } catch (err) {
+      // 폴더가 사라졌거나 나열 중 바뀌었으면 조용히 끝낸다.
+      debugPrint('[sweepOrphan] 나열 중단: $err');
+    }
+    return n;
+  }
+
+  /// 삭제(샷·비트·트랙·씬) 뒤 고아가 된 미디어를 조용히 정리한다 — 화면은 안 막는다.
+  void _sweepAfterDelete() => unawaited(sweepOrphanMedia());
+
+  /// 리프레시 시 모든 미리보기(프레임·영상·음성·배경음)의 캐시 버전을 올린다 —
+  /// 위젯 키(`path:version`)가 바뀌어 같은 파일명이라도 새로 그린다.
+  void _bumpAllPreviewVersions(List<StoryScene> scenes) {
+    void bump(String key) => _ver[key] = (_ver[key] ?? 0) + 1;
+    for (final sc in scenes) {
+      bump(bgmBusyKey(sc.id));
+      for (final t in sc.tracks) {
+        for (final b in t.beats) {
+          bump(voiceBusyKey(b.id));
+          for (final s in b.shots) {
+            for (final m in GenMode.values) {
+              bump(busyKey(s.id, m));
+            }
+          }
+        }
+      }
+    }
+  }
+
   /// 진행 상태를 갱신한다(영상칸 위 고정 표시) — 반복 스낵바 대신 이 값을 쓴다.
   void _setProgress(String key, String? text) {
     if (text == null) {
@@ -551,6 +637,16 @@ class StoryboardProvider extends ChangeNotifier {
       }
       // 파일에는 따라가는 샷의 내용이 안 적혀 있다 — 기준 트랙에서 채운다.
       _syncTracks(scene);
+    }
+
+    // 리프레시: 파일명이 같아도 내용이 바뀌었을 수 있다(외부 편집). Flutter 이미지 캐시는
+    // 경로 기준이라 안 비우면 옛 그림이 그대로 뜬다 — 캐시를 비우고 미리보기 버전을 올려
+    // 위젯 키(`path:version`)를 바꿔 강제로 다시 그린다. (초기 로드는 캐시가 비어 있어 무해)
+    if (keepSelection) {
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      _bumpAllPreviewVersions(scenes);
     }
 
     final keep = keepSelection && scenes.any((s) => s.id == prevScene);
@@ -856,6 +952,7 @@ class StoryboardProvider extends ChangeNotifier {
     }
     notifyListeners();
     save();
+    _sweepAfterDelete(); // 지운 씬의 모든 미디어(프레임·영상·음성·배경음) 정리
   }
 
   /// 선택된 씬을 **통째로 복제해 목록 맨 뒤에 추가**하고 그 복제본을 선택한다.
@@ -1029,6 +1126,7 @@ class StoryboardProvider extends ChangeNotifier {
     }
     notifyListeners();
     save();
+    _sweepAfterDelete(); // 지운 비트의 샷 미디어·음성 정리
   }
 
   /// 보고 있는 트랙에서 기준 비트 [base]와 **같은 자리**의 비트 id(기준 트랙이면 그대로).
@@ -1100,6 +1198,7 @@ class StoryboardProvider extends ChangeNotifier {
     }
     notifyListeners();
     save();
+    _sweepAfterDelete(); // 지운 샷의 프레임·영상 정리
   }
 
   /// 샷 선택 — 소속 대사도, **그 샷이 놓인 트랙도** 함께 선택된다.

@@ -243,6 +243,36 @@ void main() {
     p2.dispose();
   });
 
+  test('고아 미디어 정리 — 참조 끊긴 파일만 지운다', () async {
+    final beat = p.dialogues.single;
+    final shot = beat.shots.first;
+    // 참조되는 파일들(위 setUp에서 start/end/video 이미 채움) + 고아 하나 + json은 보존.
+    final orphan = await file('clip_dead_vlow.mp4');
+    final keepJson = await file('characters.json'); // json은 미디어 아님 → 보존
+    expect(orphan.existsSync(), isTrue);
+
+    final n = await p.sweepOrphanMedia();
+    expect(n, greaterThanOrEqualTo(1));
+    expect(orphan.existsSync(), isFalse, reason: '참조 안 되는 미디어는 삭제');
+    expect(File(shot.videoPath!).existsSync(), isTrue, reason: '참조되는 영상은 보존');
+    expect(File(shot.startImagePath!).existsSync(), isTrue);
+    expect(keepJson.existsSync(), isTrue, reason: 'json은 손대지 않는다');
+  });
+
+  test('샷을 지우면 그 샷의 미디어도 사라진다', () async {
+    final beat = p.dialogues.single;
+    final shot = beat.shots.first;
+    final vp = shot.videoPath!;
+    final sp = shot.startImagePath!;
+    expect(File(vp).existsSync(), isTrue);
+
+    p.removeShot(beat, shot);
+    await p.save();
+    await Future<void>.delayed(const Duration(milliseconds: 50)); // 스윕은 비동기
+    expect(File(vp).existsSync(), isFalse, reason: '지운 샷의 영상은 삭제');
+    expect(File(sp).existsSync(), isFalse, reason: '지운 샷의 프레임도 삭제');
+  });
+
   test('트랙을 지워도 트랙 1은 남는다', () async {
     await p.addTrack();
     expect(p.tracks.length, 2);
