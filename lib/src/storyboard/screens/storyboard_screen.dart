@@ -5,12 +5,11 @@ import '../services/api_service.dart';
 import 'canvas/canvas_view.dart';
 import 'characters/character_manager_screen.dart';
 import 'inspector/inspector_panel.dart';
-import 'preview/preview_player.dart';
 import 'scene_list/scene_list_sidebar.dart';
 import 'settings/settings_dialog.dart';
 import 'ui.dart';
 
-/// 한 프로젝트의 영상 제작 화면. 헤더 아래로 [씬 목록 | 플레이어 | 캔버스 | 인스펙터].
+/// 한 프로젝트의 영상 제작 화면. 헤더 아래로 [씬 목록 | 캔버스 | 인스펙터].
 /// 모든 상태/로직은 [StoryboardProvider]가 들고, 각 패널은 StoryboardScope로 구독한다.
 class StoryboardScreen extends StatefulWidget {
   const StoryboardScreen({
@@ -74,7 +73,7 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
                 ),
               ),
             ),
-            // 제목 옆에 (미리보기) 토글 버튼.
+            // 제목 옆에 씬 목록·인물 관리 버튼.
             title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -89,18 +88,6 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
                   style: FilledButton.styleFrom(
                     backgroundColor: _provider.sceneListOpen ? accent : null,
                     foregroundColor: _provider.sceneListOpen ? Colors.white : null,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonalIcon(
-                  onPressed: _provider.togglePlayer,
-                  icon: Icon(_provider.playerOpen
-                      ? Icons.slideshow
-                      : Icons.play_circle_outline),
-                  label: const Text('미리보기'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _provider.playerOpen ? accent : null,
-                    foregroundColor: _provider.playerOpen ? Colors.white : null,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -148,13 +135,9 @@ class _StoryboardScreenState extends State<StoryboardScreen> {
           body: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // 씬 목록 | 플레이어 | 캔버스 | 인스펙터
+              // 씬 목록 | 캔버스 | 인스펙터. (미리보기는 영상 팝업으로 통합 — 별도 패널 없음)
               if (_provider.sceneListOpen) ...[
                 const SizedBox(width: sceneListW, child: SceneListSidebar()),
-                Container(width: 1, color: const Color(0x22FFFFFF)),
-              ],
-              if (_provider.playerOpen) ...[
-                const SizedBox(width: playerW, child: PreviewPlayer()),
                 Container(width: 1, color: const Color(0x22FFFFFF)),
               ],
               // 가운데: 캔버스(대사/샷 타임라인) — 세로 전체를 쓴다.

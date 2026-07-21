@@ -65,7 +65,6 @@ class StoryboardProvider extends ChangeNotifier {
 
   // 사이드/플레이어 토글. 씬목록은 기본으로 펼쳐둔다(씬 이동이 주 동선).
   bool _sceneListOpen = true;
-  bool _playerOpen = false;
 
   // service-api 접속 상태(주기적으로 갱신).
   ApiStatus _apiStatus = ApiStatus.offline();
@@ -88,7 +87,6 @@ class StoryboardProvider extends ChangeNotifier {
   String? get selectedShotId => _selectedShotId;
   String? get savePath => _savePath;
   bool get sceneListOpen => _sceneListOpen;
-  bool get playerOpen => _playerOpen;
   ApiStatus get apiStatus => _apiStatus;
 
   // ───────── 백엔드별 생성 준비 상태(버튼 활성/비활성 판단) ─────────
@@ -430,6 +428,19 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 선택 씬의 모든 샷(대사 순서 → 샷 순서로 평탄화). 미리보기·연속 재생용.
   List<Shot> get sceneShots => [for (final sh in dialogues) ...sh.shots];
+
+  /// 선택 씬의 재생 목록 — 영상이 있는 샷만 순서대로 (경로 + 라벨). 영상 팝업 연속 재생용.
+  List<({String path, String title})> scenePlaylist() {
+    final out = <({String path, String title})>[];
+    final all = sceneShots;
+    for (var i = 0; i < all.length; i++) {
+      final path = all[i].videoPath;
+      if (path == null) continue;
+      final t = all[i].title.trim();
+      out.add((path: path, title: t.isEmpty ? '샷 ${i + 1}' : '샷 ${i + 1} · $t'));
+    }
+    return out;
+  }
 
   Shot? get selectedShot {
     for (final c in shots) {
@@ -2148,10 +2159,6 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void togglePlayer() {
-    _playerOpen = !_playerOpen;
-    notifyListeners();
-  }
 
   @override
   void dispose() {

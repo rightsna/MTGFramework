@@ -2,73 +2,160 @@ part of 'inspector_panel.dart';
 
 /// 장면 탭 — 샷의 시작/끝 프레임과 그 부속(생성 방식 토글·인물참조·프레임 섹션).
 
-/// 영상 생성 방식 토글(샷) — I2V / FE2V.
-/// 같은 모델·같은 그래프고 끝 프레임을 박느냐만 다르다. FE2V는 끝 그림이 정해지는 대신
-/// 양끝이 멀면 중간이 깨지고, I2V는 끝이 자유로운 대신 어디로 갈지 통제가 안 된다.
-class _VideoModeToggle extends StatelessWidget {
-  const _VideoModeToggle({required this.shot});
+/// 이 샷의 **장면 생성 설정** — 영상 방식(FE2V/I2V)과 인물 참조를 한 카드에 묶는다.
+/// 둘 다 "프레임을 어떻게 뽑을지"의 입력이라 한자리에 있는 게 읽기 쉽다.
+///  - FE2V/I2V: 같은 모델·같은 그래프고 끝 프레임을 박느냐만 다르다. FE2V는 끝 그림이 정해지는
+///    대신 양끝이 멀면 중간이 깨지고, I2V는 끝이 자유로운 대신 어디로 갈지 통제가 안 된다.
+///  - 인물 참조: 선택 인물(최대 3)의 대표사진을 레퍼런스로 정체성 유지 생성(FireRed 멀티).
+class _SceneGenSettings extends StatelessWidget {
+  const _SceneGenSettings({required this.shot});
 
   final Shot shot;
 
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final i2v = shot.i2v;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      decoration: BoxDecoration(
-        color: const Color(0x148B7BFF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0x338B7BFF)),
-      ),
+    final chars = p.characters;
+    final sel = shot.refCharacterIds;
+    final atCap = sel.length >= 3;
+    return _GroupCard(
+      icon: Icons.tune,
+      title: '장면 설정',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const _SectionLabel('영상 생성 방식'),
+          const SizedBox(height: 6),
           Row(
             children: [
-              const Icon(Icons.movie_creation_outlined, size: 15, color: accent),
-              const SizedBox(width: 6),
-              const Text(
-                '영상 생성 방식',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
-                  color: accent,
-                ),
+              _VideoModeCard(
+                icon: Icons.compare_arrows,
+                title: 'FE2V',
+                desc: '시작·끝 두 장 고정',
+                selected: !shot.i2v,
+                onTap: () => p.setI2v(shot, false),
+              ),
+              const SizedBox(width: 8),
+              _VideoModeCard(
+                icon: Icons.play_arrow_rounded,
+                title: 'I2V',
+                desc: '시작 한 장, 끝은 자유',
+                selected: shot.i2v,
+                onTap: () => p.setI2v(shot, true),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(
-                value: false,
-                label: Text('FE2V'),
-                icon: Icon(Icons.compare_arrows, size: 15),
-              ),
-              ButtonSegment(
-                value: true,
-                label: Text('I2V'),
-                icon: Icon(Icons.play_arrow, size: 15),
-              ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0x14FFFFFF)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const _SectionLabel('인물 참조'),
+              const Spacer(),
+              Text('${sel.length}/3',
+                  style: const TextStyle(fontSize: 11, color: Colors.white38)),
             ],
-            selected: {i2v},
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 12)),
-            ),
-            onSelectionChanged: (s) => p.setI2v(shot, s.first),
           ),
           const SizedBox(height: 6),
-          Text(
-            i2v
-                ? '시작장면 한 장만 쓰고, 끝은 모델이 만든다 — 끝장면은 생성/사용하지 않음'
-                : '시작·끝 두 장을 고정하고 그 사이를 만든다 — 끝장면이 필요함',
-            style: const TextStyle(fontSize: 11, color: Colors.white54, height: 1.35),
-          ),
+          if (chars.isEmpty)
+            const Text('인물 관리에서 인물을 먼저 추가하세요',
+                style: TextStyle(fontSize: 11, color: Colors.white38))
+          else ...[
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                for (final c in chars)
+                  FilterChip(
+                    showCheckmark: false,
+                    // 칩 안쪽 좌우 여백을 좁혀 촘촘하게.
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    label: Text(c.name.isEmpty ? '(이름 없음)' : c.name,
+                        style: _chipLabel),
+                    selected: sel.contains(c.id),
+                    onSelected: (atCap && !sel.contains(c.id))
+                        ? null
+                        : (_) => p.toggleShotRefCharacter(shot, c.id),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              sel.isEmpty
+                  ? '선택하면 각 인물의 대표이미지로 정체성 유지 생성 (FireRed 멀티)'
+                  : '선택 인물 대표사진을 레퍼런스로 정체성 유지 생성 (FireRed 멀티)',
+              style: const TextStyle(fontSize: 11, color: Colors.white38),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// 영상 생성 방식 옵션 카드 하나 — 선택되면 강조 테두리+틴트. 둘을 나란히 놓아 고른다.
+class _VideoModeCard extends StatelessWidget {
+  const _VideoModeCard({
+    required this.icon,
+    required this.title,
+    required this.desc,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String desc;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? accent : const Color(0x66FFFFFF);
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.fromLTRB(9, 7, 9, 8),
+          decoration: BoxDecoration(
+            color: selected ? accent.withValues(alpha: 0.14) : const Color(0x0AFFFFFF),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? accent : const Color(0x1FFFFFFF),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 5),
+                  Text(title,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
+                        color: selected ? Colors.white : const Color(0xBBFFFFFF),
+                      )),
+                  const Spacer(),
+                  if (selected)
+                    const Icon(Icons.check_circle, size: 12, color: accent),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Text(desc,
+                  style: const TextStyle(
+                      fontSize: 10, color: Colors.white54, height: 1.25)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -92,7 +179,8 @@ class _SceneTab extends StatelessWidget {
           // 장면 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
           _ShotNote(controller: p.shotNoteCtrl(shot.id)),
           const SizedBox(height: 14),
-          _VideoModeToggle(shot: shot),
+          // 이 샷의 장면 생성 설정 — 영상 방식(FE2V/I2V) + 인물 참조를 한 카드에.
+          _SceneGenSettings(shot: shot),
           const SizedBox(height: 14),
           // 결과(프레임)가 위, 그 생성에 쓰이는 설정(인물참조)은 아래.
           _FrameSection(
@@ -127,8 +215,7 @@ class _SceneTab extends StatelessWidget {
               mode: GenMode.imageEnd,
             ),
           ],
-          const SizedBox(height: 16),
-          _RefCharacterPicker(shot: shot),
+          // 인물 참조는 위 '장면 설정' 카드로 합쳤다.
           // 해상도(프레임·영상)는 씬 탭의 '생성 설정'에 모아 뒀다 — 여기선 이 샷의 것만 다룬다.
           const SizedBox(height: 16),
           _GroupCard(
@@ -163,95 +250,6 @@ class _SceneTab extends StatelessWidget {
   }
 }
 
-/// 인물 참조 피커(샷). 선택 시 이 샷의 장면 생성이 인물 대표사진을 레퍼런스로 정체성 유지 생성.
-class _RefCharacterPicker extends StatelessWidget {
-  const _RefCharacterPicker({required this.shot});
-
-  final Shot shot;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = StoryboardScope.of(context);
-    final chars = p.characters;
-    final sel = shot.refCharacterIds;
-    final atCap = sel.length >= 3;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-      decoration: BoxDecoration(
-        color: const Color(0x08FFFFFF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0x1AFFFFFF)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.face_retouching_natural,
-                size: 16,
-                color: accent2,
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                '인물 참조',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
-                  color: accent2,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${sel.length}/3',
-                style: const TextStyle(fontSize: 11, color: Colors.white38),
-              ),
-            ],
-          ),
-          if (chars.isNotEmpty) ...[
-            const SizedBox(height: 3),
-            const Text(
-              '각 인물의 대표이미지를 레퍼런스로 사용합니다 · 대표는 인물 관리에서 변경',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            ),
-          ],
-          const SizedBox(height: 8),
-          if (chars.isEmpty)
-            const Text(
-              '인물 관리에서 인물을 먼저 추가하세요',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            )
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final c in chars)
-                  FilterChip(
-                    label: Text(c.name.isEmpty ? '(이름 없음)' : c.name,
-                        style: _chipLabel),
-                    selected: sel.contains(c.id),
-                    onSelected: (atCap && !sel.contains(c.id))
-                        ? null
-                        : (_) => p.toggleShotRefCharacter(shot, c.id),
-                  ),
-              ],
-            ),
-          if (sel.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            const Text(
-              '선택 인물들 대표사진을 레퍼런스로 정체성 유지 생성 (FireRed 멀티)',
-              style: TextStyle(fontSize: 11, color: Colors.white38),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// 한 프레임(시작/끝)의 프롬프트 편집 + 생성 버튼 + 결과 미리보기 묶음.
 class _FrameSection extends StatelessWidget {
   const _FrameSection({
     required this.title,
