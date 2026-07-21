@@ -36,7 +36,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
   Object? _error;
   late int _index;
   bool _playing = true; // 연속 재생 중인지 — 자동 이어붙이기 판단용
-  bool _autoNext = false; // 다음 영상 자동 재생 — **기본 꺼짐**(끄면 현재 샷을 반복)
+  bool _autoNext = true; // 다음 영상 자동 재생 — **기본 켜짐**(끄면 현재 샷을 반복)
 
   List<PlaylistItem> get _items => widget.playlist;
 

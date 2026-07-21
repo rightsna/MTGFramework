@@ -166,14 +166,6 @@ class _VideoTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 생성 중이면 진행 상태를 영상칸 위에 **고정**으로 — 반복 스낵바 대신.
-                if (p.isBusy(p.busyKey(c.id, GenMode.videoLow))) ...[
-                  _GenProgressBanner(
-                    text: p.progressOf(p.busyKey(c.id, GenMode.videoLow)) ??
-                        '생성 준비 중…',
-                  ),
-                  const SizedBox(height: 8),
-                ],
                 // 영상이 있으면 영상을, 없으면 **생성에 쓸 장면**을 대신 보여준다
                 // (FE2V면 시작·끝 두 장, I2V면 시작 한 장) — 무엇으로 뽑는지 바로 보이게.
                 if (c.videoPath != null)
@@ -216,21 +208,28 @@ class _VideoTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // 백엔드는 **누를 때 고른다** — 트랙은 결과가 들어가는 자리일 뿐이라
-                // 어느 줄에서든 아무 백엔드로나 뽑을 수 있다(자체 서버로 두 줄을 견줘도 된다).
-                for (final b in VideoBackend.values) ...[
-                  _GenButton(
-                    label: '${b.label}로 생성',
-                    icon: b == VideoBackend.veo
-                        ? Icons.auto_awesome_outlined
-                        : Icons.movie_outlined,
-                    busyKey: p.busyKey(c.id, GenMode.videoLow),
-                    onGen: () => p.gen(c, GenMode.videoLow, backend: b),
-                    enabled: p.videoReadyOf(b),
-                    disabledHint: p.videoBlockReasonOf(b),
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                // 생성 중이면 버튼을 숨기고 '생성중 + 인디케이터'만 — 중복 생성 여지를 없앤다.
+                if (p.isBusy(p.busyKey(c.id, GenMode.videoLow)))
+                  _GenProgressBanner(
+                    text: p.progressOf(p.busyKey(c.id, GenMode.videoLow)) ??
+                        '생성 중…',
+                  )
+                else
+                  // 백엔드는 **누를 때 고른다** — 트랙은 결과가 들어가는 자리일 뿐이라
+                  // 어느 줄에서든 아무 백엔드로나 뽑을 수 있다(자체 서버로 두 줄을 견줘도 된다).
+                  for (final b in VideoBackend.values) ...[
+                    _GenButton(
+                      label: '${b.label}로 생성',
+                      icon: b == VideoBackend.veo
+                          ? Icons.auto_awesome_outlined
+                          : Icons.movie_outlined,
+                      busyKey: p.busyKey(c.id, GenMode.videoLow),
+                      onGen: () => p.gen(c, GenMode.videoLow, backend: b),
+                      enabled: p.videoReadyOf(b),
+                      disabledHint: p.videoBlockReasonOf(b),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
               ],
             ),
           ),
