@@ -1,6 +1,7 @@
 import 'shot.dart'; // mediaName / mediaPath
 import 'dialogue_beat.dart';
 import 'video_track.dart';
+import '../services/movie_settings.dart'; // ImageRes / VideoRes
 
 /// 한 씬(scene) = **트랙들**. 각 트랙이 같은 타임라인(대사의 나열)을 서로 다른 백엔드로 뽑는다.
 /// 계층: 씬 > 트랙 > 대사(DialogueBeat: 대사 1개(선택) + 샷 여러 개) > 샷.
@@ -19,6 +20,8 @@ class StoryScene {
   String? bgmPath; // 생성된 배경음(mp3) 파일 경로(런타임 절대경로)
   int bgmSeconds; // 배경음 길이(초)
   String note; // 씬 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
+  ImageRes imageRes; // 이 씬의 프레임(시작·끝) 생성 해상도 — **씬별**
+  VideoRes videoRes; // 이 씬의 영상 생성 해상도 — **씬별**
 
   StoryScene({
     required this.id,
@@ -31,6 +34,8 @@ class StoryScene {
     this.bgmPath,
     this.bgmSeconds = 30,
     this.note = '',
+    this.imageRes = ImageRes.p704x1280,
+    this.videoRes = VideoRes.p352x640,
   }) : tracks = (tracks == null || tracks.isEmpty)
             ? [VideoTrack(id: '${id}_track1', name: '트랙 1')]
             : tracks;
@@ -61,6 +66,10 @@ class StoryScene {
           'url': loraUrl,
           'strength': loraStrength,
         },
+        'res': {
+          'image': imageRes.name,
+          'video': videoRes.name,
+        },
         'note': note,
       };
 
@@ -68,6 +77,7 @@ class StoryScene {
   factory StoryScene.fromJson(Map<String, dynamic> j, String dir) {
     final bgm = (j['bgm'] as Map?)?.cast<String, dynamic>();
     final lora = (j['lora'] as Map?)?.cast<String, dynamic>();
+    final res = (j['res'] as Map?)?.cast<String, dynamic>();
     return StoryScene(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
@@ -79,6 +89,15 @@ class StoryScene {
       bgmPath: mediaPath(dir, bgm?['file']),
       bgmSeconds: (bgm?['seconds'] as int?) ?? 30,
       note: (j['note'] as String?) ?? '',
+      // 해상도 없던 옛 데이터는 기본값(704×1280 / 352×640).
+      imageRes: ImageRes.values.firstWhere(
+        (e) => e.name == res?['image'],
+        orElse: () => ImageRes.p704x1280,
+      ),
+      videoRes: VideoRes.values.firstWhere(
+        (e) => e.name == res?['video'],
+        orElse: () => VideoRes.p352x640,
+      ),
     );
   }
 

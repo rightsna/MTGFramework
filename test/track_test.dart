@@ -215,6 +215,34 @@ void main() {
     p2.dispose();
   });
 
+  test('해상도는 씬별 — 한 씬을 바꿔도 다른 씬은 그대로', () async {
+    // setUp이 씬 하나(scene1) 만들어 둠. 두 번째 씬 추가.
+    p.addScene();
+    final sc2 = p.selectedScene!;
+    final sc1 = p.scenes.first;
+    expect(identical(sc1, sc2), isFalse);
+
+    // 씬2에서 해상도를 바꾼다.
+    p.setImageRes(ImageRes.l1984x1088);
+    p.setVideoRes(VideoRes.l1280x704);
+    await p.save();
+
+    expect(sc2.imageRes, ImageRes.l1984x1088);
+    expect(sc2.videoRes, VideoRes.l1280x704);
+    // 씬1은 그대로여야 한다(전역 공유 아님).
+    expect(sc1.imageRes, ImageRes.p704x1280);
+    expect(sc1.videoRes, VideoRes.p352x640);
+
+    // 저장·재로딩 후에도 씬별로 남는다.
+    final p2 = StoryboardProvider(projectDirPath: dir.path);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final scenes = p2.scenes;
+    expect(scenes[0].imageRes, ImageRes.p704x1280);
+    expect(scenes[1].imageRes, ImageRes.l1984x1088);
+    expect(scenes[1].videoRes, VideoRes.l1280x704);
+    p2.dispose();
+  });
+
   test('트랙을 지워도 트랙 1은 남는다', () async {
     await p.addTrack();
     expect(p.tracks.length, 2);

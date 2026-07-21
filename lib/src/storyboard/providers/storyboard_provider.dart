@@ -53,6 +53,7 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _videoNotes = {};
   final Map<String, TextEditingController> _sceneNotes = {};
   final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
+  final Map<String, String> _progress = {}; // 진행 중 상태 문구(busyKey별) — 영상칸에 고정 표시
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
 
   List<StoryScene> _scenes = []; // 씬 리스트
@@ -472,6 +473,19 @@ class StoryboardProvider extends ChangeNotifier {
 
   bool isBusy(String key) => _busy.contains(key);
   int verOf(String key) => _ver[key] ?? 0;
+
+  /// 진행 중 상태 문구(예: '생성 중… 0.4분 경과'). 없으면 null. 영상칸에 고정 표시용.
+  String? progressOf(String key) => _progress[key];
+
+  /// 진행 상태를 갱신한다(영상칸 위 고정 표시) — 반복 스낵바 대신 이 값을 쓴다.
+  void _setProgress(String key, String? text) {
+    if (text == null) {
+      _progress.remove(key);
+    } else {
+      _progress[key] = text;
+    }
+    notifyListeners();
+  }
   String busyKey(String id, GenMode m) => '$id:${m.name}';
 
   /// 이 샷을 뽑을 때의 **기본** 백엔드 = 놓여 있는 트랙의 백엔드(트랙 밖이면 설정값).
@@ -794,7 +808,12 @@ class StoryboardProvider extends ChangeNotifier {
     final id = 'scene_${DateTime.now().millisecondsSinceEpoch}_${_seq++}';
     _sceneTitles[id] = TextEditingController();
     _sceneNotes[id] = TextEditingController();
-    _scenes.add(StoryScene(id: id));
+    // 새 씬은 마지막으로 쓰던 해상도를 이어받는다(설정에 기억된 기본값).
+    _scenes.add(StoryScene(
+      id: id,
+      imageRes: _settings.imageRes,
+      videoRes: _settings.videoRes,
+    ));
     _selectedSceneId = id;
     _selectedDialogueId = null;
     _selectedShotId = null;
@@ -1408,7 +1427,7 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final bytes = await _generateBytes(shot, mode, prompt, backend);
+      final bytes = await _generateBytes(shot, mode, prompt, backend, key);
       final ext = _extFor(bytes, mode);
       final name = switch (mode) {
         GenMode.imageStart => '${shot.id}_start',
@@ -1437,6 +1456,7 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call('생성 실패: $e');
     } finally {
       _busy.remove(key);
+      _progress.remove(key); // 고정 진행 표시 정리
       notifyListeners();
     }
   }
@@ -1486,9 +1506,10 @@ class StoryboardProvider extends ChangeNotifier {
   Future<Uint8List> _generateBytes(
     Shot shot,
     GenMode mode,
-    String prompt, [
+    String prompt,
     VideoBackend? backend,
-  ]) async {
+    String progressKey, // 진행 문구를 담을 busyKey — 반복 스낵바 대신 영상칸에 고정 표시
+  ) async {
     if (!mode.isVideo) {
       final refs = await _refPhotoBytesList(shot);
       if (refs.isNotEmpty) {
@@ -1507,7 +1528,7 @@ class StoryboardProvider extends ChangeNotifier {
           _settings.effectiveServiceUrl,
         ).generateImageWithRefs(references: refs, prompt: instruction);
       }
-      final res = _settings.imageRes;
+      final res = sceneOf(shot)?.imageRes ?? _settings.imageRes; // 씬별 해상도
       return ApiService(
         _settings.effectiveServiceUrl,
       ).generateImage(prompt, width: res.width, height: res.height);
@@ -1535,7 +1556,7 @@ class StoryboardProvider extends ChangeNotifier {
           // (그래서 뽑고 나면 실제 길이를 다시 재서 적는다 — gen() 참고).
           durationSeconds: _veoSeconds(shot.videoSeconds),
           negativePrompt: _settings.videoNegativePrompt,
-          onProgress: (st) => messenger?.call(st),
+          onProgress: (st) => _setProgress(progressKey, st),
         );
       case VideoBackend.serviceApi:
         final img = await _startFrameBytes(shot);
@@ -1548,8 +1569,8 @@ class StoryboardProvider extends ChangeNotifier {
           throw Exception('끝장면을 먼저 만들어 주세요 (FE2V 마지막 프레임) — '
               '끝 없이 뽑으려면 장면 탭에서 I2V로 바꾸세요');
         }
-        final res = _settings.videoRes;
-        final sc = sceneOf(shot); // LoRA는 씬 단위
+        final sc = sceneOf(shot); // 해상도·LoRA는 씬 단위
+        final res = sc?.videoRes ?? _settings.videoRes;
         // 네거티브는 샷 칸이 먼저고, 비어 있으면 설정의 전역 값으로 떨어진다.
         // 둘 다 비면 서버 워크플로에 박힌 기본 네거티브가 쓰인다.
         final neg = (_vnegs[shot.id]?.text ?? shot.videoNegativePrompt).trim();
@@ -1564,7 +1585,7 @@ class StoryboardProvider extends ChangeNotifier {
           seconds: shot.videoSeconds,
           loraUrl: _effectiveLoraUrl(sc),
           loraStrength: sc?.loraStrength ?? 0.8,
-          onProgress: (st) => messenger?.call(st),
+          onProgress: (st) => _setProgress(progressKey, st),
         );
     }
   }
@@ -1584,17 +1605,26 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 영상 생성 해상도(비율 포함) 선택 저장.
+  /// 영상 생성 해상도 저장 — **씬별**. 새 씬이 이어받도록 마지막 값도 설정에 기억한다.
   void setVideoRes(VideoRes r) {
-    _settings = _settings.copyWith(videoRes: r);
+    final sc = selectedScene;
+    if (sc == null) return;
+    sc.videoRes = r;
+    _settings = _settings.copyWith(videoRes: r); // 새 씬 기본값(마지막 사용값)
     notifyListeners();
     _settingsStore.save(_settings);
+    save();
   }
 
-  /// 스크린샷(시작·끝 프레임) 생성 해상도(비율 포함) 선택 저장.
+  /// 스크린샷(시작·끝 프레임) 생성 해상도 저장 — **씬별**. 마지막 값은 새 씬 기본값으로 기억.
   void setImageRes(ImageRes r) {
+    final sc = selectedScene;
+    if (sc == null) return;
+    sc.imageRes = r;
     _settings = _settings.copyWith(imageRes: r);
     notifyListeners();
     _settingsStore.save(_settings);
+    save();
   }
 
   /// 선택 씬의 LoRA URL 저장(같은 씬 샷들끼리 공유, 씬끼리 별개).

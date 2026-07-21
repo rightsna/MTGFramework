@@ -166,6 +166,14 @@ class _VideoTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 생성 중이면 진행 상태를 영상칸 위에 **고정**으로 — 반복 스낵바 대신.
+                if (p.isBusy(p.busyKey(c.id, GenMode.videoLow))) ...[
+                  _GenProgressBanner(
+                    text: p.progressOf(p.busyKey(c.id, GenMode.videoLow)) ??
+                        '생성 준비 중…',
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 // 영상이 있으면 영상을, 없으면 **생성에 쓸 장면**을 대신 보여준다
                 // (FE2V면 시작·끝 두 장, I2V면 시작 한 장) — 무엇으로 뽑는지 바로 보이게.
                 if (c.videoPath != null)
@@ -295,6 +303,39 @@ class _VideoInputFrames extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// 생성 중 진행 상태를 영상칸 위에 고정으로 보여주는 배너 — 스피너 + 문구.
+class _GenProgressBanner extends StatelessWidget {
+  const _GenProgressBanner({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: accent2.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: accent2.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2, color: accent2),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text,
+                style: const TextStyle(fontSize: 12, color: Colors.white70)),
+          ),
+        ],
+      ),
     );
   }
 }

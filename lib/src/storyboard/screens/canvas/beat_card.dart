@@ -341,6 +341,10 @@ class _ShotThumb extends StatelessWidget {
     final p = StoryboardScope.of(context);
     final selected = shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
     final hasVideo = shot.videoPath != null;
+    // 이 샷에서 뭐든 생성 중인지(시작·끝 프레임 · 영상) — 썸네일 테두리를 깜빡여 알린다.
+    final busy = p.isBusy(p.busyKey(shot.id, GenMode.imageStart)) ||
+        p.isBusy(p.busyKey(shot.id, GenMode.imageEnd)) ||
+        p.isBusy(p.busyKey(shot.id, GenMode.videoLow));
     return GestureDetector(
       onTap: () => p.selectShot(beat.id, shot.id),
       child: Container(
@@ -360,6 +364,8 @@ class _ShotThumb extends StatelessWidget {
               version: p.verOf(p.busyKey(shot.id, GenMode.imageStart)),
               busy: p.isBusy(p.busyKey(shot.id, GenMode.imageStart)),
             ),
+            // 생성 중이면 테두리를 깜빡이고 작은 스피너를 얹는다.
+            if (busy) const Positioned.fill(child: _BusyPulse()),
             Positioned(
               left: 3,
               top: 3,
@@ -529,6 +535,56 @@ class _NoteBox extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(onTap: onTap, child: box),
+    );
+  }
+}
+
+/// 생성 중 표시 — 썸네일 테두리를 은은하게 깜빡이고 가운데에 작은 스피너를 얹는다.
+/// busy일 때만 스택에 올라가므로, 도는 샷만 컨트롤러를 만든다.
+class _BusyPulse extends StatefulWidget {
+  const _BusyPulse();
+
+  @override
+  State<_BusyPulse> createState() => _BusyPulseState();
+}
+
+class _BusyPulseState extends State<_BusyPulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, child) {
+          final t = 0.30 + 0.60 * _c.value; // 테두리 밝기 0.3~0.9로 왕복
+          return Container(
+            decoration: BoxDecoration(
+              color: const Color(0x33000000),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: accent2.withValues(alpha: t), width: 2),
+            ),
+            child: child,
+          );
+        },
+        child: const Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2, color: accent2),
+          ),
+        ),
+      ),
     );
   }
 }

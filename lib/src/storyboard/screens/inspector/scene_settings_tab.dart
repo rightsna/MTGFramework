@@ -51,7 +51,7 @@ class _SceneSettingsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          // 해상도·LoRA는 전부 씬(프로젝트) 단위 — 샷마다가 아니라 여기서 한 번에 정한다.
+          // 해상도·LoRA는 전부 **씬 단위** — 씬마다 따로 저장된다(다른 씬에 영향 없음).
           _GroupCard(
             icon: Icons.tune,
             title: '생성 설정',
@@ -73,7 +73,7 @@ class _SceneSettingsTab extends StatelessWidget {
                     for (final r in ImageRes.values)
                       ChoiceChip(
                         label: Text(r.label, style: _chipLabel),
-                        selected: p.settings.imageRes == r,
+                        selected: sc.imageRes == r,
                         onSelected: (_) => p.setImageRes(r),
                       ),
                   ],
@@ -88,7 +88,7 @@ class _SceneSettingsTab extends StatelessWidget {
                     for (final r in VideoRes.values)
                       ChoiceChip(
                         label: Text(r.label, style: _chipLabel),
-                        selected: p.settings.videoRes == r,
+                        selected: sc.videoRes == r,
                         onSelected: (_) => p.setVideoRes(r),
                       ),
                   ],
