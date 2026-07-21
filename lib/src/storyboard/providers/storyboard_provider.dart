@@ -477,6 +477,22 @@ class StoryboardProvider extends ChangeNotifier {
   /// 진행 중 상태 문구(예: '생성 중… 0.4분 경과'). 없으면 null. 영상칸에 고정 표시용.
   String? progressOf(String key) => _progress[key];
 
+  /// 이 씬에서 **뭐든 생성 중**인지 — 씬 목록 아이템 깜빡임용. 어느 트랙·샷이든 프레임/영상/음성이
+  /// 도는 중이면 true. busy 키가 곧 진행 중이므로, 이 씬의 id로 시작하는 키가 있는지 본다.
+  bool sceneBusy(StoryScene scene) {
+    for (final t in scene.tracks) {
+      for (final beat in t.beats) {
+        if (_busy.contains(voiceBusyKey(beat.id))) return true;
+        for (final shot in beat.shots) {
+          for (final m in GenMode.values) {
+            if (_busy.contains(busyKey(shot.id, m))) return true;
+          }
+        }
+      }
+    }
+    return _busy.contains(bgmBusyKey(scene.id));
+  }
+
   /// 진행 상태를 갱신한다(영상칸 위 고정 표시) — 반복 스낵바 대신 이 값을 쓴다.
   void _setProgress(String key, String? text) {
     if (text == null) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/story_scene.dart';
 import '../../providers/storyboard_provider.dart';
 import '../ui.dart';
 
@@ -45,40 +46,7 @@ class SceneListSidebar extends StatelessWidget {
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     itemCount: scenes.length,
-                    itemBuilder: (context, i) {
-                      final scene = scenes[i];
-                      final sel = scene.id == p.selectedSceneId;
-                      final title = scene.title.trim().isEmpty
-                          ? '(제목 없음)'
-                          : scene.title.trim();
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 3),
-                        color: sel ? const Color(0x222B7BFF) : null,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side: BorderSide(
-                            color: sel ? accent : const Color(0x14FFFFFF),
-                            width: sel ? 1.5 : 1,
-                          ),
-                        ),
-                        child: ListTile(
-                          dense: true,
-                          onTap: () => p.selectScene(scene.id),
-                          title: Text(title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight:
-                                      sel ? FontWeight.w800 : FontWeight.w600)),
-                          subtitle: Text(
-                              '${scene.beats.length} 비트 · ${scene.shotCount} 샷',
-                              style: const TextStyle(
-                                  fontSize: 11, color: Color(0x99FFFFFF))),
-                          // 삭제는 우측 '씬' 탭 최하단으로 옮겼다 — 목록에서 실수로 누르기 쉬웠다.
-                        ),
-                      );
-                    },
+                    itemBuilder: (context, i) => _SceneTile(scene: scenes[i]),
                   ),
           ),
           // (씬 제목 편집은 우측 '씬' 탭으로 옮겼다.)
@@ -163,4 +131,86 @@ class _SceneOpButton extends StatelessWidget {
         ),
         child: Tooltip(message: tooltip, child: Icon(icon, size: 18)),
       );
+}
+
+/// 씬 목록 아이템 하나. 이 씬에서 뭔가 생성 중이면 테두리가 **청록색으로 깜빡인다**.
+class _SceneTile extends StatefulWidget {
+  const _SceneTile({required this.scene});
+
+  final StoryScene scene;
+
+  @override
+  State<_SceneTile> createState() => _SceneTileState();
+}
+
+class _SceneTileState extends State<_SceneTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _blink = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  );
+
+  @override
+  void dispose() {
+    _blink.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final scene = widget.scene;
+    final sel = scene.id == p.selectedSceneId;
+    final busy = p.sceneBusy(scene);
+    if (busy && !_blink.isAnimating) {
+      _blink.repeat(reverse: true);
+    } else if (!busy && _blink.isAnimating) {
+      _blink
+        ..stop()
+        ..value = 0;
+    }
+    final title =
+        scene.title.trim().isEmpty ? '(제목 없음)' : scene.title.trim();
+
+    return AnimatedBuilder(
+      animation: _blink,
+      builder: (context, child) {
+        final Color side = busy
+            ? accent2.withValues(alpha: 0.30 + 0.60 * _blink.value)
+            : sel
+                ? accent
+                : const Color(0x14FFFFFF);
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 3),
+          color: sel ? const Color(0x222B7BFF) : null,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: side, width: (busy || sel) ? 1.5 : 1),
+          ),
+          child: child,
+        );
+      },
+      child: ListTile(
+        dense: true,
+        onTap: () => p.selectScene(scene.id),
+        title: Text(title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
+        subtitle: Text('${scene.beats.length} 비트 · ${scene.shotCount} 샷',
+            style: const TextStyle(fontSize: 11, color: Color(0x99FFFFFF))),
+        // 생성 중이면 작은 스피너를 오른쪽에.
+        trailing: p.sceneBusy(scene)
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child:
+                    CircularProgressIndicator(strokeWidth: 2, color: accent2),
+              )
+            : null,
+      ),
+    );
+  }
 }

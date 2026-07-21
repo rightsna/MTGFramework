@@ -328,7 +328,9 @@ class _ShotsArea extends StatelessWidget {
 }
 
 /// 정사각 샷 썸네일 — 시작이미지 + 오버레이(번호·삭제·하단 영상상태/길이). 그리드 셀을 꽉 채운다.
-class _ShotThumb extends StatelessWidget {
+/// 정사각 샷 썸네일. 테두리는 **하나만** — 생성 중이면 깜빡이고(보라색 대신), 아니면
+/// 선택 시 보라, 그 외 옅은 회색. 안쪽은 테두리 두께만큼 줄인 라운드로 클립해 모서리가 뜨지 않게.
+class _ShotThumb extends StatefulWidget {
   const _ShotThumb(
       {super.key, required this.beat, required this.shot, required this.index});
 
@@ -337,25 +339,71 @@ class _ShotThumb extends StatelessWidget {
   final int index;
 
   @override
+  State<_ShotThumb> createState() => _ShotThumbState();
+}
+
+class _ShotThumbState extends State<_ShotThumb>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _blink = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 700),
+  );
+
+  static const _radius = 8.0;
+
+  @override
+  void dispose() {
+    _blink.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final selected = shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
+    final beat = widget.beat;
+    final shot = widget.shot;
+    final index = widget.index;
+    final selected =
+        shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
     final hasVideo = shot.videoPath != null;
-    // 이 샷에서 뭐든 생성 중인지(시작·끝 프레임 · 영상) — 썸네일 테두리를 깜빡여 알린다.
+    // 이 샷에서 뭐든 생성 중인지(시작·끝 프레임 · 영상) — 테두리를 깜빡여 알린다.
     final busy = p.isBusy(p.busyKey(shot.id, GenMode.imageStart)) ||
         p.isBusy(p.busyKey(shot.id, GenMode.imageEnd)) ||
         p.isBusy(p.busyKey(shot.id, GenMode.videoLow));
+    // 생성 중일 때만 깜빡임 애니메이션을 돌린다.
+    if (busy && !_blink.isAnimating) {
+      _blink.repeat(reverse: true);
+    } else if (!busy && _blink.isAnimating) {
+      _blink
+        ..stop()
+        ..value = 0;
+    }
+
+    final width = (busy || selected) ? 2.0 : 1.0;
+
     return GestureDetector(
       onTap: () => p.selectShot(beat.id, shot.id),
-      child: Container(
-        decoration: BoxDecoration(
-          color: previewBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-              color: selected ? accent : const Color(0x18FFFFFF),
-              width: selected ? 2 : 1),
-        ),
-        clipBehavior: Clip.antiAlias,
+      child: AnimatedBuilder(
+        animation: _blink,
+        builder: (context, child) {
+          final Color border = busy
+              ? accent2.withValues(alpha: 0.30 + 0.60 * _blink.value)
+              : selected
+                  ? accent
+                  : const Color(0x18FFFFFF);
+          return Container(
+            decoration: BoxDecoration(
+              color: previewBg,
+              borderRadius: BorderRadius.circular(_radius),
+              border: Border.all(color: border, width: width),
+            ),
+            // 안쪽을 테두리 두께만큼 줄인 라운드로 클립 — 겉/속 반경이 맞아 모서리가 자연스럽다.
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_radius - width),
+              child: child,
+            ),
+          );
+        },
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -364,8 +412,16 @@ class _ShotThumb extends StatelessWidget {
               version: p.verOf(p.busyKey(shot.id, GenMode.imageStart)),
               busy: p.isBusy(p.busyKey(shot.id, GenMode.imageStart)),
             ),
-            // 생성 중이면 테두리를 깜빡이고 작은 스피너를 얹는다.
-            if (busy) const Positioned.fill(child: _BusyPulse()),
+            // 생성 중이면 가운데 작은 스피너(테두리 깜빡임과 함께).
+            if (busy)
+              const Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: accent2),
+                ),
+              ),
             Positioned(
               left: 3,
               top: 3,
@@ -535,56 +591,6 @@ class _NoteBox extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(onTap: onTap, child: box),
-    );
-  }
-}
-
-/// 생성 중 표시 — 썸네일 테두리를 은은하게 깜빡이고 가운데에 작은 스피너를 얹는다.
-/// busy일 때만 스택에 올라가므로, 도는 샷만 컨트롤러를 만든다.
-class _BusyPulse extends StatefulWidget {
-  const _BusyPulse();
-
-  @override
-  State<_BusyPulse> createState() => _BusyPulseState();
-}
-
-class _BusyPulseState extends State<_BusyPulse>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 700),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (context, child) {
-          final t = 0.30 + 0.60 * _c.value; // 테두리 밝기 0.3~0.9로 왕복
-          return Container(
-            decoration: BoxDecoration(
-              color: const Color(0x33000000),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: accent2.withValues(alpha: t), width: 2),
-            ),
-            child: child,
-          );
-        },
-        child: const Center(
-          child: SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, color: accent2),
-          ),
-        ),
-      ),
     );
   }
 }
