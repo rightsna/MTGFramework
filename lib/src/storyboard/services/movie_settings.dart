@@ -89,6 +89,20 @@ VideoRes _readVideoRes(Map<String, dynamic> j) {
 /// (ai-image-editer의 BackendClient.fixedDomain과 값 동일하게 유지)
 const String kServerDomain = 'https://camera-doctrine-galleria.ngrok-free.dev';
 
+/// 대사 TTS(일레븐랩스 v3) 안정성 프리셋 — 값은 voice_settings.stability로 그대로 나간다.
+///  - creative(0.0): 표현력↑·감정 태그 잘 먹지만 가끔 튄다(권장).
+///  - natural(0.5): 균형.
+///  - robust(1.0): 안정적이지만 밋밋할 수 있다.
+enum TtsStability {
+  creative(0.0, 'Creative'),
+  natural(0.5, 'Natural'),
+  robust(1.0, 'Robust');
+
+  const TtsStability(this.value, this.label);
+  final double value;
+  final String label;
+}
+
 class MovieSettings {
   final ImageRes imageRes; // 스크린샷(시작·끝 프레임) 생성 해상도(비율 포함)
   final VideoBackend videoBackend;
@@ -104,6 +118,7 @@ class MovieSettings {
   final String
   civitaiToken; // civitai LoRA 다운로드용 API 토큰(있으면 civitai URL에 자동 부착)
   final String elevenKey; // 일레븐랩스 TTS(대사 음성) API 키
+  final TtsStability ttsStability; // 대사 TTS 안정성 프리셋(Creative/Natural/Robust)
   final String serviceApiUrl; // 사용자 오버라이드(비우면 kServerDomain 사용)
 
   /// 실제 연결 주소: 오버라이드가 있으면 그것, 없으면 고정 도메인.
@@ -124,6 +139,7 @@ class MovieSettings {
     this.geminiKey = '',
     this.civitaiToken = '',
     this.elevenKey = '',
+    this.ttsStability = TtsStability.creative, // 대사는 Creative가 표현력이 좋다
     this.serviceApiUrl = '', // 비우면 kServerDomain
   });
 
@@ -141,6 +157,7 @@ class MovieSettings {
     String? geminiKey,
     String? civitaiToken,
     String? elevenKey,
+    TtsStability? ttsStability,
     String? serviceApiUrl,
   }) => MovieSettings(
     imageRes: imageRes ?? this.imageRes,
@@ -156,6 +173,7 @@ class MovieSettings {
     geminiKey: geminiKey ?? this.geminiKey,
     civitaiToken: civitaiToken ?? this.civitaiToken,
     elevenKey: elevenKey ?? this.elevenKey,
+    ttsStability: ttsStability ?? this.ttsStability,
     serviceApiUrl: serviceApiUrl ?? this.serviceApiUrl,
   );
 
@@ -173,6 +191,7 @@ class MovieSettings {
     'geminiKey': geminiKey,
     'civitaiToken': civitaiToken,
     'elevenKey': elevenKey,
+    'ttsStability': ttsStability.name,
     'serverUrl': serviceApiUrl, // 새 키 — 옛 'serviceApiUrl'(localhost 저장분)은 무시
   };
 
@@ -202,6 +221,10 @@ class MovieSettings {
     geminiKey: (j['geminiKey'] as String?) ?? '',
     civitaiToken: (j['civitaiToken'] as String?) ?? '',
     elevenKey: (j['elevenKey'] as String?) ?? '',
+    ttsStability: TtsStability.values.firstWhere(
+      (e) => e.name == j['ttsStability'],
+      orElse: () => TtsStability.creative,
+    ),
     // 새 키만 읽는다(옛 'serviceApiUrl'은 무시 → 기존 설치도 도메인 디폴트로 시작).
     serviceApiUrl: (j['serverUrl'] as String?) ?? '',
   );

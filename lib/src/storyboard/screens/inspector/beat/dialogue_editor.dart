@@ -171,6 +171,35 @@ class _DialogueEditorState extends State<_DialogueEditor> {
                 : '$target 으로 위 대사를 읽습니다',
             style: const TextStyle(fontSize: 11, color: Colors.white54),
           ),
+          if (p.voiceReady) ...[
+            const SizedBox(height: 8),
+            // 안정성(v3): Creative=표현력↑(권장) · Natural=균형 · Robust=안정적. 전역 설정.
+            Row(
+              children: [
+                const Text('안정성',
+                    style: TextStyle(fontSize: 11, color: Colors.white54)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    children: [
+                      for (final s in TtsStability.values)
+                        ChoiceChip(
+                          label: Text(s.label, style: _chipLabel),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          labelPadding:
+                              const EdgeInsets.symmetric(horizontal: 4),
+                          selected: p.settings.ttsStability == s,
+                          onSelected: (_) => p.setTtsStability(s),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           FilledButton.tonalIcon(
             onPressed: (_genning || !canGen)

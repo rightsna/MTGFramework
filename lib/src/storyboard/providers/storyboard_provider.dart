@@ -1508,9 +1508,11 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final res = await ElevenLabsService(
-        _settings.elevenKey,
-      ).generateSpeech(voiceId: voiceId, text: d.text.trim());
+      final res = await ElevenLabsService(_settings.elevenKey).generateSpeech(
+        voiceId: voiceId,
+        text: d.text.trim(),
+        stability: _settings.ttsStability.value, // Creative/Natural/Robust
+      );
       final f = File('$projectDirPath/${beat.id}_voice.mp3');
       await f.writeAsBytes(res.bytes);
       d.voicePath = f.path;
@@ -2203,6 +2205,14 @@ class StoryboardProvider extends ChangeNotifier {
   void setPromptShowKo(bool ko) {
     if (_settings.promptShowKo == ko) return;
     _settings = _settings.copyWith(promptShowKo: ko);
+    notifyListeners();
+    _settingsStore.save(_settings);
+  }
+
+  /// 대사 TTS 안정성 프리셋(Creative/Natural/Robust) 저장.
+  void setTtsStability(TtsStability s) {
+    if (_settings.ttsStability == s) return;
+    _settings = _settings.copyWith(ttsStability: s);
     notifyListeners();
     _settingsStore.save(_settings);
   }

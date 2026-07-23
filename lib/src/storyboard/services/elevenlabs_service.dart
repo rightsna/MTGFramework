@@ -19,15 +19,22 @@ class ElevenLabsService {
 
   /// 텍스트 → 음성. with-timestamps 엔드포인트로 **오디오 + 정렬(길이)** 을 한 번에 받는다.
   /// 정렬의 마지막 end-time이 곧 음성 길이(초). 반환: (bytes: mp3, seconds: 길이).
+  /// [stability] = eleven v3의 안정성 프리셋 값(0.0=Creative, 0.5=Natural, 1.0=Robust).
+  /// null이면 안 보낸다(모델 기본).
   Future<({Uint8List bytes, double seconds})> generateSpeech({
     required String voiceId,
     required String text,
     String modelId = defaultModel,
+    double? stability,
   }) async {
     final r = await http.post(
       Uri.parse('$_base/text-to-speech/$voiceId/with-timestamps'),
       headers: {..._headers, 'Content-Type': 'application/json'},
-      body: jsonEncode({'text': text, 'model_id': modelId}),
+      body: jsonEncode({
+        'text': text,
+        'model_id': modelId,
+        if (stability != null) 'voice_settings': {'stability': stability},
+      }),
     );
     if (r.statusCode != 200) {
       throw Exception('일레븐랩스 ${r.statusCode}: ${utf8.decode(r.bodyBytes)}');
