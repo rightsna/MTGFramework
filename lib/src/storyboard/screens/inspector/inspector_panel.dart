@@ -19,10 +19,24 @@ import '../ui.dart';
 
 // 인스펙터는 탭별로 파일을 나눠 둔다. private 위젯을 탭들끼리 그대로 쓰려고
 // 라이브러리 하나(part)로 묶는다 — 파일이 갈려도 이름은 전부 이 라이브러리 안이다.
-part 'beat_tab.dart';
-part 'frame_tab.dart';
-part 'video_tab.dart';
-part 'scene_settings_tab.dart';
+part 'beat/beat_tab.dart';
+part 'beat/coverage_badge.dart';
+part 'beat/dialogue_editor.dart';
+part 'beat/direction_note.dart';
+part 'frame/frame_tab.dart';
+part 'frame/frame_gen_settings.dart';
+part 'frame/video_mode_card.dart';
+part 'frame/frame_section.dart';
+part 'frame/link_start_toggle.dart';
+part 'video/video_tab.dart';
+part 'video/seconds_field.dart';
+part 'video/video_input_frames.dart';
+part 'video/gen_progress_banner.dart';
+part 'scene/scene_settings_tab.dart';
+part 'scene/scene_common_field.dart';
+part 'scene/scene_default_voice_field.dart';
+part 'scene/scene_lora_field.dart';
+part 'bgm/bgm_tab.dart';
 part 'common_widgets.dart';
 
 /// 캔버스 하단 샷 편집 패널: 탭 [장면 | 영상 | 공통]. 선택 샷을 편집한다.
