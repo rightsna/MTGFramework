@@ -37,7 +37,21 @@ part 'scene/scene_common_field.dart';
 part 'scene/scene_default_voice_field.dart';
 part 'scene/scene_lora_field.dart';
 part 'bgm/bgm_tab.dart';
-part 'common_widgets.dart';
+part 'common/chip_label.dart';
+part 'common/no_shot.dart';
+part 'common/center_note.dart';
+part 'common/track_link_bar.dart';
+part 'common/lock_if_inherited.dart';
+part 'common/shot_note.dart';
+part 'common/group_card.dart';
+part 'common/done_badge.dart';
+part 'common/section_label.dart';
+part 'common/prompt_field.dart';
+part 'common/prompt_pair.dart';
+part 'common/mini_toggle.dart';
+part 'common/gen_button.dart';
+part 'common/output_block.dart';
+part 'common/media_action.dart';
 
 /// 캔버스 하단 샷 편집 패널: 탭 [장면 | 영상 | 공통]. 선택 샷을 편집한다.
 /// (탭 선택은 settings.inspectorTab에 유지 — 예전 인스펙터 탭 기억을 이어받음.)
