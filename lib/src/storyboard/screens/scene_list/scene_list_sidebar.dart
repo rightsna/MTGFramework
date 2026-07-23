@@ -84,9 +84,9 @@ class SceneListSidebar extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: _SceneOpButton(
-                    // 씬의 클립을 샷 순서대로 하나의 mp4로 합쳐 저장한다.
+                    // 씬의 영상에 대사 음성·효과음·배경음까지 합쳐 하나의 mp4로 저장한다.
                     icon: Icons.movie_outlined,
-                    tooltip: '씬 무비 내보내기',
+                    tooltip: '씬 무비 내보내기 (음성·효과음·배경음 합성)',
                     onPressed: p.selectedScene == null
                         ? null
                         : () => p.exportSceneMovie(),

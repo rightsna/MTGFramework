@@ -74,6 +74,9 @@ class _BeatTab extends StatelessWidget {
           const SizedBox(height: 14),
           // 효과음(SFX) — 대사와 비슷하나 화자가 없다. 트랙 공유.
           _SfxEditor(key: ValueKey('sfx_${beat.id}'), beat: beat),
+          const SizedBox(height: 14),
+          // 자막 — 시간순 구간 목록 + 위치. 트랙 공유.
+          _CaptionEditor(key: ValueKey('cap_${beat.id}'), beat: beat),
         ],
       ),
     );

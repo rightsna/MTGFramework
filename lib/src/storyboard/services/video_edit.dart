@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import '../models/shot.dart' show StillEffect;
 
@@ -242,6 +243,175 @@ class VideoEdit {
       throw Exception('합치기 실패: ${(r.stderr as String).trim().split('\n').last}');
     }
   }
+
+  /// 미디어(영상·오디오) 길이(초). 실패하면 0. (probe는 비디오 스트림 전용이라 오디오엔 못 쓴다.)
+  static Future<double> _mediaDuration(String path) async {
+    final ffprobe = toolPath('ffprobe');
+    if (ffprobe == null) return 0;
+    final r = await Process.run(ffprobe, [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=nw=1:nk=1',
+      path,
+    ]);
+    if (r.exitCode != 0) return 0;
+    return double.tryParse((r.stdout as String).trim()) ?? 0;
+  }
+
+  /// 씬 무비 **내보내기** — 미리보기와 같은 규칙으로 영상·대사·효과음·배경음을 한 파일로 굽는다.
+  ///  - 비트마다: 영상 클립들을 이어붙이고, 길이는 **영상·대사 중 긴 쪽**. 대사가 더 길면 마지막
+  ///    프레임을 그만큼 정지시켜 늘린다(미리보기의 "긴 쪽 기준"과 동일).
+  ///  - 대사 음성 + 효과음을 비트 시작부터 얹어 섞는다(효과음이 비트보다 길면 잘린다).
+  ///  - 마지막으로 배경음(BGM)을 전체에 낮은 볼륨으로 루프해 깔아 준다.
+  /// 규격은 [width]×[height]·[fps]로 통일해 비트끼리 이어붙는다.
+  static Future<void> exportScene({
+    required List<ExportBeat> beats,
+    String? bgm,
+    required int width,
+    required int height,
+    required String outPath,
+    double fps = 24,
+    double bgmVolume = 0.4,
+  }) async {
+    final ffmpeg = toolPath('ffmpeg');
+    if (ffmpeg == null) throw Exception(missingHint);
+    if (beats.isEmpty) throw Exception('내보낼 비트가 없습니다.');
+
+    final tmp = Directory('${outPath}_export_tmp');
+    if (await tmp.exists()) await tmp.delete(recursive: true);
+    await tmp.create(recursive: true);
+    try {
+      // 1) 비트마다 영상+오디오를 합쳐 한 세그먼트로.
+      final segs = <String>[];
+      for (var i = 0; i < beats.length; i++) {
+        final seg = '${tmp.path}/beat_$i.mp4';
+        await _renderBeat(ffmpeg, beats[i], width, height, fps, seg);
+        segs.add(seg);
+      }
+      // 2) 세그먼트들을 이어붙인다(모두 같은 규격이라 concat이 처리).
+      final scene = bgm == null ? outPath : '${tmp.path}/scene.mp4';
+      await concat(segs, scene);
+      // 3) 배경음을 전체에 깐다(있으면).
+      if (bgm != null) await _mixBgm(ffmpeg, scene, bgm, bgmVolume, outPath);
+    } finally {
+      if (await tmp.exists()) await tmp.delete(recursive: true);
+    }
+  }
+
+  /// 비트 하나를 세그먼트로 굽는다 — 클립 이어붙이기 + (대사가 길면)프레임 정지 연장 + 오디오 믹스.
+  static Future<void> _renderBeat(
+    String ffmpeg,
+    ExportBeat b,
+    int w,
+    int h,
+    double fps,
+    String outPath,
+  ) async {
+    var dv = 0.0; // 영상 길이 합
+    for (final c in b.clips) {
+      dv += await _mediaDuration(c);
+    }
+    final voiceDur = b.voice == null ? 0.0 : await _mediaDuration(b.voice!);
+    final beatDur = math.max(dv, voiceDur); // 긴 쪽 기준
+    final durStr = beatDur.toStringAsFixed(3);
+
+    final args = <String>['-y'];
+    for (final c in b.clips) {
+      args.addAll(['-i', c]);
+    }
+    final voiceIdx = b.voice == null ? -1 : b.clips.length;
+    if (b.voice != null) args.addAll(['-i', b.voice!]);
+    final sfxIdx = b.sfx == null ? -1 : (voiceIdx >= 0 ? voiceIdx + 1 : b.clips.length);
+    if (b.sfx != null) args.addAll(['-i', b.sfx!]);
+
+    final fc = StringBuffer();
+    // 영상: 각 클립을 규격에 맞춰 스케일·패딩 후 이어붙인다.
+    for (var i = 0; i < b.clips.length; i++) {
+      fc.write('[$i:v]scale=$w:$h:force_original_aspect_ratio=decrease,'
+          'pad=$w:$h:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=$fps[v$i];');
+    }
+    for (var i = 0; i < b.clips.length; i++) {
+      fc.write('[v$i]');
+    }
+    fc.write('concat=n=${b.clips.length}:v=1:a=0[vc];');
+    // 대사가 더 길면 마지막 프레임을 그만큼 정지시켜 늘린다.
+    final ext = beatDur - dv;
+    if (ext > 0.02) {
+      fc.write('[vc]tpad=stop_mode=clone:stop_duration=${ext.toStringAsFixed(3)}[v];');
+    } else {
+      fc.write('[vc]null[v];');
+    }
+    // 오디오: 대사·효과음을 비트 시작부터 얹고 비트 길이에 맞춘다(짧으면 무음 패딩, 길면 컷).
+    final aparts = <String>[];
+    if (voiceIdx >= 0) {
+      fc.write('[$voiceIdx:a]aresample=48000,apad,atrim=0:$durStr,'
+          'asetpts=PTS-STARTPTS[av];');
+      aparts.add('[av]');
+    }
+    if (sfxIdx >= 0) {
+      fc.write('[$sfxIdx:a]aresample=48000,apad,atrim=0:$durStr,'
+          'asetpts=PTS-STARTPTS[as];');
+      aparts.add('[as]');
+    }
+    if (aparts.isEmpty) {
+      fc.write('anullsrc=r=48000:cl=stereo,atrim=0:$durStr[a];');
+    } else if (aparts.length == 1) {
+      fc.write('${aparts.first}anull[a];');
+    } else {
+      fc.write('${aparts.join()}amix=inputs=${aparts.length}:normalize=0[a];');
+    }
+
+    args.addAll([
+      '-filter_complex', fc.toString(),
+      '-map', '[v]', '-map', '[a]',
+      '-t', durStr,
+      '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+      outPath,
+    ]);
+    final r = await Process.run(ffmpeg, args);
+    if (r.exitCode != 0) {
+      throw Exception('비트 합성 실패: ${(r.stderr as String).trim().split('\n').last}');
+    }
+  }
+
+  /// 완성된 씬 영상 위에 배경음을 낮은 볼륨으로 루프해 깐다. 영상은 재인코딩하지 않는다.
+  static Future<void> _mixBgm(
+    String ffmpeg,
+    String scene,
+    String bgm,
+    double vol,
+    String outPath,
+  ) async {
+    final r = await Process.run(ffmpeg, [
+      '-y',
+      '-i', scene,
+      '-stream_loop', '-1', '-i', bgm, // 씬 길이까지 반복
+      '-filter_complex',
+      '[1:a]aresample=48000,volume=${vol.toStringAsFixed(2)}[bg];'
+          '[0:a][bg]amix=inputs=2:duration=first:normalize=0[a]',
+      '-map', '0:v', '-map', '[a]',
+      '-c:v', 'copy',
+      '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
+      '-shortest',
+      outPath,
+    ]);
+    if (r.exitCode != 0) {
+      final f = File(outPath);
+      if (await f.exists()) await f.delete();
+      throw Exception('배경음 합성 실패: ${(r.stderr as String).trim().split('\n').last}');
+    }
+  }
+}
+
+/// [VideoEdit.exportScene]에 넘기는 비트 하나 — 영상 클립들 + (있으면)대사 음성·효과음.
+class ExportBeat {
+  const ExportBeat({required this.clips, this.voice, this.sfx});
+
+  /// 이 비트의 영상들(순서대로) — 최소 1개. 없으면 이 비트는 내보내기에서 빠진다.
+  final List<String> clips;
+  final String? voice; // 대사 음성(mp3)
+  final String? sfx; // 효과음(mp3)
 }
 
 /// [VideoEdit.probe] 결과.

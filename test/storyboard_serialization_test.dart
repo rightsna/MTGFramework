@@ -3,6 +3,7 @@ import 'package:framework/src/storyboard/models/shot.dart';
 import 'package:framework/src/storyboard/models/dialogue.dart';
 import 'package:framework/src/storyboard/models/dialogue_beat.dart';
 import 'package:framework/src/storyboard/models/sfx.dart';
+import 'package:framework/src/storyboard/models/caption.dart';
 import 'package:framework/src/storyboard/models/story_scene.dart';
 import 'package:framework/src/storyboard/models/video_track.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -275,6 +276,32 @@ void main() {
     // 파생 비트(base 있음)는 효과음을 적지 않는다(트랙 공유 — 기준 비트에만).
     final derived = DialogueBeat(id: 'b1_t2', baseId: 'b1', sfx: Sfx(prompt: 'x'));
     expect(derived.toJson().containsKey('sfx'), isFalse);
+  });
+
+  test('자막(캡션)은 구간 목록·위치가 왕복 보존되고, 파생 비트엔 안 적힌다', () {
+    final base = DialogueBeat(
+      id: 'b2',
+      caption: Caption(
+        position: CaptionPosition.top,
+        cues: [
+          CaptionCue(seconds: 1, text: '완전히'),
+          CaptionCue(seconds: 3, text: ''), // 공백 구간
+          CaptionCue(seconds: 3, text: '다른 사람이 나타났다'),
+        ],
+      ),
+    );
+    final back = DialogueBeat.fromJson(base.toJson(), dir);
+    expect(back.caption!.position, CaptionPosition.top);
+    expect(back.caption!.cues.length, 3);
+    expect(back.caption!.cues[0].seconds, 1);
+    expect(back.caption!.cues[0].text, '완전히');
+    expect(back.caption!.cues[1].text, ''); // 공백 유지
+    expect(back.caption!.cues[2].text, '다른 사람이 나타났다');
+    expect(back.caption!.totalSeconds, 7);
+
+    final derived =
+        DialogueBeat(id: 'b2_t2', baseId: 'b2', caption: Caption());
+    expect(derived.toJson().containsKey('caption'), isFalse);
   });
 
   test('새 대사 기본값 + 끝장면(샷) 왕복', () {

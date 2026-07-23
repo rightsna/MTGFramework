@@ -3,6 +3,7 @@ import 'package:flutter/services.dart'; // Clipboard
 
 import '../../models/shot.dart';
 import '../../models/dialogue_beat.dart';
+import '../../models/caption.dart';
 import '../../providers/storyboard_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/elevenlabs_service.dart'; // 씬 기본 성우 목록/선택
@@ -23,6 +24,7 @@ part 'beat/beat_tab.dart';
 part 'beat/coverage_badge.dart';
 part 'beat/dialogue_editor.dart';
 part 'beat/sfx_editor.dart';
+part 'beat/caption_editor.dart';
 part 'beat/direction_note.dart';
 part 'frame/frame_tab.dart';
 part 'frame/frame_gen_settings.dart';

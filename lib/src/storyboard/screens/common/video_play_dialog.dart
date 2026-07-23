@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:video_player/video_player.dart';
 
 import '../ui.dart' show accent2;
@@ -14,6 +15,8 @@ typedef PlaylistItem = ({
   String beatId,
   String? voicePath,
   String? sfxPath,
+  List<({double seconds, String text})> captionCues,
+  String captionPos, // 'top' | 'middle' | 'bottom'
 });
 
 /// 영상을 크게 재생하는 팝업 — **씬의 영상들을 순서대로 이어서** 보며, 대사 음성·씬 배경음도
@@ -49,13 +52,22 @@ class _VideoPlayDialog extends StatefulWidget {
   State<_VideoPlayDialog> createState() => _VideoPlayDialogState();
 }
 
-class _VideoPlayDialogState extends State<_VideoPlayDialog> {
+class _VideoPlayDialogState extends State<_VideoPlayDialog>
+    with SingleTickerProviderStateMixin {
   VideoPlayerController? _ctrl; // 영상
   VideoPlayerController? _voice; // 현재 비트의 대사 음성(mp3)
   VideoPlayerController? _sfx; // 현재 비트의 효과음(mp3)
   VideoPlayerController? _bgm; // 씬 배경음(mp3, 루프)
   String? _voiceBeatId; // 지금 음성이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
   String? _sfxBeatId; // 지금 효과음이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
+
+  // 자막: 비트 시작부터 흐르는 시계(_beatElapsed)로 지금 보여줄 구간을 고른다. 재생 중일 때만 흐른다.
+  late final Ticker _ticker;
+  Duration _tickerLast = Duration.zero;
+  Duration _beatElapsed = Duration.zero;
+  String? _capBeatId; // 자막 시계가 걸린 비트 — 바뀌면 시계를 0으로
+  List<({double seconds, String text})> _cues = const [];
+  String _capPos = 'bottom';
   Object? _error;
   late int _index;
   bool _playing = true;
@@ -68,8 +80,71 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     super.initState();
     final i = _items.indexWhere((e) => e.path == widget.startPath);
     _index = i < 0 ? 0 : i;
+    _ticker = createTicker(_onTicker)..start();
     _openBgm();
     _open();
+  }
+
+  /// 자막 시계 — 재생 중일 때만 흐른다. 보여줄 자막 구간이 바뀌면 그때만 다시 그린다.
+  void _onTicker(Duration elapsed) {
+    if (!mounted) return;
+    final delta = elapsed - _tickerLast;
+    _tickerLast = elapsed;
+    if (!_playing) return;
+    final before = _activeCaption();
+    _beatElapsed += delta;
+    if (_activeCaption() != before) setState(() {});
+  }
+
+  /// 지금(_beatElapsed) 보여줄 자막 텍스트. 공백 구간이거나 범위 밖이면 null.
+  String? _activeCaption() {
+    if (_cues.isEmpty) return null;
+    final t = _beatElapsed.inMilliseconds / 1000.0;
+    var acc = 0.0;
+    for (final c in _cues) {
+      if (t >= acc && t < acc + c.seconds) {
+        return c.text.trim().isEmpty ? null : c.text.trim();
+      }
+      acc += c.seconds;
+    }
+    return null;
+  }
+
+  /// 영상 위에 지금 자막을 얹는다(상단/중간/하단). 보여줄 게 없으면 빈 위젯.
+  Widget _captionOverlay(double w, double h) {
+    final text = _activeCaption();
+    if (text == null) return const SizedBox.shrink();
+    final align = switch (_capPos) {
+      'top' => Alignment.topCenter,
+      'middle' => Alignment.center,
+      _ => Alignment.bottomCenter,
+    };
+    return IgnorePointer(
+      child: Align(
+        alignment: align,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: w * 0.05, vertical: h * 0.06),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0x99000000),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: (h * 0.055).clamp(12, 40),
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+                shadows: const [Shadow(blurRadius: 4, color: Colors.black)],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _openBgm() async {
@@ -102,6 +177,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
 
     await _syncVoice(); // 비트가 바뀌면 이 지점에서 음성을 새로 튼다
     await _syncSfx(); // 효과음도 비트 경계에서 새로 튼다
+    _syncCaption(); // 자막 시계도 비트 경계에서 0으로
 
     final c = VideoPlayerController.file(File(_items[_index].path));
     try {
@@ -172,6 +248,16 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     } catch (_) {
       await c.dispose();
     }
+  }
+
+  /// 비트가 바뀌면 자막 시계를 0으로 돌리고 그 비트의 자막 구간·위치를 건다.
+  void _syncCaption() {
+    final it = _items[_index];
+    if (it.beatId == _capBeatId) return; // 같은 비트 — 시계 유지
+    _capBeatId = it.beatId;
+    _beatElapsed = Duration.zero;
+    _cues = it.captionCues;
+    _capPos = it.captionPos;
   }
 
   bool get _ended {
@@ -295,6 +381,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
 
   @override
   void dispose() {
+    _ticker.dispose();
     _ctrl?.removeListener(_onTick);
     _ctrl?.dispose();
     _voice?.dispose();
@@ -419,6 +506,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
                         child: Icon(Icons.play_circle,
                             size: 64, color: Colors.white70),
                       ),
+                    _captionOverlay(w, h),
                   ],
                 ),
               ),

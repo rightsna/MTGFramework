@@ -5,13 +5,15 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart' as fs;
 import 'package:flutter/material.dart';
 import 'package:framework/framework.dart';
-import 'package:video_player/video_player.dart'; // 불러온 오디오 길이 실측용
+// 불러온 오디오 길이 실측용. Caption은 우리 모델과 이름이 겹쳐 숨긴다.
+import 'package:video_player/video_player.dart' hide Caption;
 
 import '../models/character.dart';
 import '../models/shot.dart';
 import '../models/dialogue.dart';
 import '../models/dialogue_beat.dart';
 import '../models/sfx.dart';
+import '../models/caption.dart';
 import '../models/story_scene.dart';
 import '../models/video_track.dart';
 import '../services/api_service.dart';
@@ -375,6 +377,11 @@ class StoryboardProvider extends ChangeNotifier {
   /// 효과음 진행/캐시 키 — 트랙 공유라 **기준 비트 id** 기준.
   String sfxBusyKey(String beatId) => '${_scriptBeatId(beatId)}:sfx';
 
+  // ───────── 자막(캡션) — 효과음처럼 트랙 공유(기준 비트 소유). 화자 없음, 시간순 구간 목록 ─────────
+
+  /// 이 비트의 자막(트랙 공유라 기준 비트의 것). 없으면 null.
+  Caption? captionOf(DialogueBeat b) => _scriptBeat(b).caption;
+
   /// 이 비트가 속한 씬.
   StoryScene? sceneOf2(DialogueBeat beat) {
     for (final sc in _scenes) {
@@ -503,6 +510,8 @@ class StoryboardProvider extends ChangeNotifier {
         String beatId,
         String? voicePath,
         String? sfxPath,
+        List<({double seconds, String text})> captionCues,
+        String captionPos,
       })> scenePlaylist() {
     final out = <({
       String path,
@@ -510,11 +519,19 @@ class StoryboardProvider extends ChangeNotifier {
       String beatId,
       String? voicePath,
       String? sfxPath,
+      List<({double seconds, String text})> captionCues,
+      String captionPos,
     })>[];
     var n = 0;
     for (final beat in dialogues) {
       final voice = voicePathOf(beat); // 상속 포함(자기 것 없으면 기준 트랙 음성)
       final sfx = sfxPathOf(beat); // 효과음(트랙 공유)
+      final cap = captionOf(beat); // 자막(트랙 공유)
+      final cues = <({double seconds, String text})>[
+        for (final c in cap?.cues ?? const [])
+          (seconds: c.seconds, text: c.text),
+      ];
+      final capPos = (cap?.position ?? CaptionPosition.bottom).name;
       for (final shot in beat.shots) {
         n++;
         final path = videoPathOf(shot); // 상속 포함(자기 것 없으면 기준 트랙 영상)
@@ -526,6 +543,8 @@ class StoryboardProvider extends ChangeNotifier {
           beatId: beat.id,
           voicePath: voice,
           sfxPath: sfx,
+          captionCues: cues,
+          captionPos: capPos,
         ));
       }
     }
@@ -1374,6 +1393,39 @@ class StoryboardProvider extends ChangeNotifier {
   void setSfxInfluence(DialogueBeat beat, double v) {
     (_scriptBeat(beat).sfx ??= Sfx()).promptInfluence =
         (v.clamp(0.0, 1.0) * 100).round() / 100;
+    notifyListeners();
+    save();
+  }
+
+  // ── 자막 설정(전부 기준 비트에 쓴다 — 트랙 공유) ──
+  /// 자막 구간 하나 추가(끝에). 없으면 자막을 새로 만든다.
+  void addCaptionCue(DialogueBeat beat) {
+    (_scriptBeat(beat).caption ??= Caption()).cues.add(CaptionCue());
+    notifyListeners();
+    save();
+  }
+
+  /// 자막 구간 제거.
+  void removeCaptionCue(DialogueBeat beat, CaptionCue cue) {
+    _scriptBeat(beat).caption?.cues.remove(cue);
+    notifyListeners();
+    save();
+  }
+
+  void setCaptionCueText(DialogueBeat beat, CaptionCue cue, String text) {
+    cue.text = text;
+    notifyListeners();
+    save();
+  }
+
+  void setCaptionCueSeconds(DialogueBeat beat, CaptionCue cue, double sec) {
+    cue.seconds = (sec.clamp(0.1, 60) * 10).round() / 10; // 0.1초 단위
+    notifyListeners();
+    save();
+  }
+
+  void setCaptionPosition(DialogueBeat beat, CaptionPosition pos) {
+    (_scriptBeat(beat).caption ??= Caption()).position = pos;
     notifyListeners();
     save();
   }
@@ -2606,6 +2658,8 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 선택 씬의 클립을 샷 순서대로 하나의 mp4로 이어붙여 내보낸다(씬 무비).
   /// 영상이 없는 샷은 건너뛰고, 몇 개를 건너뛰었는지 알려준다.
+  /// 씬 무비 내보내기 — **보고 있는 트랙**의 영상에 대사 음성·효과음·배경음까지 합쳐 한 파일로.
+  /// 미리보기(영상 재생 팝업)와 같은 규칙(비트 = 영상·대사 중 긴 쪽, 대사가 길면 프레임 정지)이다.
   Future<void> exportSceneMovie() async {
     final sc = selectedScene;
     if (sc == null) return;
@@ -2613,12 +2667,21 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(VideoEdit.missingHint);
       return;
     }
-    final all = sceneShots;
-    final clips = <String>[
-      for (final s in all)
-        if (s.videoPath != null && File(s.videoPath!).existsSync()) s.videoPath!,
-    ];
-    if (clips.isEmpty) {
+    // 비트마다 영상 클립(상속 포함) + 대사 음성 + 효과음을 모은다. 영상 없는 비트는 뺀다.
+    final beats = <ExportBeat>[];
+    for (final beat in dialogues) {
+      final clips = <String>[
+        for (final s in beat.shots)
+          if (_hasFile(videoPathOf(s))) videoPathOf(s)!,
+      ];
+      if (clips.isEmpty) continue;
+      beats.add(ExportBeat(
+        clips: clips,
+        voice: _hasFile(voicePathOf(beat)) ? voicePathOf(beat) : null,
+        sfx: _hasFile(sfxPathOf(beat)) ? sfxPathOf(beat) : null,
+      ));
+    }
+    if (beats.isEmpty) {
       messenger?.call('이 씬에는 생성된 영상이 없습니다');
       return;
     }
@@ -2627,12 +2690,16 @@ class StoryboardProvider extends ChangeNotifier {
     final safe = title.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
     final loc = await fs.getSaveLocation(suggestedName: '$safe.mp4');
     if (loc == null) return;
-    messenger?.call('씬 무비 합치는 중… (${clips.length}클립)');
+    messenger?.call('씬 무비 합치는 중… (비트 ${beats.length}개 · 음성·효과음·배경음 합성)');
     try {
-      await VideoEdit.concat(clips, loc.path);
-      final skipped = all.length - clips.length;
-      messenger?.call('씬 무비 저장: ${loc.path}'
-          '${skipped > 0 ? ' (영상 없는 $skipped샷 제외)' : ''}');
+      await VideoEdit.exportScene(
+        beats: beats,
+        bgm: _hasFile(sc.bgmPath) ? sc.bgmPath : null,
+        width: sc.videoRes.width,
+        height: sc.videoRes.height,
+        outPath: loc.path,
+      );
+      messenger?.call('씬 무비 저장: ${loc.path}');
     } catch (e, st) {
       debugPrint('[sceneMovie] 실패: $e\n$st');
       messenger?.call('씬 무비 실패: $e');
