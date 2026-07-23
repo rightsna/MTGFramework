@@ -11,10 +11,16 @@ class _DialogueEditor extends StatefulWidget {
 }
 
 class _DialogueEditorState extends State<_DialogueEditor> {
-  late final TextEditingController _text = TextEditingController(
-    text: widget.beat.dialogue?.text ?? '',
-  );
+  late final TextEditingController _text;
   bool _genning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 상속/오버라이드 해석한 대본 텍스트를 시드로(파생 비트는 dialogue에 텍스트가 없다).
+    final script = StoryboardScope.read(context).beatScript(widget.beat);
+    _text = TextEditingController(text: script?.text ?? '');
+  }
 
   @override
   void dispose() {
@@ -26,8 +32,8 @@ class _DialogueEditorState extends State<_DialogueEditor> {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final beat = widget.beat;
-    final d = beat.dialogue;
-    final speaker = d?.speakerId;
+    final script = p.beatScript(beat); // 화자·텍스트(상속/오버라이드 해석)
+    final speaker = script?.speakerId;
     final speakerChar = p.characterById(speaker);
     // 보이스가 지정된 화자면 그 보이스, 아니면(내레이션·화자 미지정) **씬 기본 성우**.
     final sceneVoice = p.selectedScene?.defaultVoiceName.trim() ?? '';
@@ -128,7 +134,7 @@ class _DialogueEditorState extends State<_DialogueEditor> {
             busy: _genning || p.isBusy(p.voiceBusyKey(beat.id)),
             version: p.verOf(p.voiceBusyKey(beat.id)),
             extraActions: [
-              if (d != null)
+              if (script != null)
                 IconButton(
                   tooltip: '대사 지우기 (무음으로)',
                   visualDensity: VisualDensity.compact,

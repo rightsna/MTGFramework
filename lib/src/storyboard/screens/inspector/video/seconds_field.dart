@@ -14,9 +14,13 @@ class _SecondsField extends StatefulWidget {
 }
 
 class _SecondsFieldState extends State<_SecondsField> {
-  late double _val =
-      (StoryboardScope.read(context).selectedShot?.videoSeconds ?? 5)
-          .clamp(widget.still ? 0.1 : 1, 15);
+  late double _val = () {
+    final p = StoryboardScope.read(context);
+    final c = p.selectedShot;
+    return (c == null ? 5.0 : p.shotVideoSeconds(c))
+        .clamp(widget.still ? 0.1 : 1, 15)
+        .toDouble();
+  }();
 
   String get _label =>
       widget.still ? '${_val.toStringAsFixed(1)}초' : '${_val.round()}초';

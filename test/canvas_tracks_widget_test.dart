@@ -55,9 +55,10 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1600, 1400));
     await pumpCanvas(tester);
 
-    // 트랙 줄 머리말이 둘.
+    // 트랙 줄 머리말이 둘. ('트랙 2'는 씬 상태 알약의 "트랙 2"(트랙 개수)와 문자열이 겹쳐
+    // 헤더 + 알약 = 2개로 잡힌다. '트랙 1'은 헤더뿐이라 하나.)
     expect(find.text('트랙 1'), findsOneWidget);
-    expect(find.text('트랙 2'), findsOneWidget);
+    expect(find.text('트랙 2'), findsNWidgets(2));
     // 새 트랙은 기준 트랙과 같은 백엔드로 시작한다(강제로 다른 걸 물리지 않는다).
     expect(find.text('자체서버'), findsNWidgets(2));
     // 씬이 통째로 한 벌 더 깔린다 — 비트 카드도 대사 상자도 트랙마다 하나씩.

@@ -177,7 +177,8 @@ class _DialogueBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final d = beat.dialogue;
+    // 대본(화자·텍스트)은 상속/오버라이드 해석. 음성은 아래에서 따로(트랙별 소유).
+    final d = p.beatScript(beat);
     if (d == null) {
       return InkWell(
         onTap: () => p.selectDialogue(beat.id),
@@ -443,8 +444,9 @@ class _ShotThumbState extends State<_ShotThumb>
                         fontSize: 9, fontWeight: FontWeight.w800)),
               ),
             ),
-            // 분리한 샷 표시 — 이 트랙만의 내용이라는 뜻(따라가는 샷은 표시가 없다 = 트랙 1 그대로).
-            if (shot.detached)
+            // 이 트랙에서 고친 필드가 있는 샷 표시 — 오버라이드가 하나라도 있으면(상속만 하는
+            // 샷은 표시가 없다 = 트랙 1 그대로).
+            if (shot.isDerived && shot.overrides.isNotEmpty)
               Positioned(
                 left: 3,
                 bottom: 16,

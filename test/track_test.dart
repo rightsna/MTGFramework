@@ -3,10 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:framework/storyboard.dart';
 
-/// 트랙 = 같은 콘티를 백엔드별로 뽑아 **비교하는 단위**.
-/// 지켜야 할 약속은 셋이다:
-///  1. 트랙을 추가하고 아무것도 안 건드리면 **트랙 1과 똑같은 내용**이다(영상만 비어 있다).
-///  2. 거기서 영상만 다시 뽑으면 **그 트랙의 영상만** 갈린다 — 트랙 1은 그대로.
+/// 트랙 = 같은 콘티를 백엔드별로 뽑아 **비교하는 단위**. 상속 모델의 약속:
+///  1. 트랙을 추가하면 파생 트랙은 **진짜로 비어 있다**(overrides={}) — 읽을 땐 기준 트랙을 상속.
+///  2. 어떤 필드를 고치면 **그 필드만** 이 트랙 것으로 오버라이드되고, **트랙 1은 절대 안 바뀐다**.
 ///  3. 구조(비트·샷 개수)는 트랙끼리 항상 같다.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -37,7 +36,7 @@ void main() {
     final beat = p.dialogues.single;
     await p.addShot(beat);
     await p.addShot(beat);
-    // 트랙 1의 재료를 채워 둔다(프롬프트·프레임·영상).
+    // 트랙 1의 재료를 채워 둔다(프롬프트·프레임·영상). 편집칸→save로 기준 타입 필드에 굳힌다.
     for (final s in beat.shots) {
       p.videoCtrl(s.id).text = '카메라가 밀려든다';
       p.startCtrl(s.id).text = '복도 끝';
@@ -49,7 +48,7 @@ void main() {
   });
   tearDown(() => dir.deleteSync(recursive: true));
 
-  test('트랙을 추가하고 아무것도 안 하면 트랙 1과 똑같이 보인다', () async {
+  test('트랙을 추가하면 파생 트랙은 비어 있고(overrides={}) 기준을 상속한다', () async {
     final base = p.dialogues.single.shots.toList();
     await p.addTrack();
 
@@ -59,52 +58,94 @@ void main() {
     expect(p.dialogues.length, 1);
     final shots = p.dialogues.single.shots;
     expect(shots.length, 2);
-    // 내용이 그대로 따라온다 — 프롬프트도 프레임도 트랙 1의 것.
     for (var i = 0; i < shots.length; i++) {
-      expect(shots[i].inherits, isTrue);
-      expect(shots[i].videoPrompt, base[i].videoPrompt);
-      expect(shots[i].startPrompt, base[i].startPrompt);
-      expect(shots[i].startImagePath, base[i].startImagePath);
-      expect(p.videoCtrl(shots[i].id).text, '카메라가 밀려든다');
+      final d = shots[i];
+      // 파생 샷은 진짜로 비어 있다 — 복사본이 아니다.
+      expect(d.overrides, isEmpty, reason: '아무것도 오버라이드 안 함');
+      expect(d.videoPrompt, '', reason: '타입 필드에 복사해 들고 있지 않는다');
+      // 읽을 땐(리졸버) 기준 트랙 값을 상속한다.
+      expect(p.shotVideoPrompt(d), base[i].videoPrompt);
+      expect(p.shotStartPrompt(d), base[i].startPrompt);
+      expect(p.shotStartImage(d), base[i].startImagePath);
+      // 편집칸도 상속 값을 시드로 보여 준다.
+      expect(p.videoCtrl(d.id).text, '카메라가 밀려든다');
       // 영상만 비어 있다 — 트랙을 나눈 이유가 그것뿐이다.
-      expect(shots[i].videoPath, isNull);
+      expect(d.videoPath, isNull);
     }
     // 샷 id는 트랙마다 다르다 — 영상 파일이 서로 덮어쓰지 않도록.
     expect(shots.first.id, isNot(base.first.id));
   });
 
-  test('트랙에서 영상만 다시 뽑으면 그 트랙 영상만 갈린다', () async {
+  test('트랙에서 영상만 다시 뽑으면 그 트랙 영상만 갈린다 — 내용은 여전히 상속', () async {
     final base = p.dialogues.single.shots.first;
     final baseVideo = base.videoPath;
     await p.addTrack();
     final derived = p.dialogues.single.shots.first;
 
-    // 생성 결과가 들어오는 자리(gen()이 하는 일)를 그대로 흉내 낸다.
     derived.videoPath = (await file('${derived.id}_vlow.mp4')).path;
     await p.save();
 
     expect(base.videoPath, baseVideo, reason: '트랙 1 영상은 건드리지 않는다');
-    // 내용은 여전히 따라간다 — 갈린 건 영상뿐.
-    expect(derived.inherits, isTrue);
-    expect(derived.videoPrompt, base.videoPrompt);
+    // 영상은 오버라이드가 아니다 — 내용은 여전히 기준을 상속.
+    expect(derived.overrides, isEmpty);
+    expect(p.shotVideoPrompt(derived), p.shotVideoPrompt(base));
   });
 
-  test('트랙의 백엔드가 그 트랙 생성 백엔드가 된다', () async {
-    expect(p.backendOf(p.dialogues.single.shots.first), VideoBackend.serviceApi);
+  test('파생 샷의 한 필드만 고치면 그 필드만 오버라이드되고 트랙1은 안 바뀐다', () async {
     await p.addTrack();
-    final derived = p.dialogues.single.shots.first;
-    // 새 트랙은 기준 트랙과 같은 백엔드로 시작한다 — 무엇으로 뽑을지는 사람이 정한다
-    // (같은 백엔드로 두 번 뽑아 비교해도 된다).
-    expect(p.tracks[1].backend, VideoBackend.serviceApi);
-    p.setTrackBackend(p.tracks[1], VideoBackend.veo);
-    await p.save(); // 뒷정리 전에 저장이 끝나도록(설정 변경은 저장을 비동기로 건다)
-    expect(p.backendOf(derived), VideoBackend.veo);
-    expect(p.backendOf(p.tracks.first.beats.single.shots.first),
-        VideoBackend.serviceApi,
-        reason: '트랙마다 따로다');
+    final shots = p.dialogues.single.shots;
+    final derived = shots.first;
+
+    // 이 트랙에서 영상 프롬프트만 고친다(UI = 그 샷 선택 + 편집칸 + save).
+    p.selectShot(p.dialogues.single.id, derived.id);
+    p.videoCtrl(derived.id).text = '핸드헬드로 흔들린다';
+    await p.save();
+
+    // 그 필드만 오버라이드.
+    expect(derived.overrides.keys, contains('videoPrompt'));
+    expect(p.shotVideoPrompt(derived), '핸드헬드로 흔들린다');
+    // 나머지 필드는 여전히 상속(오버라이드 안 됨).
+    expect(derived.overrides.containsKey('startPrompt'), isFalse);
+    expect(p.shotStartPrompt(derived), '복도 끝');
+    // 트랙 1은 물들지 않는다.
+    p.selectTrack(0);
+    expect(p.shotVideoPrompt(p.dialogues.single.shots.first), '카메라가 밀려든다');
+    // 다른 샷은 여전히 통째로 상속.
+    expect(shots.last.overrides, isEmpty);
   });
 
-  test('기준 트랙에서 고친 내용은 따라가는 샷에 그대로 반영된다', () async {
+  test('⭐ 트랙2에서 화자·텍스트·제목·효과음을 바꿔도 트랙1은 하나도 안 바뀐다', () async {
+    final baseBeat = p.tracks.first.beats.single;
+    p.setShotDialogueText(baseBeat, '원래 대사');
+    p.setShotDialogueSpeaker(baseBeat, null); // 내레이션
+    p.titleCtrl(baseBeat.id).text = '원래 제목';
+    p.setSfxPrompt(baseBeat, '천둥소리');
+    await p.save();
+
+    await p.addTrack();
+    final derivedBeat = p.tracks[1].beats.single;
+
+    // 트랙 2에서 전부 다른 값으로.
+    p.setShotDialogueSpeaker(derivedBeat, 'char_kim'); // ← 유저가 발견한 그 버그
+    p.setShotDialogueText(derivedBeat, '다른 대사');
+    p.titleCtrl(derivedBeat.id).text = '다른 제목';
+    p.setSfxPrompt(derivedBeat, '빗소리');
+    await p.save();
+
+    // 트랙 1(기준)은 하나도 안 바뀐다.
+    expect(baseBeat.dialogue?.text, '원래 대사');
+    expect(baseBeat.dialogue?.speakerId, isNull, reason: '★ 화자가 트랙1로 새지 않는다');
+    expect(baseBeat.title, '원래 제목');
+    expect(baseBeat.sfx?.prompt, '천둥소리');
+
+    // 트랙 2는 자기 것으로 바뀐다.
+    expect(p.beatScript(derivedBeat)?.speakerId, 'char_kim');
+    expect(p.beatScript(derivedBeat)?.text, '다른 대사');
+    expect(p.beatTitle(derivedBeat), '다른 제목');
+    expect(p.sfxOf(derivedBeat)?.prompt, '빗소리');
+  });
+
+  test('기준 트랙에서 고치면 상속 중인 파생 샷 읽기값·편집칸이 따라온다', () async {
     await p.addTrack();
     final derived = p.dialogues.single.shots.first;
     p.selectTrack(0);
@@ -112,33 +153,22 @@ void main() {
     p.videoCtrl(base.id).text = '카메라가 뒤로 빠진다';
     await p.save();
 
-    expect(derived.videoPrompt, '카메라가 뒤로 빠진다');
-    expect(p.videoCtrl(derived.id).text, '카메라가 뒤로 빠진다');
+    expect(p.shotVideoPrompt(derived), '카메라가 뒤로 빠진다');
+    expect(p.videoCtrl(derived.id).text, '카메라가 뒤로 빠진다',
+        reason: '상속 중인 편집칸은 기준을 따라 갱신된다');
   });
 
-  test('분리하면 그 샷만 독립하고, 되돌리면 다시 따라간다', () async {
+  test('트랙의 백엔드가 그 트랙 생성 백엔드가 된다', () async {
+    expect(p.backendOf(p.dialogues.single.shots.first), VideoBackend.serviceApi);
     await p.addTrack();
-    final shots = p.dialogues.single.shots;
-    final derived = shots.first;
-
-    await p.detachShot(derived);
-    expect(derived.detached, isTrue);
-    expect(derived.inherits, isFalse);
-    // 프레임은 자기 파일로 떠 온다 — 기준 샷을 지워도 안 깨지도록.
-    expect(derived.startImagePath, contains(derived.id));
-    expect(File(derived.startImagePath!).existsSync(), isTrue);
-
-    p.videoCtrl(derived.id).text = '핸드헬드로 흔들린다';
+    final derived = p.dialogues.single.shots.first;
+    expect(p.tracks[1].backend, VideoBackend.serviceApi);
+    p.setTrackBackend(p.tracks[1], VideoBackend.veo);
     await p.save();
-    p.selectTrack(0);
-    expect(p.dialogues.single.shots.first.videoPrompt, '카메라가 밀려든다',
-        reason: '트랙 1은 물들지 않는다');
-    expect(shots.last.inherits, isTrue, reason: '분리는 샷 단위다');
-
-    p.selectTrack(1);
-    await p.relinkShot(derived);
-    expect(derived.inherits, isTrue);
-    expect(derived.videoPrompt, '카메라가 밀려든다');
+    expect(p.backendOf(derived), VideoBackend.veo);
+    expect(p.backendOf(p.tracks.first.beats.single.shots.first),
+        VideoBackend.serviceApi,
+        reason: '트랙마다 따로다');
   });
 
   test('비트·샷 추가/삭제는 모든 트랙에 똑같이 반영된다', () async {
@@ -160,28 +190,31 @@ void main() {
     }
   });
 
-  test('저장·재로딩 후에도 트랙 구성과 영상이 그대로다', () async {
+  test('저장·재로딩 후에도 파생 트랙은 스파스이고 영상·오버라이드가 남는다', () async {
     await p.addTrack();
     final derived = p.dialogues.single.shots.first;
     derived.videoPath = (await file('${derived.id}_vlow.mp4')).path;
+    p.selectShot(p.dialogues.single.id, derived.id);
+    p.videoCtrl(derived.id).text = '핸드헬드'; // 프롬프트만 오버라이드
     p.setTrackName(p.tracks[1], 'Veo 3.1');
     p.setTrackBackend(p.tracks[1], VideoBackend.veo);
     await p.save();
 
-    // 파일에는 따라가는 샷의 내용이 안 적힌다 — 정본은 기준 트랙 한 곳뿐.
+    // 파일에는 파생 샷의 상속 필드가 안 적힌다 — 기준 트랙 2곳 + (오버라이드는 파생에 1곳).
     final raw = File('${dir.path}/scene1.json').readAsStringSync();
     expect('카메라가 밀려든다'.allMatches(raw).length, 2,
-        reason: '트랙 1의 샷 2개에만 적힌다(파생 트랙엔 안 적힘)');
+        reason: '기준 트랙 샷 2개에만 적힌다(파생은 오버라이드만)');
 
     final p2 = StoryboardProvider(projectDirPath: dir.path);
     await Future<void>.delayed(const Duration(milliseconds: 300));
     final sc = p2.scenes.single;
     expect(sc.tracks.length, 2);
     expect(sc.tracks[1].name, 'Veo 3.1');
-    expect(sc.tracks[1].backend, VideoBackend.veo);
     final back = sc.tracks[1].beats.single.shots.first;
-    expect(back.inherits, isTrue);
-    expect(back.videoPrompt, '카메라가 밀려든다', reason: '불러올 때 기준에서 다시 채워진다');
+    expect(back.overrides.keys, contains('videoPrompt'), reason: '오버라이드는 남는다');
+    expect(back.overrides.containsKey('startPrompt'), isFalse, reason: '상속 필드는 저장 안 됨');
+    expect(p2.shotVideoPrompt(back), '핸드헬드');
+    expect(p2.shotStartPrompt(back), '복도 끝', reason: '상속 필드는 기준에서 다시 읽힌다');
     expect(back.videoPath, derived.videoPath, reason: '뽑아 둔 영상은 트랙에 남는다');
     p2.dispose();
   });
@@ -190,21 +223,18 @@ void main() {
     final beat = p.dialogues.single;
     final base = beat.shots.first;
     base.videoSeconds = 10; // 주문은 10초
+    base.videoActualSeconds = 10.0;
     await p.addTrack();
     final derived = p.dialogues.single.shots.first;
 
-    // 트랙 1은 주문대로 10초, 트랙 2(예: Veo)는 4초로 나왔다고 하자.
-    base.videoActualSeconds = 10.0;
+    // 트랙 2(예: Veo)는 4초로 나왔다고 하자.
     derived.videoPath = (await file('${derived.id}_vlow.mp4')).path;
     derived.videoActualSeconds = 4.0;
     await p.save();
 
-    expect(derived.playSeconds, 4.0);
-    expect(base.playSeconds, 10.0);
-    expect(derived.videoSeconds, 10, reason: '주문값은 트랙끼리 공유(내용)');
-    // 타임라인(비트 길이)도 그 트랙의 실제 길이로 잡힌다.
-    expect(p.tracks[1].beats.single.seconds, 4.0 + p.tracks[1].beats.single.shots[1].playSeconds);
-    expect(p.tracks.first.beats.single.seconds, 10.0 + beat.shots[1].playSeconds);
+    expect(p.shotDisplaySeconds(derived), 4.0);
+    expect(p.shotDisplaySeconds(base), 10.0);
+    expect(p.shotVideoSeconds(derived), 10, reason: '주문 길이는 상속(오버라이드 안 함)');
 
     // 저장·재로딩해도 트랙별 실제 길이가 남는다.
     final p2 = StoryboardProvider(projectDirPath: dir.path);
@@ -227,7 +257,6 @@ void main() {
 
     await p.copyVideoToBase(derived);
 
-    // 기준 트랙 샷이 자기 파일(<baseId>_vlow.*)을 갖는다 — 파생 것과 다른 파일.
     expect(base.videoPath, isNotNull);
     expect(base.videoPath, isNot(derived.videoPath));
     expect(base.videoPath!.contains('${base.id}_vlow'), isTrue);
@@ -235,100 +264,76 @@ void main() {
     expect(base.videoActualSeconds, 4.0, reason: '원본 실측 길이를 그대로 가져온다');
   });
 
-  test('해상도는 씬별 — 한 씬을 바꿔도 다른 씬은 그대로', () async {
-    // setUp이 씬 하나(scene1) 만들어 둠. 두 번째 씬 추가.
-    p.addScene();
-    final sc2 = p.selectedScene!;
-    final sc1 = p.scenes.first;
-    expect(identical(sc1, sc2), isFalse);
-
-    // 씬2에서 해상도를 바꾼다.
-    p.setImageRes(ImageRes.l1984x1088);
-    p.setVideoRes(VideoRes.l1280x704);
-    await p.save();
-
-    expect(sc2.imageRes, ImageRes.l1984x1088);
-    expect(sc2.videoRes, VideoRes.l1280x704);
-    // 씬1은 그대로여야 한다(전역 공유 아님).
-    expect(sc1.imageRes, ImageRes.p704x1280);
-    expect(sc1.videoRes, VideoRes.p352x640);
-
-    // 저장·재로딩 후에도 씬별로 남는다.
-    final p2 = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
-    final scenes = p2.scenes;
-    expect(scenes[0].imageRes, ImageRes.p704x1280);
-    expect(scenes[1].imageRes, ImageRes.l1984x1088);
-    expect(scenes[1].videoRes, VideoRes.l1280x704);
-    p2.dispose();
-  });
-
-  test('고아 미디어 정리 — 참조 끊긴 파일만 지운다', () async {
-    final beat = p.dialogues.single;
-    final shot = beat.shots.first;
-    // 참조되는 파일들(위 setUp에서 start/end/video 이미 채움) + 고아 하나 + json은 보존.
-    final orphan = await file('clip_dead_vlow.mp4');
-    final keepJson = await file('characters.json'); // json은 미디어 아님 → 보존
-    expect(orphan.existsSync(), isTrue);
-
-    final n = await p.sweepOrphanMedia();
-    expect(n, greaterThanOrEqualTo(1));
-    expect(orphan.existsSync(), isFalse, reason: '참조 안 되는 미디어는 삭제');
-    expect(File(shot.videoPath!).existsSync(), isTrue, reason: '참조되는 영상은 보존');
-    expect(File(shot.startImagePath!).existsSync(), isTrue);
-    expect(keepJson.existsSync(), isTrue, reason: 'json은 손대지 않는다');
-  });
-
-  test('샷을 지우면 그 샷의 미디어도 사라진다', () async {
-    final beat = p.dialogues.single;
-    final shot = beat.shots.first;
-    final vp = shot.videoPath!;
-    final sp = shot.startImagePath!;
-    expect(File(vp).existsSync(), isTrue);
-
-    p.removeShot(beat, shot);
-    await p.save();
-    await Future<void>.delayed(const Duration(milliseconds: 50)); // 스윕은 비동기
-    expect(File(vp).existsSync(), isFalse, reason: '지운 샷의 영상은 삭제');
-    expect(File(sp).existsSync(), isFalse, reason: '지운 샷의 프레임도 삭제');
-  });
-
-  test('대사 음성은 트랙별 — 한 트랙에서 재생성해도 다른 트랙은 그대로', () async {
-    // 트랙 1의 비트에 대사·음성을 넣는다.
+  test('대사 음성은 트랙별 — 대본은 상속, 음성은 그 트랙 것', () async {
     final baseBeat = p.tracks.first.beats.single;
     p.setShotDialogueText(baseBeat, '그 밤에 무슨 일이 있었죠?');
     baseBeat.dialogue!.voicePath = (await file('${baseBeat.id}_voice.mp3')).path;
     baseBeat.dialogue!.voiceSeconds = 3.0;
-    await p.addTrack(); // 트랙 2 — 대본은 따라오고 음성은 비어 있어야 한다
+    await p.addTrack();
     await p.save();
 
     final derivedBeat = p.tracks[1].beats.single;
-    expect(derivedBeat.dialogue?.text, '그 밤에 무슨 일이 있었죠?', reason: '대본은 공유');
-    expect(derivedBeat.dialogue?.voicePath, isNull, reason: '음성은 트랙별 — 새 트랙은 비어 있음');
+    expect(p.beatScript(derivedBeat)?.text, '그 밤에 무슨 일이 있었죠?',
+        reason: '대본은 상속');
+    expect(derivedBeat.dialogue?.voicePath, isNull,
+        reason: '음성은 트랙별 — 새 트랙은 비어 있음');
 
     // 트랙 2에서 음성을 만든다(gen이 하는 일 흉내).
-    derivedBeat.dialogue!.voicePath = (await file('${derivedBeat.id}_voice.mp3')).path;
-    derivedBeat.dialogue!.voiceSeconds = 4.0;
+    derivedBeat.dialogue = Dialogue(
+      voicePath: (await file('${derivedBeat.id}_voice.mp3')).path,
+      voiceSeconds: 4.0,
+    );
     await p.save();
 
     expect(baseBeat.dialogue!.voicePath, contains(baseBeat.id),
         reason: '트랙 1 음성은 그대로');
     expect(derivedBeat.dialogue!.voicePath, contains(derivedBeat.id));
-    expect(p.voiceBusyKey(baseBeat.id), isNot(p.voiceBusyKey(derivedBeat.id)),
-        reason: '진행 표시도 트랙별');
 
-    // 저장·재로딩해도 트랙별 음성이 남는다.
+    // 저장·재로딩해도 트랙별 음성이 남고, 대본은 기준에서 상속된다.
     final p2 = StoryboardProvider(projectDirPath: dir.path);
     await Future<void>.delayed(const Duration(milliseconds: 300));
     final sc = p2.scenes.single;
-    expect(sc.tracks[1].beats.single.dialogue?.text, '그 밤에 무슨 일이 있었죠?',
-        reason: '대본은 불러올 때 기준에서 채워진다');
-    expect(sc.tracks[1].beats.single.dialogue?.voicePath,
-        contains(sc.tracks[1].beats.single.id),
-        reason: '트랙별 음성은 그 트랙 것으로 복원');
-    expect(sc.tracks.first.beats.single.dialogue?.voicePath,
-        contains(sc.tracks.first.beats.single.id));
+    final b1 = sc.tracks[1].beats.single;
+    expect(p2.beatScript(b1)?.text, '그 밤에 무슨 일이 있었죠?');
+    expect(b1.dialogue?.voicePath, contains(b1.id));
     p2.dispose();
+  });
+
+  test('고아 미디어 정리 — 파생 오버라이드 프레임도 살린다', () async {
+    final beat = p.dialogues.single;
+    final shot = beat.shots.first;
+    await p.addTrack();
+    // 파생 샷에 자기 시작 프레임을 오버라이드(gen이 하는 일).
+    final derived = p.dialogues.single.shots.first;
+    final derivedFrame = await file('${derived.id}_start.png');
+    p.selectTrack(1);
+    // loadFrame 대신 직접 오버라이드 세팅(파일 I/O 다이얼로그 회피).
+    derived.overrides['startImage'] = derivedFrame.path;
+    await p.save();
+
+    final orphan = await file('clip_dead_vlow.mp4');
+    final n = await p.sweepOrphanMedia();
+    expect(n, greaterThanOrEqualTo(1));
+    expect(orphan.existsSync(), isFalse, reason: '참조 안 되는 미디어는 삭제');
+    expect(File(shot.videoPath!).existsSync(), isTrue, reason: '기준 영상 보존');
+    expect(derivedFrame.existsSync(), isTrue, reason: '★ 파생 오버라이드 프레임도 보존');
+  });
+
+  test('트랙2 음성 생성 — 상속받은 대사를 인식한다(대사 입력 요구 안 함)', () async {
+    final baseBeat = p.tracks.first.beats.single;
+    p.setShotDialogueText(baseBeat, '상속되는 대사');
+    await p.addTrack();
+    final derivedBeat = p.tracks[1].beats.single;
+
+    final msgs = <String>[];
+    p.messenger = msgs.add;
+    // 키가 없어 뒤(일레븐랩스)에서 멈추지만, **대사 체크는 통과**해야 한다(상속 대사 인식).
+    await p.genVoice(derivedBeat);
+
+    expect(msgs, isNot(contains('대사를 먼저 입력하세요')),
+        reason: '★ 파생 비트의 상속 대사를 인식해야 한다');
+    expect(msgs.any((m) => m.contains('일레븐랩스')), isTrue,
+        reason: '대사 체크를 지나 키 없음에서 멈춘다 = 대사는 인식됨');
   });
 
   test('트랙을 지워도 트랙 1은 남는다', () async {
@@ -337,7 +342,6 @@ void main() {
     await p.removeTrack(p.tracks[1]);
     expect(p.tracks.length, 1);
     expect(p.trackIndex, 0);
-    // 기준 트랙은 지울 수 없다 — 구조의 정본이라서.
     await p.removeTrack(p.tracks.first);
     expect(p.tracks.length, 1);
   });

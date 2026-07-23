@@ -342,7 +342,7 @@ class StoryboardProvider extends ChangeNotifier {
   double shotDisplaySeconds(Shot c) {
     final actual = videoActualSecondsOf(c);
     if (actual != null && actual > 0) return actual;
-    return c.videoSeconds;
+    return shotVideoSeconds(c); // 주문 길이(파생은 상속/오버라이드 해석)
   }
 
   /// 이 비트 자리에 **들려 줄** 대사 음성 — 자기 것이 있으면 그것, 없으면 기준 트랙 것 상속.
@@ -363,24 +363,63 @@ class StoryboardProvider extends ChangeNotifier {
   /// 이 비트가 자리에 들려 줄 음성이 있는지(자기 것이든 상속이든).
   bool hasAnyVoice(DialogueBeat b) => voicePathOf(b) != null;
 
-  // ───────── 효과음(SFX) — 대사와 달리 화자가 없고, **트랙끼리 공유**한다(기준 비트에 둔다) ─────────
+  // ───────── 대본·연출 리졸버(비트) — 파생 비트는 overrides에 있으면 그 값, 없으면 기준 비트 ─────────
 
-  /// 이 비트의 효과음(트랙 공유라 어느 트랙에서 보든 기준 비트의 것). 없으면 null.
-  Sfx? sfxOf(DialogueBeat b) => _scriptBeat(b).sfx;
+  String beatTitle(DialogueBeat b) => b.resolvedTitle(baseBeatOf(b));
+  String beatNote(DialogueBeat b) => b.resolvedNote(baseBeatOf(b));
+  String beatDirection(DialogueBeat b) => b.resolvedDirection(baseBeatOf(b));
 
-  /// 이 비트 자리에 **들려 줄** 효과음 경로. 없으면 null.
+  /// 이 비트 자리에 **보여 줄 대본**(화자·텍스트). null = 무음 대사.
+  ({String? speakerId, String text})? beatScript(DialogueBeat b) =>
+      b.resolvedScript(baseBeatOf(b));
+
+  // ───────── 효과음(SFX) — 트랙별 오버라이드(파생은 자기 것, 없으면 기준 비트 상속) ─────────
+
+  /// 이 비트 자리에 들려 줄 효과음. 없으면 null.
+  Sfx? sfxOf(DialogueBeat b) => b.resolvedSfx(baseBeatOf(b));
   String? sfxPathOf(DialogueBeat b) => sfxOf(b)?.path;
-
-  /// 이 비트에 생성된 효과음이 있는지.
   bool hasSfx(DialogueBeat b) => sfxOf(b)?.hasSound ?? false;
 
-  /// 효과음 진행/캐시 키 — 트랙 공유라 **기준 비트 id** 기준.
-  String sfxBusyKey(String beatId) => '${_scriptBeatId(beatId)}:sfx';
+  /// 효과음 진행/캐시 키 — 효과음이 트랙별 소유이므로 **그 비트 id** 기준.
+  String sfxBusyKey(String beatId) => '$beatId:sfx';
 
-  // ───────── 자막(캡션) — 효과음처럼 트랙 공유(기준 비트 소유). 화자 없음, 시간순 구간 목록 ─────────
+  // ───────── 자막(캡션) — 효과음처럼 트랙별 오버라이드 ─────────
 
-  /// 이 비트의 자막(트랙 공유라 기준 비트의 것). 없으면 null.
-  Caption? captionOf(DialogueBeat b) => _scriptBeat(b).caption;
+  Caption? captionOf(DialogueBeat b) => b.resolvedCaption(baseBeatOf(b));
+
+  // ───────── 샷 필드 리졸버 — 파생 샷은 overrides에 있으면 그 값, 없으면 기준 샷 ─────────
+
+  String shotTitle(Shot s) => s.resolvedTitle(baseShotOf(s));
+  List<String> shotRefCharacterIds(Shot s) =>
+      s.resolvedRefCharacterIds(baseShotOf(s));
+  String shotStartPrompt(Shot s) => s.resolvedStartPrompt(baseShotOf(s));
+  String shotStartPromptKo(Shot s) => s.resolvedStartPromptKo(baseShotOf(s));
+  String shotEndPrompt(Shot s) => s.resolvedEndPrompt(baseShotOf(s));
+  String shotEndPromptKo(Shot s) => s.resolvedEndPromptKo(baseShotOf(s));
+  String shotVideoPrompt(Shot s) => s.resolvedVideoPrompt(baseShotOf(s));
+  String shotVideoPromptKo(Shot s) => s.resolvedVideoPromptKo(baseShotOf(s));
+  String shotVideoNeg(Shot s) => s.resolvedVideoNeg(baseShotOf(s));
+  double shotVideoSeconds(Shot s) => s.resolvedVideoSeconds(baseShotOf(s));
+  String? shotStartImage(Shot s) => s.resolvedStartImage(baseShotOf(s));
+  String? shotEndImage(Shot s) => s.resolvedEndImage(baseShotOf(s));
+  bool shotLinkStart(Shot s) => s.resolvedLinkStart(baseShotOf(s));
+  VideoMode shotVideoMode(Shot s) => s.resolvedVideoMode(baseShotOf(s));
+  StillEffect shotStillEffect(Shot s) => s.resolvedStillEffect(baseShotOf(s));
+  String shotNote(Shot s) => s.resolvedNote(baseShotOf(s));
+  String shotVideoNote(Shot s) => s.resolvedVideoNote(baseShotOf(s));
+
+  /// 끝 프레임이 필요한 방식(FE2V)인지 — 상속/오버라이드 해석.
+  bool shotNeedsEndFrame(Shot s) => shotVideoMode(s) == VideoMode.fe2v;
+
+  /// 비트의 실제 길이(초) = 샷 재생 길이 합. (파생 비트도 자기 샷 목록으로 계산)
+  double beatSeconds(DialogueBeat b) =>
+      b.shots.fold(0.0, (a, s) => a + shotDisplaySeconds(s));
+
+  /// 음성(목표) 대비 남는/모자란 시간(초). 양수=영상 김, 음수=영상 짧음. 음성 없으면 null.
+  double? beatCoverageGap(DialogueBeat b) {
+    final target = voiceSecondsOf(b);
+    return target > 0 ? beatSeconds(b) - target : null;
+  }
 
   /// 이 비트가 속한 씬.
   StoryScene? sceneOf2(DialogueBeat beat) {
@@ -392,47 +431,51 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
-  /// 파생 트랙 샷을 **이 트랙에서 수정**할 수 있게 분리한다 — 기준 내용을 복사해 오고
-  /// 프레임 파일도 자기 것으로 떠 온다(기준 샷을 지워도 이 트랙이 안 깨진다).
-  Future<void> detachShot(Shot shot) async {
-    final base = baseShotOf(shot);
-    if (base == null || shot.detached) return;
-    shot.adoptContentFrom(base);
-    shot.startImagePath =
-        await _copyMedia(base.startImagePath, '${shot.id}_start');
-    shot.endImagePath = await _copyMedia(base.endImagePath, '${shot.id}_end');
-    shot.detached = true;
-    _syncShotControllers(shot);
-    for (final m in GenMode.values) {
-      final k = busyKey(shot.id, m);
-      _ver[k] = (_ver[k] ?? 0) + 1;
+  // ── 오버라이드 쓰기 헬퍼: 파생이면 overrides에, 기준이면 타입 필드에 쓴다 ──
+
+  /// 파생 비트의 문자열 필드를 플러시 — 기준과 같으면 상속(키 제거), 다르면 오버라이드.
+  void _flushBeatStr(
+      DialogueBeat beat, String key, String? text, String baseVal) {
+    if (text == null) return;
+    if (text == baseVal) {
+      beat.overrides.remove(key);
+    } else {
+      beat.overrides[key] = text;
     }
-    notifyListeners();
-    await save();
   }
 
-  /// 분리했던 샷을 다시 기준 트랙에 붙인다 — 내용은 기준 것으로 돌아가고,
-  /// **이 트랙에서 뽑아 둔 영상은 그대로 둔다**(트랙의 결과물이니까).
-  /// 분리 중 만든 프레임 파일은 프로젝트 폴더에 남는다(참조만 끊는다).
-  Future<void> relinkShot(Shot shot) async {
-    final base = baseShotOf(shot);
-    if (base == null || !shot.detached) return;
-    shot.detached = false;
-    shot.adoptContentFrom(base);
-    _syncShotControllers(shot);
-    for (final m in GenMode.values) {
-      final k = busyKey(shot.id, m);
-      _ver[k] = (_ver[k] ?? 0) + 1;
+  /// 파생 샷의 문자열 필드를 플러시 — 기준과 같으면 상속(키 제거), 다르면 오버라이드.
+  void _flushShotStr(Shot shot, String key, String? text, String baseVal) {
+    if (text == null) return;
+    if (text == baseVal) {
+      shot.overrides.remove(key);
+    } else {
+      shot.overrides[key] = text;
     }
-    notifyListeners();
-    await save();
   }
 
-  /// 파생 트랙들을 기준 트랙에 맞춘다 — **구조(비트·샷 개수·순서)를 그대로 비추고**,
-  /// 따라가는 중인 샷의 내용을 기준 것으로 덮는다. 자기 것으로 남는 건 영상뿐.
-  ///
-  /// 불러온 직후·구조가 바뀐 뒤·저장 직전에 부른다. 여기가 "트랙끼리 구조가 같다"를
-  /// 실제로 지키는 유일한 곳이다.
+  /// 샷의 비-텍스트 필드를 설정 — 파생이면 overrides에, 기준이면 setBase()로 타입 필드에.
+  void _setShotField(
+      Shot shot, String key, Object? value, void Function() setBase) {
+    if (shot.isDerived) {
+      shot.overrides[key] = value;
+    } else {
+      setBase();
+    }
+  }
+
+  /// 시작/끝 프레임 경로 설정 — 파생이면 그 프레임만 이 트랙 것으로 오버라이드된다.
+  void _setShotStartImage(Shot shot, String? path) =>
+      _setShotField(shot, Shot.kStartImage, path, () => shot.startImagePath = path);
+  void _setShotEndImage(Shot shot, String? path) =>
+      _setShotField(shot, Shot.kEndImage, path, () => shot.endImagePath = path);
+
+  // ───────── 트랙 구조 미러링(값 복사 없음) ─────────
+
+  /// 파생 트랙들을 기준 트랙 **구조(비트·샷 개수·순서)에만** 맞춘다 — 값은 복사하지 않는다.
+  /// 기준에 있는 비트/샷을 파생에도 같은 자리에 두고(없으면 빈 파생을 끼운다), 기준에서
+  /// 사라진 것은 파생에서도 걷어낸다. 파생의 overrides·자기 음성·자기 영상은 손대지 않는다.
+  /// 불러온 직후·구조가 바뀐 뒤·저장 직전에 부른다.
   void _syncTracks(StoryScene scene) {
     final base = scene.baseTrack;
     for (var i = 1; i < scene.tracks.length; i++) {
@@ -441,21 +484,15 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   void _syncTrack(VideoTrack base, VideoTrack track) {
-    // 기준 id로 짝을 찾는다 — 순서가 바뀌어도 뽑아 둔 영상이 엉뚱한 샷에 붙지 않게.
+    // 기준 id로 짝을 찾는다 — 순서가 바뀌어도 뽑아 둔 영상·오버라이드가 엉뚱한 자리에 안 붙게.
     final oldBeats = {for (final b in track.beats) b.baseId ?? b.id: b};
     final beats = <DialogueBeat>[];
     for (final baseBeat in base.beats) {
       final beat = oldBeats.remove(baseBeat.id) ?? _mirrorBeat(baseBeat);
-      beat.adoptContentFrom(baseBeat);
       final oldShots = {for (final s in beat.shots) s.baseId ?? s.id: s};
       final shots = <Shot>[];
       for (final baseShot in baseBeat.shots) {
-        final shot = oldShots.remove(baseShot.id) ?? _mirrorShot(baseShot);
-        if (!shot.detached) {
-          shot.adoptContentFrom(baseShot);
-          _syncShotControllers(shot);
-        }
-        shots.add(shot);
+        shots.add(oldShots.remove(baseShot.id) ?? _mirrorShot(baseShot));
       }
       for (final gone in oldShots.values) {
         _disposeShotControllers(gone.id); // 기준에서 사라진 샷
@@ -472,15 +509,18 @@ class StoryboardProvider extends ChangeNotifier {
     track.beats = beats;
   }
 
-  /// 파생 트랙의 비트는 편집칸을 따로 갖지 않는다 — 글은 기준 비트 한 벌뿐이고
-  /// 편집칸 접근자([titleCtrl] 등)가 거기로 넘겨준다.
-  DialogueBeat _mirrorBeat(DialogueBeat base) =>
-      DialogueBeat(id: _newId('beat'), baseId: base.id);
+  /// 새 파생 비트 — 진짜로 비어 있다(overrides={}). 편집칸은 기준 값을 시드로 갖고, 편집하면
+  /// 그때 overrides가 생긴다.
+  DialogueBeat _mirrorBeat(DialogueBeat base) {
+    final beat = DialogueBeat(id: _newId('beat'), baseId: base.id);
+    _addDialogueControllers(beat, base);
+    return beat;
+  }
 
-  /// 파생 트랙 샷은 **자기 id**를 갖는다 — 영상 파일명이 `<id>_vlow.mp4`라 id가 곧 슬롯이다.
+  /// 새 파생 샷 — 진짜로 비어 있다(overrides={}). 편집칸은 기준 값을 시드로 갖는다.
   Shot _mirrorShot(Shot base) {
     final shot = Shot(id: _newId('clip'), baseId: base.id);
-    _addShotControllers(shot);
+    _addShotControllers(shot, base);
     return shot;
   }
 
@@ -536,7 +576,7 @@ class StoryboardProvider extends ChangeNotifier {
         n++;
         final path = videoPathOf(shot); // 상속 포함(자기 것 없으면 기준 트랙 영상)
         if (path == null) continue;
-        final t = shot.title.trim();
+        final t = shotTitle(shot).trim();
         out.add((
           path: path,
           title: t.isEmpty ? '샷 $n' : '샷 $n · $t',
@@ -563,14 +603,13 @@ class StoryboardProvider extends ChangeNotifier {
 
   TextEditingController sceneTitleCtrl(String sceneId) =>
       _sceneTitles[sceneId]!;
-  // 비트의 글(제목·메모·연출)은 대사와 마찬가지로 **트랙끼리 하나**다 — 파생 트랙에서 열어도
-  // 기준 비트의 편집칸을 그대로 내준다. 어느 트랙에서 고쳐도 같이 바뀐다.
+  // 비트의 글(제목·메모·연출)은 **비트마다 자기 편집칸**을 갖는다 — 파생 비트도 자기 것.
+  // 편집칸은 상속 값을 시드로 보여 주다가, 사용자가 고치면 저장 때 그 필드만 overrides로 간다.
   TextEditingController titleCtrl(String dialogueId) =>
-      _dialogueTitles[_scriptBeatId(dialogueId)]!;
-  TextEditingController noteCtrl(String dialogueId) =>
-      _notes[_scriptBeatId(dialogueId)]!;
+      _dialogueTitles[dialogueId]!;
+  TextEditingController noteCtrl(String dialogueId) => _notes[dialogueId]!;
   TextEditingController directionCtrl(String dialogueId) =>
-      _directions[_scriptBeatId(dialogueId)]!;
+      _directions[dialogueId]!;
   TextEditingController startCtrl(String shotId) => _startPrompts[shotId]!;
   TextEditingController startKoCtrl(String shotId) => _startPromptKos[shotId]!;
   TextEditingController endCtrl(String shotId) => _endPrompts[shotId]!;
@@ -619,12 +658,20 @@ class StoryboardProvider extends ChangeNotifier {
       keep(sc.bgmPath);
       for (final t in sc.tracks) {
         for (final b in t.beats) {
-          keep(b.dialogue?.voicePath);
-          keep(b.sfx?.path); // 효과음(기준 비트에만 있다)
+          keep(b.dialogue?.voicePath); // 음성(트랙별 소유)
+          // 효과음 — 기준 비트는 타입 필드, 파생 비트는 overrides에 있다.
+          keep((b.isDerived ? b.overrides[DialogueBeat.kSfx] as Sfx? : b.sfx)
+              ?.path);
           for (final s in b.shots) {
-            keep(s.startImagePath);
-            keep(s.endImagePath);
-            keep(s.videoPath);
+            // 프레임 — 파생 샷은 오버라이드한 것만 자기 파일(상속 중이면 기준 트랙 것을 이미 살림).
+            if (s.isDerived) {
+              keep(s.overrides[Shot.kStartImage] as String?);
+              keep(s.overrides[Shot.kEndImage] as String?);
+            } else {
+              keep(s.startImagePath);
+              keep(s.endImagePath);
+            }
+            keep(s.videoPath); // 영상은 트랙별 소유
           }
         }
       }
@@ -740,13 +787,13 @@ class StoryboardProvider extends ChangeNotifier {
       _sceneNotes[scene.id] = TextEditingController(text: scene.note);
       for (final track in scene.tracks) {
         for (final beat in track.beats) {
-          if (!beat.isDerived) _addDialogueControllers(beat); // 글은 기준 비트에만
+          _addDialogueControllers(beat); // 파생 비트도 자기 편집칸(상속 값 시드)
           for (final shot in beat.shots) {
             _addShotControllers(shot);
           }
         }
       }
-      // 파일에는 따라가는 샷의 내용이 안 적혀 있다 — 기준 트랙에서 채운다.
+      // 구조(비트·샷 개수/순서)만 기준 트랙에 맞춘다 — 값은 파일에 있는 그대로(복사 없음).
       _syncTracks(scene);
     }
 
@@ -903,10 +950,15 @@ class StoryboardProvider extends ChangeNotifier {
     await checkConnection();
   }
 
-  void _addDialogueControllers(DialogueBeat beat) {
-    _dialogueTitles[beat.id] = TextEditingController(text: beat.title);
-    _notes[beat.id] = TextEditingController(text: beat.note);
-    _directions[beat.id] = TextEditingController(text: beat.direction);
+  /// 비트 편집칸 생성 — 상속 해석값을 시드로. [base] 생략 시 씬에서 찾는다(로드 시엔 이미 트랙에
+  /// 들어 있어 찾을 수 있고, 미러링 중 새로 만들 땐 base를 넘긴다).
+  void _addDialogueControllers(DialogueBeat beat, [DialogueBeat? base]) {
+    base ??= baseBeatOf(beat);
+    _dialogueTitles[beat.id] =
+        TextEditingController(text: beat.resolvedTitle(base));
+    _notes[beat.id] = TextEditingController(text: beat.resolvedNote(base));
+    _directions[beat.id] =
+        TextEditingController(text: beat.resolvedDirection(base));
   }
 
   void _disposeDialogueControllers(String dialogueId) {
@@ -915,35 +967,25 @@ class StoryboardProvider extends ChangeNotifier {
     _directions.remove(dialogueId)?.dispose();
   }
 
-  void _addShotControllers(Shot shot) {
-    _startPrompts[shot.id] = TextEditingController(text: shot.startPrompt);
-    _startPromptKos[shot.id] = TextEditingController(text: shot.startPromptKo);
-    _endPrompts[shot.id] = TextEditingController(text: shot.endPrompt);
-    _endPromptKos[shot.id] = TextEditingController(text: shot.endPromptKo);
-    _vprompts[shot.id] = TextEditingController(text: shot.videoPrompt);
-    _vpromptKos[shot.id] = TextEditingController(text: shot.videoPromptKo);
-    _vnegs[shot.id] = TextEditingController(text: shot.videoNegativePrompt);
-    _shotNotes[shot.id] = TextEditingController(text: shot.note);
-    _videoNotes[shot.id] = TextEditingController(text: shot.videoNote);
-  }
-
-  /// 따라가는(상속) 샷의 편집칸을 모델 값에 맞춘다. 상속 중엔 읽기 전용이라
-  /// 사용자가 타이핑하고 있을 리 없다 — 그냥 덮어써도 안전하다.
-  void _syncShotControllers(Shot shot) {
-    _setCtrl(_startPrompts[shot.id], shot.startPrompt);
-    _setCtrl(_startPromptKos[shot.id], shot.startPromptKo);
-    _setCtrl(_endPrompts[shot.id], shot.endPrompt);
-    _setCtrl(_endPromptKos[shot.id], shot.endPromptKo);
-    _setCtrl(_vprompts[shot.id], shot.videoPrompt);
-    _setCtrl(_vpromptKos[shot.id], shot.videoPromptKo);
-    _setCtrl(_vnegs[shot.id], shot.videoNegativePrompt);
-    _setCtrl(_shotNotes[shot.id], shot.note);
-    _setCtrl(_videoNotes[shot.id], shot.videoNote);
-  }
-
-  void _setCtrl(TextEditingController? c, String text) {
-    if (c == null || c.text == text) return;
-    c.text = text;
+  /// 샷 편집칸 생성 — 상속 해석값을 시드로. [base] 생략 시 씬에서 찾는다.
+  void _addShotControllers(Shot shot, [Shot? base]) {
+    base ??= baseShotOf(shot);
+    _startPrompts[shot.id] =
+        TextEditingController(text: shot.resolvedStartPrompt(base));
+    _startPromptKos[shot.id] =
+        TextEditingController(text: shot.resolvedStartPromptKo(base));
+    _endPrompts[shot.id] =
+        TextEditingController(text: shot.resolvedEndPrompt(base));
+    _endPromptKos[shot.id] =
+        TextEditingController(text: shot.resolvedEndPromptKo(base));
+    _vprompts[shot.id] =
+        TextEditingController(text: shot.resolvedVideoPrompt(base));
+    _vpromptKos[shot.id] =
+        TextEditingController(text: shot.resolvedVideoPromptKo(base));
+    _vnegs[shot.id] = TextEditingController(text: shot.resolvedVideoNeg(base));
+    _shotNotes[shot.id] = TextEditingController(text: shot.resolvedNote(base));
+    _videoNotes[shot.id] =
+        TextEditingController(text: shot.resolvedVideoNote(base));
   }
 
   void _disposeShotControllers(String shotId) {
@@ -963,39 +1005,122 @@ class StoryboardProvider extends ChangeNotifier {
       scene.title = _sceneTitles[scene.id]?.text ?? scene.title;
       scene.note = _sceneNotes[scene.id]?.text ?? scene.note;
       for (final track in scene.tracks) {
+        // 파생 트랙은 플러시 전에 **상속 중인**(오버라이드 안 함·편집 중 아님) 편집칸을 지금의
+        // 기준 값으로 맞춘다. 기준 트랙(tracks[0])이 먼저 플러시되므로 이 시점 기준 값은 최신이다.
+        // 이걸 안 하면 옛 시드가 남은 상속 편집칸이 새 기준값과 달라 보여 잘못 오버라이드로 굳는다.
+        if (!identical(track, scene.baseTrack)) {
+          _refreshInheritedDerived(track);
+        }
         for (final beat in track.beats) {
-          // 파생 트랙의 비트·따라가는 샷은 편집칸이 잠겨 있다(내용은 기준 트랙의 것) —
-          // 되돌려 쓰지 않고 아래 _syncTracks가 기준에서 다시 채운다.
+          // 편집칸(제목·메모·연출) 플러시 — 기준 비트는 타입 필드에, 파생 비트는 기준과 다르면
+          // overrides로(같으면 상속 유지). 트랙1은 파생 편집으로 절대 바뀌지 않는다.
           if (!beat.isDerived) {
             beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
             beat.note = _notes[beat.id]?.text ?? beat.note;
             beat.direction = _directions[beat.id]?.text ?? beat.direction;
+          } else {
+            final bb = baseBeatOf(beat);
+            _flushBeatStr(beat, DialogueBeat.kTitle,
+                _dialogueTitles[beat.id]?.text, bb?.title ?? '');
+            _flushBeatStr(beat, DialogueBeat.kNote, _notes[beat.id]?.text,
+                bb?.note ?? '');
+            _flushBeatStr(beat, DialogueBeat.kDirection,
+                _directions[beat.id]?.text, bb?.direction ?? '');
           }
           for (final shot in beat.shots) {
-            if (shot.inherits) continue;
-            shot.startPrompt = _startPrompts[shot.id]?.text ?? shot.startPrompt;
-            shot.startPromptKo =
-                _startPromptKos[shot.id]?.text ?? shot.startPromptKo;
-            shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
-            shot.endPromptKo =
-                _endPromptKos[shot.id]?.text ?? shot.endPromptKo;
-            shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
-            shot.videoPromptKo =
-                _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
-            shot.videoNegativePrompt =
-                _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
-            shot.note = _shotNotes[shot.id]?.text ?? shot.note;
-            shot.videoNote = _videoNotes[shot.id]?.text ?? shot.videoNote;
+            if (!shot.isDerived) {
+              shot.startPrompt =
+                  _startPrompts[shot.id]?.text ?? shot.startPrompt;
+              shot.startPromptKo =
+                  _startPromptKos[shot.id]?.text ?? shot.startPromptKo;
+              shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
+              shot.endPromptKo =
+                  _endPromptKos[shot.id]?.text ?? shot.endPromptKo;
+              shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
+              shot.videoPromptKo =
+                  _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
+              shot.videoNegativePrompt =
+                  _vnegs[shot.id]?.text ?? shot.videoNegativePrompt;
+              shot.note = _shotNotes[shot.id]?.text ?? shot.note;
+              shot.videoNote = _videoNotes[shot.id]?.text ?? shot.videoNote;
+            } else {
+              final bs = baseShotOf(shot);
+              _flushShotStr(shot, Shot.kStartPrompt,
+                  _startPrompts[shot.id]?.text, bs?.startPrompt ?? '');
+              _flushShotStr(shot, Shot.kStartPromptKo,
+                  _startPromptKos[shot.id]?.text, bs?.startPromptKo ?? '');
+              _flushShotStr(shot, Shot.kEndPrompt, _endPrompts[shot.id]?.text,
+                  bs?.endPrompt ?? '');
+              _flushShotStr(shot, Shot.kEndPromptKo,
+                  _endPromptKos[shot.id]?.text, bs?.endPromptKo ?? '');
+              _flushShotStr(shot, Shot.kVideoPrompt, _vprompts[shot.id]?.text,
+                  bs?.videoPrompt ?? '');
+              _flushShotStr(shot, Shot.kVideoPromptKo,
+                  _vpromptKos[shot.id]?.text, bs?.videoPromptKo ?? '');
+              _flushShotStr(shot, Shot.kVideoNeg, _vnegs[shot.id]?.text,
+                  bs?.videoNegativePrompt ?? '');
+              _flushShotStr(shot, Shot.kNote, _shotNotes[shot.id]?.text,
+                  bs?.note ?? '');
+              _flushShotStr(shot, Shot.kVideoNote, _videoNotes[shot.id]?.text,
+                  bs?.videoNote ?? '');
+            }
           }
         }
       }
-      // 기준 트랙이 방금 바뀌었을 수 있다 — 파생 트랙을 다시 맞춘 뒤 쓴다.
+      // 기준 트랙이 방금 바뀌었을 수 있다 — 파생 트랙 구조를 다시 맞춘 뒤 쓴다.
       _syncTracks(scene);
       for (final track in scene.tracks) {
         _syncLinkedStartPrompts(track);
       }
     }
     await _store.save(_scenes);
+  }
+
+  /// 파생 트랙의 **상속 중인**(오버라이드 안 한) 편집칸을 지금 기준 값으로 맞춘다.
+  /// - 오버라이드한 필드는 자기 값이라 건드리지 않는다.
+  /// - **지금 편집 중인**(선택된) 비트/샷은 건드리지 않는다 — 사용자가 방금 타이핑한 값이므로.
+  /// - 값이 같으면 세팅을 건너뛰어 커서가 튀지 않는다([_setCtrl]).
+  /// 플러시 **직전에** 부른다 — 안 그러면 옛 시드가 새 기준값과 달라 잘못 오버라이드로 굳는다.
+  void _refreshInheritedDerived(VideoTrack track) {
+    for (final beat in track.beats) {
+      final editingBeat = beat.id == _selectedDialogueId;
+      if (!editingBeat) {
+        final bb = baseBeatOf(beat);
+        if (!beat.overrides.containsKey(DialogueBeat.kTitle)) {
+          _setCtrl(_dialogueTitles[beat.id], bb?.title ?? '');
+        }
+        if (!beat.overrides.containsKey(DialogueBeat.kNote)) {
+          _setCtrl(_notes[beat.id], bb?.note ?? '');
+        }
+        if (!beat.overrides.containsKey(DialogueBeat.kDirection)) {
+          _setCtrl(_directions[beat.id], bb?.direction ?? '');
+        }
+      }
+      for (final shot in beat.shots) {
+        if (shot.id == _selectedShotId) continue; // 편집 중인 샷은 그대로
+        final bs = baseShotOf(shot);
+        void refresh(String key, TextEditingController? c, String v) {
+          if (!shot.overrides.containsKey(key)) _setCtrl(c, v);
+        }
+
+        refresh(Shot.kStartPrompt, _startPrompts[shot.id], bs?.startPrompt ?? '');
+        refresh(Shot.kStartPromptKo, _startPromptKos[shot.id],
+            bs?.startPromptKo ?? '');
+        refresh(Shot.kEndPrompt, _endPrompts[shot.id], bs?.endPrompt ?? '');
+        refresh(Shot.kEndPromptKo, _endPromptKos[shot.id], bs?.endPromptKo ?? '');
+        refresh(Shot.kVideoPrompt, _vprompts[shot.id], bs?.videoPrompt ?? '');
+        refresh(Shot.kVideoPromptKo, _vpromptKos[shot.id],
+            bs?.videoPromptKo ?? '');
+        refresh(Shot.kVideoNeg, _vnegs[shot.id], bs?.videoNegativePrompt ?? '');
+        refresh(Shot.kNote, _shotNotes[shot.id], bs?.note ?? '');
+        refresh(Shot.kVideoNote, _videoNotes[shot.id], bs?.videoNote ?? '');
+      }
+    }
+  }
+
+  void _setCtrl(TextEditingController? c, String text) {
+    if (c == null || c.text == text) return;
+    c.text = text;
   }
 
   /// 시작장면을 연동한 샷의 프롬프트를 앞 샷의 끝 프롬프트에 맞춘다.
@@ -1006,10 +1131,16 @@ class StoryboardProvider extends ChangeNotifier {
     final all = [for (final beat in track.beats) ...beat.shots];
     for (var i = 1; i < all.length; i++) {
       final shot = all[i];
-      if (!shot.linkStart) continue;
-      final prompt = all[i - 1].endPrompt;
-      if (shot.startPrompt == prompt) continue;
-      shot.startPrompt = prompt;
+      if (!shotLinkStart(shot)) continue;
+      final prompt = shotEndPrompt(all[i - 1]);
+      if (shotStartPrompt(shot) == prompt) continue;
+      // 연동 시작 프롬프트도 트랙별로 해석/기록 — 파생은 기준과 다를 때만 오버라이드.
+      if (shot.isDerived) {
+        _flushShotStr(shot, Shot.kStartPrompt, prompt,
+            baseShotOf(shot)?.startPrompt ?? '');
+      } else {
+        shot.startPrompt = prompt;
+      }
       // 읽기 전용 칸이라 사용자가 타이핑 중일 리 없다 — 덮어써도 안전하다.
       _startPrompts[shot.id]?.text = prompt;
     }
@@ -1088,24 +1219,41 @@ class StoryboardProvider extends ChangeNotifier {
       for (final beat in track.beats) {
         final newBeatId = _newId('beat');
         idMap[beat.id] = newBeatId;
+        // 음성(트랙별 소유 — dialogue에).
         final voice = beat.dialogue?.voicePath;
         if (voice != null) {
           beat.dialogue!.voicePath =
               await _copyMedia(voice, '${newBeatId}_voice');
         }
-        final sfx = beat.sfx?.path; // 효과음(기준 비트에만)
-        if (sfx != null) {
-          beat.sfx!.path = await _copyMedia(sfx, '${newBeatId}_sfx');
+        // 효과음 — 기준 비트는 타입 필드, 파생 비트는 overrides에 있다.
+        final sfx = beat.isDerived
+            ? beat.overrides[DialogueBeat.kSfx] as Sfx?
+            : beat.sfx;
+        if (sfx?.path != null) {
+          sfx!.path = await _copyMedia(sfx.path, '${newBeatId}_sfx');
         }
         for (final shot in beat.shots) {
           final newShotId = _newId('clip');
           idMap[shot.id] = newShotId;
-          // 연동(linkStart) 중인 시작장면은 자기 파일이 없다(앞 샷 끝을 가리킴) — 복사할 것도 없다.
-          // 따라가는 샷의 프레임도 기준 샷 파일을 가리키고 있을 뿐이라 여기서 다시 이어 준다.
-          shot.startImagePath =
-              await _copyMedia(shot.startImagePath, '${newShotId}_start');
-          shot.endImagePath =
-              await _copyMedia(shot.endImagePath, '${newShotId}_end');
+          // 프레임 — 기준 샷은 타입 필드, 파생 샷은 오버라이드했을 때만 overrides에 있다.
+          if (shot.isDerived) {
+            if (shot.overrides.containsKey(Shot.kStartImage)) {
+              shot.overrides[Shot.kStartImage] = await _copyMedia(
+                  shot.overrides[Shot.kStartImage] as String?,
+                  '${newShotId}_start');
+            }
+            if (shot.overrides.containsKey(Shot.kEndImage)) {
+              shot.overrides[Shot.kEndImage] = await _copyMedia(
+                  shot.overrides[Shot.kEndImage] as String?,
+                  '${newShotId}_end');
+            }
+          } else {
+            shot.startImagePath =
+                await _copyMedia(shot.startImagePath, '${newShotId}_start');
+            shot.endImagePath =
+                await _copyMedia(shot.endImagePath, '${newShotId}_end');
+          }
+          // 영상은 트랙별 소유(기준·파생 모두 타입 필드).
           shot.videoPath =
               await _copyMedia(shot.videoPath, '${newShotId}_vlow');
           shot.id = newShotId;
@@ -1122,18 +1270,18 @@ class StoryboardProvider extends ChangeNotifier {
       }
     }
 
-    // 컨트롤러 등록(새 id 기준).
+    // 컨트롤러 등록(새 id 기준) — 파생 비트도 자기 편집칸(상속 값 시드).
     _sceneTitles[copy.id] = TextEditingController(text: copy.title);
     _sceneNotes[copy.id] = TextEditingController(text: copy.note);
     for (final track in copy.tracks) {
       for (final beat in track.beats) {
-        if (!beat.isDerived) _addDialogueControllers(beat);
+        _addDialogueControllers(beat);
         for (final shot in beat.shots) {
           _addShotControllers(shot);
         }
       }
     }
-    _syncTracks(copy); // 따라가는 샷의 프레임을 복제본의 기준 샷 파일로 다시 맞춘다
+    _syncTracks(copy); // 구조만 재확인(값 복사 없음)
 
     _scenes.add(copy);
     _selectSceneInternal(copy.id);
@@ -1327,113 +1475,171 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 따라가는 샷을 고치려 하면 **먼저 분리**한다 — "엎으면 수정된다"가 그대로 동작하도록.
-  /// (평소엔 UI가 잠가 두므로 여기까지 오는 건 되돌리기 어려운 조작뿐이다.)
-  Future<void> _ensureEditable(Shot shot) async {
-    if (!shot.inherits) return;
-    await detachShot(shot);
-    messenger?.call('${trackLabel(trackOf(shot) ?? tracks.first)}에서 이 샷을 분리했습니다');
-  }
-
   /// 샷별 영상 길이(초) 저장. 스틸컷은 0.1초 단위까지, AI는 정수 초로 슬라이더가 넘겨준다.
-  /// 0.1 단위로 반올림해 부동소수 오차를 남기지 않는다. 마지막 값은 새 샷 기본값으로도 기억.
+  /// 파생 샷이면 그 트랙만의 길이로 오버라이드된다(기준 트랙 길이는 그대로).
   Future<void> setShotSeconds(Shot shot, double sec) async {
-    await _ensureEditable(shot);
     final v = (sec.clamp(0.1, 15) * 10).round() / 10;
-    shot.videoSeconds = v;
+    _setShotField(shot, Shot.kVideoSeconds, v, () => shot.videoSeconds = v);
     _settings = _settings.copyWith(videoSeconds: v.round()); // 새 샷 기본값(정수로 씨앗만)
     _settingsStore.save(_settings);
     save();
   }
 
-  // ───────── 대사(샷 소유, 0/1) ─────────
-  // 대사는 샷이 소유한다(샷 하나 = 대사 1개 또는 없음). 편집은 모달에서 값만 반영.
+  // ───────── 대사(비트 소유, 0/1) ─────────
+  // 대사 편집은 **자기 트랙에만** 쓴다 — 파생 비트는 overrides로, 기준 비트는 타입 필드로.
+  // (음성 mp3는 트랙별 소유라 dialogue에 직접 있고 오버라이드 대상이 아니다.)
 
-  /// 대사·음성은 **트랙이 갈라도 하나**다(같은 대본을 다른 백엔드로 뽑는 것이므로) —
-  /// 파생 트랙에서 편집해도 기준 비트를 고친다. 어느 트랙에서 보든 같이 바뀐다.
-  DialogueBeat _scriptBeat(DialogueBeat beat) =>
-      beat.isDerived ? (baseBeatOf(beat) ?? beat) : beat;
-
-  /// 이 샷의 대사 텍스트 저장(대사 없으면 새로 만든다).
+  /// 이 비트의 대사 텍스트 저장(없으면 새로).
   void setShotDialogueText(DialogueBeat beat, String text) {
-    (_scriptBeat(beat).dialogue ??= Dialogue()).text = text;
+    if (beat.isDerived) {
+      beat.overrides
+        ..remove(DialogueBeat.kSilent)
+        ..[DialogueBeat.kText] = text;
+    } else {
+      (beat.dialogue ??= Dialogue()).text = text;
+    }
     notifyListeners();
     save();
   }
 
-  /// 이 샷의 대사 화자(Character.id, null=내레이션) 저장(대사 없으면 새로 만든다).
+  /// 이 비트의 대사 화자(Character.id, null=내레이션) 저장(없으면 새로).
   void setShotDialogueSpeaker(DialogueBeat beat, String? speakerId) {
-    (_scriptBeat(beat).dialogue ??= Dialogue()).speakerId = speakerId;
+    if (beat.isDerived) {
+      beat.overrides
+        ..remove(DialogueBeat.kSilent)
+        ..[DialogueBeat.kSpeaker] = speakerId;
+    } else {
+      (beat.dialogue ??= Dialogue()).speakerId = speakerId;
+    }
     notifyListeners();
     save();
   }
 
-  /// 이 샷의 대사 제거(무음 샷으로).
+  /// 이 비트의 대사 제거(무음으로). 파생 비트는 이 트랙만 무음(kSilent), 기준 비트는 대사 삭제.
   void removeShotDialogue(DialogueBeat beat) {
-    _scriptBeat(beat).dialogue = null;
+    if (beat.isDerived) {
+      beat.overrides
+        ..remove(DialogueBeat.kText)
+        ..remove(DialogueBeat.kSpeaker)
+        ..[DialogueBeat.kSilent] = true;
+    } else {
+      beat.dialogue = null;
+    }
     notifyListeners();
     save();
   }
 
-  // ── 효과음 설정(전부 기준 비트에 쓴다 — 트랙 공유) ──
+  // ── 효과음/자막: 트랙별 오버라이드 — 파생 비트에서 처음 손대면 지금 보이던 값(상속본)을
+  //    스냅샷해 자기 것으로 만들고, 그 뒤엔 자기 것만 고친다(기준 비트는 안 바뀐다). ──
+
+  /// 편집할 효과음 객체 — 파생 비트면 자기 overrides의 Sfx(없으면 스냅샷 생성).
+  Sfx _editableSfx(DialogueBeat beat) {
+    if (!beat.isDerived) return beat.sfx ??= Sfx();
+    final cur = beat.overrides[DialogueBeat.kSfx];
+    if (cur is Sfx) return cur;
+    final seed = _snapshotSfx(sfxOf(beat)); // 묘사·길이·강도만(소리는 다시 뽑는다)
+    beat.overrides[DialogueBeat.kSfx] = seed;
+    return seed;
+  }
+
+  Sfx _snapshotSfx(Sfx? s) => s == null
+      ? Sfx()
+      : Sfx(
+          prompt: s.prompt,
+          durationSeconds: s.durationSeconds,
+          promptInfluence: s.promptInfluence,
+        );
+
   void setSfxPrompt(DialogueBeat beat, String text) {
-    (_scriptBeat(beat).sfx ??= Sfx()).prompt = text;
+    _editableSfx(beat).prompt = text;
     notifyListeners();
     save();
   }
 
   void setSfxDuration(DialogueBeat beat, double sec) {
-    // 0.1초 단위로 반올림(0.5~22초).
-    (_scriptBeat(beat).sfx ??= Sfx()).durationSeconds =
-        (sec.clamp(0.5, 22) * 10).round() / 10;
+    _editableSfx(beat).durationSeconds = (sec.clamp(0.5, 22) * 10).round() / 10;
     notifyListeners();
     save();
   }
 
   void setSfxInfluence(DialogueBeat beat, double v) {
-    (_scriptBeat(beat).sfx ??= Sfx()).promptInfluence =
-        (v.clamp(0.0, 1.0) * 100).round() / 100;
+    _editableSfx(beat).promptInfluence = (v.clamp(0.0, 1.0) * 100).round() / 100;
     notifyListeners();
     save();
   }
 
-  // ── 자막 설정(전부 기준 비트에 쓴다 — 트랙 공유) ──
+  /// 편집할 자막 객체 — 파생 비트면 자기 overrides의 Caption(없으면 스냅샷 생성).
+  Caption _editableCaption(DialogueBeat beat) {
+    if (!beat.isDerived) return beat.caption ??= Caption();
+    final cur = beat.overrides[DialogueBeat.kCaption];
+    if (cur is Caption) return cur;
+    final seed = _snapshotCaption(captionOf(beat));
+    beat.overrides[DialogueBeat.kCaption] = seed;
+    return seed;
+  }
+
+  Caption _snapshotCaption(Caption? c) => c == null
+      ? Caption()
+      : Caption(
+          position: c.position,
+          cues: [
+            for (final cue in c.cues)
+              CaptionCue(seconds: cue.seconds, text: cue.text)
+          ],
+        );
+
   /// 자막 구간 하나 추가(끝에). 없으면 자막을 새로 만든다.
   void addCaptionCue(DialogueBeat beat) {
-    (_scriptBeat(beat).caption ??= Caption()).cues.add(CaptionCue());
+    _editableCaption(beat).cues.add(CaptionCue());
     notifyListeners();
     save();
   }
 
-  /// 자막 구간 제거.
+  /// 자막 구간 제거. 파생 비트가 아직 상속 중이면 스냅샷 후 같은 자리 구간을 지운다.
   void removeCaptionCue(DialogueBeat beat, CaptionCue cue) {
-    _scriptBeat(beat).caption?.cues.remove(cue);
+    final idx = _cueIndex(beat, cue);
+    final cap = _editableCaption(beat);
+    if (idx >= 0 && idx < cap.cues.length) cap.cues.removeAt(idx);
     notifyListeners();
     save();
   }
 
   void setCaptionCueText(DialogueBeat beat, CaptionCue cue, String text) {
-    cue.text = text;
-    notifyListeners();
-    save();
+    _editCaptionCue(beat, cue, (c) => c.text = text);
   }
 
   void setCaptionCueSeconds(DialogueBeat beat, CaptionCue cue, double sec) {
-    cue.seconds = (sec.clamp(0.1, 60) * 10).round() / 10; // 0.1초 단위
+    _editCaptionCue(
+        beat, cue, (c) => c.seconds = (sec.clamp(0.1, 60) * 10).round() / 10);
+  }
+
+  void setCaptionPosition(DialogueBeat beat, CaptionPosition pos) {
+    _editableCaption(beat).position = pos;
     notifyListeners();
     save();
   }
 
-  void setCaptionPosition(DialogueBeat beat, CaptionPosition pos) {
-    (_scriptBeat(beat).caption ??= Caption()).position = pos;
+  /// 현재 보이는(상속 포함) 자막에서 [cue]의 자리 번호 — 스냅샷 후 같은 자리를 찾기 위함.
+  int _cueIndex(DialogueBeat beat, CaptionCue cue) =>
+      captionOf(beat)?.cues.indexOf(cue) ?? -1;
+
+  /// 자막 구간 한 칸 편집 — 파생 비트가 상속 중이면 자리 번호로 스냅샷의 같은 구간에 적용.
+  void _editCaptionCue(
+      DialogueBeat beat, CaptionCue cue, void Function(CaptionCue) apply) {
+    final idx = _cueIndex(beat, cue);
+    final cap = _editableCaption(beat);
+    final target = (idx >= 0 && idx < cap.cues.length)
+        ? cap.cues[idx]
+        : (cap.cues.contains(cue) ? cue : null);
+    if (target != null) apply(target);
     notifyListeners();
     save();
   }
 
   /// 생성된 효과음만 지운다(묘사·설정은 남겨 다시 뽑을 수 있게). 파일은 고아 정리가 치운다.
   void clearSfxSound(DialogueBeat beat) {
-    final s = _scriptBeat(beat).sfx;
-    if (s == null) return;
+    if (sfxOf(beat) == null) return; // 지울 효과음이 없음
+    final s = _editableSfx(beat); // 파생이 상속 중이면 자기 것으로 떠(소리 없이) 만든다
     s.path = null;
     s.soundSeconds = 0;
     final k = sfxBusyKey(beat.id);
@@ -1448,21 +1654,10 @@ class StoryboardProvider extends ChangeNotifier {
   // 음성은 **트랙별**이라 진행 표시·캐시도 그 트랙의 비트 id 기준(대본과 달리 공유 아님).
   String voiceBusyKey(String dialogueId) => '$dialogueId:voice';
 
-  String _scriptBeatId(String beatId) {
-    for (final sc in _scenes) {
-      for (final t in sc.tracks) {
-        for (final b in t.beats) {
-          if (b.id == beatId) return b.baseId ?? b.id;
-        }
-      }
-    }
-    return beatId;
-  }
-
   /// 이 대사에 쓸 보이스 — 화자에 보이스가 있으면 그것, 없으면(내레이션·화자 미지정)
   /// **씬 기본 성우**로 떨어진다. 둘 다 없으면 null → 음성 생성 불가.
-  String? _voiceIdFor(Dialogue d, StoryScene? scene) {
-    final speaker = characterById(d.speakerId);
+  String? _voiceIdFor(String? speakerId, StoryScene? scene) {
+    final speaker = characterById(speakerId);
     if (speaker != null && speaker.hasVoice) return speaker.voiceId.trim();
     final fallback = scene?.defaultVoiceId.trim() ?? '';
     return fallback.isEmpty ? null : fallback;
@@ -1541,9 +1736,9 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 이 샷의 대사 음성(일레븐랩스 TTS) 생성 → mp3 저장 + 길이(voiceSeconds) 실측.
   Future<void> genVoice(DialogueBeat beat) async {
-    // 음성은 **이 트랙의 비트**에 붙인다(대본은 공유지만 음성은 트랙별 소유).
-    final d = beat.dialogue;
-    if (d == null || d.text.trim().isEmpty) {
+    // 대본(화자·텍스트)은 상속/오버라이드 해석으로 읽고, 음성(결과)은 **이 트랙의 비트**에 붙인다.
+    final script = beatScript(beat);
+    if (script == null || script.text.trim().isEmpty) {
       messenger?.call('대사를 먼저 입력하세요');
       return;
     }
@@ -1551,7 +1746,7 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(voiceBlockReason!);
       return;
     }
-    final voiceId = _voiceIdFor(d, sceneOf2(beat));
+    final voiceId = _voiceIdFor(script.speakerId, sceneOf2(beat));
     if (voiceId == null) {
       messenger?.call('보이스가 없습니다 — 화자에 목소리를 지정하거나 씬 탭에서 기본 성우를 정하세요');
       return;
@@ -1562,11 +1757,12 @@ class StoryboardProvider extends ChangeNotifier {
     try {
       final res = await ElevenLabsService(_settings.elevenKey).generateSpeech(
         voiceId: voiceId,
-        text: d.text.trim(),
+        text: script.text.trim(),
         stability: _settings.ttsStability.value, // Creative/Natural/Robust
       );
       final f = File('$projectDirPath/${beat.id}_voice.mp3');
       await f.writeAsBytes(res.bytes);
+      final d = beat.dialogue ??= Dialogue(); // 음성은 자기 것(파생도 자기 dialogue에)
       d.voicePath = f.path;
       d.voiceSeconds = res.seconds;
       _ver[key] = (_ver[key] ?? 0) + 1;
@@ -1580,7 +1776,7 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 효과음을 기존 오디오 파일에서 불러온다. 효과음은 트랙 공유라 **기준 비트**에 붙인다.
+  /// 효과음을 기존 오디오 파일에서 불러온다. 효과음은 트랙별 소유라 **이 비트 자기 것**에 붙인다.
   Future<void> loadSfx(DialogueBeat beat) async {
     const typeGroup = fs.XTypeGroup(
       label: 'audio',
@@ -1588,22 +1784,21 @@ class StoryboardProvider extends ChangeNotifier {
     );
     final picked = await fs.openFile(acceptedTypeGroups: [typeGroup]);
     if (picked == null) return;
-    final base = _scriptBeat(beat);
     final key = sfxBusyKey(beat.id);
     _busy.add(key);
     notifyListeners();
     try {
       final ext = picked.name.split('.').last.toLowerCase();
-      final f = File('$projectDirPath/${base.id}_sfx.$ext');
+      final f = File('$projectDirPath/${beat.id}_sfx.$ext');
       await f.writeAsBytes(await picked.readAsBytes());
       // 확장자가 바뀌면 옛 파일이 남으므로 정리.
       for (final e in Directory(projectDirPath).listSync().whereType<File>()) {
         final n = e.uri.pathSegments.last;
-        if (n.startsWith('${base.id}_sfx.') && e.path != f.path) {
+        if (n.startsWith('${beat.id}_sfx.') && e.path != f.path) {
           await e.delete();
         }
       }
-      final s = base.sfx ??= Sfx();
+      final s = _editableSfx(beat);
       s.path = f.path;
       s.soundSeconds = await _audioSeconds(f);
       _ver[key] = (_ver[key] ?? 0) + 1;
@@ -1617,10 +1812,9 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 효과음(일레븐랩스 sound-generation) 생성 → mp3 저장 + 길이 실측. 기준 비트에 붙인다.
+  /// 효과음(일레븐랩스 sound-generation) 생성 → mp3 저장 + 길이 실측. 이 비트 자기 것에 붙인다.
   Future<void> genSfx(DialogueBeat beat) async {
-    final base = _scriptBeat(beat);
-    final s = base.sfx;
+    final s = sfxOf(beat); // 묘사·길이·강도는 지금 보이는(상속 포함) 값으로 뽑는다
     if (s == null || s.prompt.trim().isEmpty) {
       messenger?.call('효과음 묘사를 먼저 입력하세요');
       return;
@@ -1638,10 +1832,11 @@ class StoryboardProvider extends ChangeNotifier {
         durationSeconds: s.durationSeconds,
         promptInfluence: s.promptInfluence,
       );
-      final f = File('$projectDirPath/${base.id}_sfx.mp3');
+      final f = File('$projectDirPath/${beat.id}_sfx.mp3');
       await f.writeAsBytes(bytes);
-      s.path = f.path;
-      s.soundSeconds = await _measureSeconds(f) ?? s.durationSeconds;
+      final own = _editableSfx(beat); // 파생이면 자기 것으로 떠서 소리를 붙인다
+      own.path = f.path;
+      own.soundSeconds = await _measureSeconds(f) ?? own.durationSeconds;
       _ver[key] = (_ver[key] ?? 0) + 1;
       await save();
     } catch (e, st) {
@@ -1664,7 +1859,7 @@ class StoryboardProvider extends ChangeNotifier {
     // 음성은 트랙별 — **보고 있는 트랙**의 비트들을 돈다(그 트랙의 take를 채운다).
     final track = selectedTrack ?? scene.baseTrack;
     for (final beat in List<DialogueBeat>.from(track.beats)) {
-      if ((beat.dialogue?.text.trim().isNotEmpty) ?? false) {
+      if (beatScript(beat)?.text.trim().isNotEmpty ?? false) {
         await genVoice(beat);
       }
     }
@@ -1675,7 +1870,7 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 사람이 알아볼 샷 이름 — 제목이 없으면 트랙 안에서 몇 번째 샷인지로 부른다.
   String shotLabel(Shot shot) {
-    if (shot.title.trim().isNotEmpty) return shot.title.trim();
+    if (shotTitle(shot).trim().isNotEmpty) return shotTitle(shot).trim();
     final track = trackOf(shot);
     if (track == null) return '샷';
     var n = 0;
@@ -1701,19 +1896,15 @@ class StoryboardProvider extends ChangeNotifier {
   /// (트랙을 가르는 기준이 백엔드라서). 결과는 그 트랙의 영상 슬롯에만 들어가므로,
   /// 다른 트랙에서 뽑아 둔 영상은 그대로 남는다 — 그게 비교의 전부다.
   ///
-  /// 프레임(시작·끝)은 따라가는 샷에서 뽑을 수 없다 — 기준 트랙의 프레임을 그대로 쓰는 중이라
-  /// 여기서 만들면 비교 조건이 어긋난다. 먼저 분리(detach)해야 한다.
+  /// 프레임(시작·끝)을 파생 샷에서 뽑으면 그 프레임만 이 트랙 것으로 오버라이드된다
+  /// (기준 트랙 프레임은 그대로 — 자동으로 필드별 분리).
   Future<void> gen(
     Shot shot,
     GenMode mode, {
     VideoBackend? backend,
   }) async {
-    if (!mode.isVideo && shot.inherits) {
-      messenger?.call('트랙 1의 프레임을 함께 쓰는 샷입니다 — 이 트랙에서 수정한 뒤 만드세요');
-      return;
-    }
     // 스틸컷: 프롬프트·백엔드 없이 시작 프레임을 로컬 ffmpeg로 영상화한다.
-    if (mode == GenMode.videoLow && shot.isStill) {
+    if (mode == GenMode.videoLow && shotVideoMode(shot) == VideoMode.still) {
       await _genStill(shot);
       return;
     }
@@ -1739,11 +1930,11 @@ class StoryboardProvider extends ChangeNotifier {
       await FileImage(f).evict();
       switch (mode) {
         case GenMode.imageStart:
-          shot.startImagePath = f.path;
+          _setShotStartImage(shot, f.path); // 파생이면 오버라이드
         case GenMode.imageEnd:
-          shot.endImagePath = f.path;
+          _setShotEndImage(shot, f.path);
         case GenMode.videoLow:
-          shot.videoPath = f.path;
+          shot.videoPath = f.path; // 영상은 트랙별 소유(기준·파생 모두 자기 것)
           // 주문한 길이와 실제가 다른 일이 흔하다(백엔드 지원 길이·모델이 얹는 몇 프레임).
           // 타임라인은 재생되는 길이로 그려져야 하므로 파일에서 직접 잰다.
           shot.videoActualSeconds = await _measureSeconds(f);
@@ -1783,8 +1974,8 @@ class StoryboardProvider extends ChangeNotifier {
       await VideoEdit.stillClip(
         image: img!,
         outPath: out,
-        seconds: shot.videoSeconds, // 0.1초 단위 그대로
-        effect: shot.stillEffect,
+        seconds: shotVideoSeconds(shot), // 0.1초 단위 그대로(파생은 상속/오버라이드 해석)
+        effect: shotStillEffect(shot),
         width: res.width,
         height: res.height,
       );
@@ -1804,10 +1995,9 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 시작/끝장면을 기존 이미지 파일에서 불러온다(생성 대신).
+  /// 시작/끝장면을 기존 이미지 파일에서 불러온다(생성 대신). 파생 샷이면 그 프레임만 오버라이드.
   Future<void> loadFrame(Shot shot, GenMode mode) async {
     if (mode.isVideo) return;
-    await _ensureEditable(shot); // 프레임을 갈아 끼우는 건 곧 이 트랙만의 내용이 된다
     const typeGroup = fs.XTypeGroup(
       label: 'images',
       extensions: ['png', 'jpg', 'jpeg', 'webp'],
@@ -1827,9 +2017,9 @@ class StoryboardProvider extends ChangeNotifier {
       await f.writeAsBytes(bytes);
       await FileImage(f).evict();
       if (mode == GenMode.imageStart) {
-        shot.startImagePath = f.path;
+        _setShotStartImage(shot, f.path);
       } else {
-        shot.endImagePath = f.path;
+        _setShotEndImage(shot, f.path);
         _refreshLinkedNext(shot);
       }
       _ver[key] = (_ver[key] ?? 0) + 1;
@@ -1856,7 +2046,7 @@ class StoryboardProvider extends ChangeNotifier {
     if (!mode.isVideo) {
       final refs = await _refPhotoBytesList(shot);
       if (refs.isNotEmpty) {
-        final who = shot.refCharacterIds
+        final who = shotRefCharacterIds(shot)
             .map((id) => characterById(id)?.name)
             .whereType<String>()
             .where((n) => n.isNotEmpty)
@@ -1883,7 +2073,7 @@ class StoryboardProvider extends ChangeNotifier {
         // 끝 프레임은 **있으면 보낸다**. I2V로 잡아 뒀거나 아직 안 만들었으면 시작만으로 간다 —
         // Veo 쪽 끝 프레임 고정은 계정에 따라 막혀 있고(400 use case not supported),
         // 그때는 서비스가 알아서 시작 프레임만으로 다시 시도한다.
-        final end = shot.needsEndFrame ? await _endFrame(shot) : null;
+        final end = shotNeedsEndFrame(shot) ? await _endFrame(shot) : null;
         if (start == null) {
           throw Exception('시작장면을 먼저 만들어 주세요 (첫 프레임)');
         }
@@ -1897,18 +2087,18 @@ class StoryboardProvider extends ChangeNotifier {
           resolution: _settings.videoResolution.value,
           // 길이는 **샷이 정한다**. Veo는 4·6·8초만 되므로 가장 가까운 값으로 내려간다
           // (그래서 뽑고 나면 실제 길이를 다시 재서 적는다 — gen() 참고).
-          durationSeconds: _veoSeconds(shot.videoSeconds.round()),
+          durationSeconds: _veoSeconds(shotVideoSeconds(shot).round()),
           negativePrompt: _settings.videoNegativePrompt,
           onProgress: (st) => _setProgress(progressKey, st),
         );
       case VideoBackend.serviceApi:
         final img = await _startFrameBytes(shot);
         // I2V면 끝 프레임을 아예 안 쓴다(있어도 무시) — 끝은 모델이 자유롭게 만든다.
-        final endImg = shot.needsEndFrame ? await _endFrameBytes(shot) : null;
+        final endImg = shotNeedsEndFrame(shot) ? await _endFrameBytes(shot) : null;
         if (img == null) {
           throw Exception('시작 프레임을 먼저 만들어 주세요');
         }
-        if (shot.needsEndFrame && endImg == null) {
+        if (shotNeedsEndFrame(shot) && endImg == null) {
           throw Exception('끝 프레임을 먼저 만들어 주세요 (FE2V) — '
               '끝 없이 뽑으려면 프레임 탭에서 I2V로 바꾸세요');
         }
@@ -1916,7 +2106,7 @@ class StoryboardProvider extends ChangeNotifier {
         final res = sc?.videoRes ?? _settings.videoRes;
         // 네거티브는 샷 칸이 먼저고, 비어 있으면 설정의 전역 값으로 떨어진다.
         // 둘 다 비면 서버 워크플로에 박힌 기본 네거티브가 쓰인다.
-        final neg = (_vnegs[shot.id]?.text ?? shot.videoNegativePrompt).trim();
+        final neg = (_vnegs[shot.id]?.text ?? shotVideoNeg(shot)).trim();
         return ApiService(_settings.effectiveServiceUrl).generateVideo(
           image: img,
           endImage: endImg,
@@ -1925,7 +2115,7 @@ class StoryboardProvider extends ChangeNotifier {
               neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
           width: res.width,
           height: res.height,
-          seconds: shot.videoSeconds.round(), // 자체 서버는 정수 초
+          seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
           loraUrl: _effectiveLoraUrl(sc),
           loraStrength: sc?.loraStrength ?? 0.8,
           onProgress: (st) => _setProgress(progressKey, st),
@@ -2034,13 +2224,16 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 이 샷의 참조 인물 토글(있으면 제거, 없으면 추가 · 최대 3).
+  /// 파생 샷이면 참조 인물 목록만 이 트랙 것으로 오버라이드된다.
   Future<void> toggleShotRefCharacter(Shot shot, String id) async {
-    await _ensureEditable(shot);
-    if (shot.refCharacterIds.contains(id)) {
-      shot.refCharacterIds.remove(id);
-    } else if (shot.refCharacterIds.length < 3) {
-      shot.refCharacterIds.add(id);
+    final cur = List<String>.from(shotRefCharacterIds(shot)); // 상속 포함 현재값
+    if (cur.contains(id)) {
+      cur.remove(id);
+    } else if (cur.length < 3) {
+      cur.add(id);
     }
+    _setShotField(
+        shot, Shot.kRefCharacters, cur, () => shot.refCharacterIds = cur);
     notifyListeners();
     save();
   }
@@ -2048,7 +2241,7 @@ class StoryboardProvider extends ChangeNotifier {
   /// 참조 인물들의 대표사진 바이트(최대 3, 존재하는 것만). 없으면 빈 리스트 → 일반 t2i.
   Future<List<Uint8List>> _refPhotoBytesList(Shot shot) async {
     final out = <Uint8List>[];
-    for (final id in shot.refCharacterIds.take(3)) {
+    for (final id in shotRefCharacterIds(shot).take(3)) {
       final cover = characterById(id)?.cover;
       if (cover == null) continue;
       final f = File(cover);
@@ -2208,41 +2401,55 @@ class StoryboardProvider extends ChangeNotifier {
   Future<({List<int> bytes, String mimeType})?> _endFrame(
     Shot shot,
   ) async {
-    final path = shot.endImagePath;
+    final path = shotEndImage(shot); // 상속/오버라이드 해석
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;
     return (bytes: await f.readAsBytes(), mimeType: 'image/png');
   }
 
-  /// 샷의 생성물 하나(시작 프레임 · 끝 프레임 · 영상)를 지운다 — 파일까지 삭제.
-  /// 다른 샷이 같은 파일을 참조할 수 있으므로(FE 체이닝은 **복사**본을 쓴다) 여기선
-  /// 이 샷 소유 파일만 지운다. 따라가는 샷의 프레임은 기준 트랙 것이라 지우지 않는다.
+  /// 샷의 생성물 하나(시작 프레임 · 끝 프레임 · 영상)를 지운다.
+  /// 파생 샷에서 **자기 프레임을 지우면 다시 기준 트랙 프레임을 상속**한다(오버라이드 해제).
+  /// 상속 중이던 프레임은 기준 트랙 파일이라 지우지 않는다(참조만 되돌린다).
   Future<void> removeMedia(Shot shot, GenMode mode) async {
-    if (!mode.isVideo && shot.inherits) {
-      messenger?.call('트랙 1의 프레임입니다 — 트랙 1에서 지우거나 이 트랙에서 수정하세요');
-      return;
-    }
     final path = switch (mode) {
-      GenMode.imageStart => shot.startImagePath,
-      GenMode.imageEnd => shot.endImagePath,
+      GenMode.imageStart => shotStartImage(shot),
+      GenMode.imageEnd => shotEndImage(shot),
       GenMode.videoLow => shot.videoPath,
     };
     if (path == null) return;
+    // 자기 파일인지 — 기준 샷은 항상, 파생 샷은 그 필드를 오버라이드했을 때만 자기 파일이다.
+    final ownsFile = switch (mode) {
+      GenMode.imageStart =>
+        !shot.isDerived || shot.overrides.containsKey(Shot.kStartImage),
+      GenMode.imageEnd =>
+        !shot.isDerived || shot.overrides.containsKey(Shot.kEndImage),
+      GenMode.videoLow => true, // 영상은 언제나 자기 것
+    };
     switch (mode) {
       case GenMode.imageStart:
-        shot.startImagePath = null;
+        if (shot.isDerived) {
+          shot.overrides.remove(Shot.kStartImage); // 상속으로 되돌림
+        } else {
+          shot.startImagePath = null;
+        }
       case GenMode.imageEnd:
-        shot.endImagePath = null;
+        if (shot.isDerived) {
+          shot.overrides.remove(Shot.kEndImage);
+        } else {
+          shot.endImagePath = null;
+        }
       case GenMode.videoLow:
         shot.videoPath = null;
     }
-    try {
-      final f = File(path);
-      if (await f.exists()) await f.delete();
-      await FileImage(f).evict();
-    } catch (e) {
-      debugPrint('[removeMedia] 파일 삭제 실패(참조는 이미 끊음): $e');
+    if (ownsFile) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+        await FileImage(f).evict();
+      } catch (e) {
+        debugPrint('[removeMedia] 파일 삭제 실패(참조는 이미 끊음): $e');
+      }
     }
     final k = busyKey(shot.id, mode);
     _ver[k] = (_ver[k] ?? 0) + 1;
@@ -2323,7 +2530,17 @@ class StoryboardProvider extends ChangeNotifier {
     for (final track in scene.tracks) {
       for (final beat in track.beats) {
         for (final shot in beat.shots) {
-          if (!shot.inherits) {
+          // 프레임 — 자기 것만 지운다. 파생 샷은 오버라이드한 프레임만(상속 중이면 기준 트랙 것).
+          if (shot.isDerived) {
+            if (shot.overrides.containsKey(Shot.kStartImage)) {
+              await kill(shot.overrides[Shot.kStartImage] as String?);
+              shot.overrides.remove(Shot.kStartImage);
+            }
+            if (shot.overrides.containsKey(Shot.kEndImage)) {
+              await kill(shot.overrides[Shot.kEndImage] as String?);
+              shot.overrides.remove(Shot.kEndImage);
+            }
+          } else {
             await kill(shot.startImagePath);
             await kill(shot.endImagePath);
             shot.startImagePath = null;
@@ -2345,8 +2562,10 @@ class StoryboardProvider extends ChangeNotifier {
           final k = voiceBusyKey(beat.id);
           _ver[k] = (_ver[k] ?? 0) + 1;
         }
-        // 효과음은 트랙 공유(기준 비트에만) — 있으면 지운다.
-        final sx = beat.sfx;
+        // 효과음 — 기준 비트는 타입 필드, 파생 비트는 overrides에 있다(있을 때만).
+        final sx = beat.isDerived
+            ? beat.overrides[DialogueBeat.kSfx] as Sfx?
+            : beat.sfx;
         if (sx != null && sx.path != null) {
           await kill(sx.path);
           sx.path = null;
@@ -2390,9 +2609,13 @@ class StoryboardProvider extends ChangeNotifier {
   /// (그게 사실이다 — 이어받을 게 없어진 것이니 '준비 안 됨'으로 잡히는 게 맞다).
   ///
   /// 시작장면을 읽는 쪽은 [Shot.startImagePath] 대신 **전부 이걸** 써야 한다.
-  String? startPathOf(Shot shot) => shot.linkStart
-      ? prevShotOf(shot)?.endImagePath
-      : shot.startImagePath;
+  String? startPathOf(Shot shot) {
+    if (shotLinkStart(shot)) {
+      final prev = prevShotOf(shot);
+      return prev == null ? null : shotEndImage(prev);
+    }
+    return shotStartImage(shot);
+  }
 
   /// 시작장면 연동 켜기/끄기.
   ///
@@ -2403,11 +2626,10 @@ class StoryboardProvider extends ChangeNotifier {
   /// 끄자마자 프레임이 사라지면 당황스럽다.
   Future<void> setLinkStart(Shot shot, bool on) async {
     if (on && prevShotOf(shot) == null) return; // 첫 샷은 물려받을 앞이 없다
-    await _ensureEditable(shot);
-    if (!on && shot.linkStart && shot.startImagePath == null) {
+    if (!on && shotLinkStart(shot) && shotStartImage(shot) == null) {
       await _materializeStart(shot);
     }
-    shot.linkStart = on;
+    _setShotField(shot, Shot.kLinkStart, on, () => shot.linkStart = on);
     _ver[busyKey(shot.id, GenMode.imageStart)] =
         (_ver[busyKey(shot.id, GenMode.imageStart)] ?? 0) + 1;
     await save(); // 프롬프트 연동이 여기서 걸리므로 알리기 전에 저장한다
@@ -2417,32 +2639,33 @@ class StoryboardProvider extends ChangeNotifier {
   /// 영상 생성 방식 전환 — FE2V(시작+끝) / I2V(시작 한 장) / 스틸컷(AI 없이).
   /// 끝장면 파일은 지우지 않는다: 방식을 바꿔 뽑아보고 되돌릴 수 있어야 한다.
   Future<void> setVideoMode(Shot shot, VideoMode mode) async {
-    if (shot.videoMode == mode) return;
-    await _ensureEditable(shot);
-    shot.videoMode = mode;
+    if (shotVideoMode(shot) == mode) return;
+    _setShotField(shot, Shot.kVideoMode, mode, () => shot.videoMode = mode);
     await save();
     notifyListeners();
   }
 
   /// 스틸컷 켄번스 효과(없음/줌 인/줌 아웃) 전환.
   Future<void> setStillEffect(Shot shot, StillEffect effect) async {
-    if (shot.stillEffect == effect) return;
-    await _ensureEditable(shot);
-    shot.stillEffect = effect;
+    if (shotStillEffect(shot) == effect) return;
+    _setShotField(
+        shot, Shot.kStillEffect, effect, () => shot.stillEffect = effect);
     await save();
     notifyListeners();
   }
 
   /// 연동을 끊을 때: 앞 샷의 끝장면을 이 샷의 시작 파일로 복사해 남긴다.
+  /// 파생 샷이면 그 시작 프레임만 이 트랙 것으로 오버라이드된다.
   Future<void> _materializeStart(Shot shot) async {
-    final srcPath = prevShotOf(shot)?.endImagePath;
+    final prev = prevShotOf(shot);
+    final srcPath = prev == null ? null : shotEndImage(prev);
     if (srcPath == null) return;
     final src = File(srcPath);
     if (!await src.exists()) return;
     final dst = File('$projectDirPath/${shot.id}_start.${srcPath.split('.').last}');
     await src.copy(dst.path);
     await FileImage(dst).evict();
-    shot.startImagePath = dst.path;
+    _setShotStartImage(shot, dst.path);
   }
 
   /// FE2V 컷 연속성: [shot]의 끝 프레임이 바뀌면 **다음 샷의 시작**도 바뀐 셈이다
@@ -2453,7 +2676,7 @@ class StoryboardProvider extends ChangeNotifier {
     final i = all.indexOf(shot);
     if (i < 0 || i + 1 >= all.length) return; // 마지막 샷 → 이어질 대상 없음
     final next = all[i + 1];
-    if (!next.linkStart) return;
+    if (!shotLinkStart(next)) return;
     final k = busyKey(next.id, GenMode.imageStart);
     _ver[k] = (_ver[k] ?? 0) + 1;
   }
@@ -2486,7 +2709,7 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   Future<Uint8List?> _endFrameBytes(Shot shot) async {
-    final path = shot.endImagePath;
+    final path = shotEndImage(shot);
     if (path == null) return null;
     final f = File(path);
     if (!await f.exists()) return null;

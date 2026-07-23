@@ -19,69 +19,68 @@ enum StillEffect {
 /// 한 샷은 시작·끝 두 키프레임에서 FE2V(first-end-to-video)로 영상을 만든다 — 두 장 필수.
 /// 같은 대사의 샷들은 그 대사의 음성 길이를 나눠 덮는다(첫 샷 립싱크, 나머지 컷어웨이).
 ///
-/// 저장(JSON)은 개념별로 중첩한다 — startScene/endScene/video — 파일만 봐도 구성이 읽힌다.
-/// 미디어는 프로젝트 폴더 안 파일명(상대)만 저장하고, 런타임에는 절대경로로 다룬다.
-/// (제작 상태는 상위 [DialogueBeat]에, 샷 자체 메모는 [note]에 있다.)
+/// ## 트랙 상속(파생 샷)
+/// 비트와 **똑같은 규칙**이다 — 첫 트랙(기준)의 샷이 원본이고([baseId]=null), 파생 트랙의 샷은
+/// 진짜로 비어 있다. 타입 필드(프롬프트·프레임·길이 등)를 쓰지 않고 **손댄 필드만** [overrides]
+/// 맵에 담는다. 읽을 때 overrides에 있으면 그 값, 없으면 기준 샷([base])을 참조(폴백)한다.
+/// 그래서 파생 샷이 기준 샷 내용을 복사해 들고 있는 일이 없다 — 기준이 파생 편집으로 바뀔 수 없다.
+///
+/// 예외 — **영상 결과물**: [videoPath]와 실측 길이 [videoActualSeconds]는 오버라이드가 아니라
+/// **언제나 이 샷(트랙) 소유**다. 같은 콘티를 백엔드별로 뽑아 비교하려는 게 트랙을 나눈 이유라,
+/// 영상은 트랙마다 따로 갖는다(없으면 상속 영상을 보여 주되, 저장은 자기 것만).
+///
+/// 저장(JSON): 기준 샷은 개념별 중첩(startScene/endScene/video), 파생 샷은 `overrides`(손댄 것만)
+/// + `video`(자기 결과물)만 적는다.
 class Shot {
+  // ── 오버라이드 키 (파생 샷의 [overrides] 맵에서 쓰는 필드 이름) ──
+  static const kTitle = 'title';
+  static const kRefCharacters = 'refCharacters';
+  static const kStartPrompt = 'startPrompt';
+  static const kStartPromptKo = 'startPromptKo';
+  static const kEndPrompt = 'endPrompt';
+  static const kEndPromptKo = 'endPromptKo';
+  static const kVideoPrompt = 'videoPrompt';
+  static const kVideoPromptKo = 'videoPromptKo';
+  static const kVideoNeg = 'videoNegativePrompt';
+  static const kVideoSeconds = 'videoSeconds';
+  static const kStartImage = 'startImage'; // 절대경로(메모리) / 파일명(JSON)
+  static const kEndImage = 'endImage';
+  static const kLinkStart = 'linkStart';
+  static const kVideoMode = 'videoMode';
+  static const kStillEffect = 'stillEffect';
+  static const kNote = 'note';
+  static const kVideoNote = 'videoNote';
+
   String id;
-  String title; // 샷 제목 (비우면 '샷 n' 으로 표시)
+
+  // ── 기준 샷(baseId==null)의 타입 필드. 파생 샷에서는 쓰지 않는다(overrides로 간다). ──
+  String title;
   List<String> refCharacterIds; // 이 샷 화면의 참조 인물 id들(FireRed 멀티, 최대 3)
-  String startPrompt; // 시작장면 프롬프트
-  String startPromptKo; // 위 프롬프트의 한국어 번역 — 확인용, 생성엔 안 쓰임
-  String endPrompt; // 끝장면 프롬프트
-  String endPromptKo; // 위 프롬프트의 한국어 번역 — 확인용, 생성엔 안 쓰임
-  String videoPrompt; // 영상용 프롬프트(생성에 실제로 쓰이는 원문)
-  String videoPromptKo; // 위 프롬프트의 한국어 번역 — 읽고 확인하는 용도, 생성엔 안 쓰임
-
-  /// 영상 네거티브 프롬프트 — **빼고 싶은 것만** 여기 적는다.
-  /// 프롬프트 본문에 "no hand" 식으로 쓰면 오히려 그게 불려 나오므로(언급이 곧 소환),
-  /// 부정은 전부 이 칸으로 보낸다. 비우면 서버 워크플로의 기본 네거티브를 그대로 쓴다.
-  String videoNegativePrompt;
-  /// 이 샷에 **주문할** 영상 길이(초). 하나로 통일된 값이다 —
-  /// AI 방식은 정수 초로 다루고(슬라이더 1초 단위, 백엔드엔 반올림해 보냄),
-  /// 스틸컷은 로컬 ffmpeg라 0.1초 단위까지 그대로 쓴다.
-  double videoSeconds;
-
-  /// 뽑힌 영상의 **실제 길이(초)**. 주문한 길이([videoSeconds])와 다를 수 있다 —
-  /// 백엔드가 지원하는 길이로 내려가거나(Veo는 4·6·8초만), 트림으로 잘리거나,
-  /// 모델이 몇 프레임 더 얹기도 한다. 없으면 아직 안 뽑은 것.
-  ///
-  /// **트랙마다 따로 갖는 값**이다([videoPath]와 한 몸) — 같은 콘티를 백엔드별로 뽑으면
-  /// 결과 길이가 서로 다르고, 타임라인은 각 트랙의 실제 길이로 그려져야 한다.
-  double? videoActualSeconds;
+  String startPrompt;
+  String startPromptKo; // 확인용 한국어 번역, 생성엔 안 쓰임
+  String endPrompt;
+  String endPromptKo;
+  String videoPrompt; // 생성에 실제로 쓰이는 원문
+  String videoPromptKo;
+  String videoNegativePrompt; // **빼고 싶은 것만** — 부정은 전부 여기로
+  double videoSeconds; // **주문할** 영상 길이(초)
   String? startImagePath; // 생성된 시작장면 파일 경로(런타임 절대경로)
-  String? endImagePath; // 생성된 끝장면 파일 경로
+  String? endImagePath;
+  bool linkStart; // 시작장면을 앞 샷 끝장면에 연동
+  VideoMode videoMode;
+  StillEffect stillEffect;
+  String note; // 장면 탭 메모
+  String videoNote; // 영상 탭 메모(장면 메모와 별개)
+
+  // ── 언제나 이 샷(트랙) 소유 — 오버라이드/상속 대상이 아니다 ──
+  double? videoActualSeconds; // 뽑힌 영상의 실제 길이(초). 없으면 아직 안 뽑음
   String? videoPath; // 생성된 영상 파일 경로
 
-  /// 시작장면을 **앞 샷의 끝장면에 연동**한다(컷이 이어지는 기본 동선).
-  /// 켜져 있으면 앞 샷의 끝 이미지·프롬프트가 이 샷의 시작으로 따라 들어오고,
-  /// 시작장면은 직접 만들거나 고칠 수 없다(읽기 전용).
-  ///
-  /// 이미지는 참조가 아니라 **복사**한다 — 앞 샷 파일을 지워도 이 샷이 깨지지 않고,
-  /// FE2V 입력·미리보기 등 경로를 읽는 쪽이 전부 그대로 동작한다.
-  /// 씬의 첫 샷은 물려받을 앞이 없어 항상 꺼진 상태다.
-  bool linkStart;
-
-  /// 영상 생성 방식 — [VideoMode] 참고. 기본은 FE2V.
-  VideoMode videoMode;
-
-  /// 스틸컷일 때의 켄번스 효과(다른 방식에선 무시).
-  StillEffect stillEffect;
-
-  /// 장면 탭 메모(특이사항) — 프레임 작업용 기록. 프롬프트와 무관, 생성에 안 쓰임.
-  String note;
-
-  /// 영상 탭 메모 — 장면 메모와 **별개**다. 프레임에 적을 말과 영상에 적을 말이 다르다.
-  String videoNote;
-
-  /// 파생 트랙(트랙2…)에서 이 샷이 비추고 있는 **기준 트랙 샷의 id**. null = 기준 트랙의 샷 자신.
-  /// 트랙끼리 구조는 항상 같으므로 파생 트랙의 샷은 반드시 짝이 있다.
+  /// 파생 트랙(트랙2…)에서 이 샷이 비추고 있는 **기준 트랙 샷의 id**. null = 기준 트랙 자신.
   String? baseId;
 
-  /// 파생 트랙 샷이 **자기 내용을 갖는지**. false(기본) = 기준 샷 내용을 그대로 따라간다.
-  /// 따라가는 동안 자기 것은 [videoPath] 하나뿐 — 트랙을 나눈 이유가 그것뿐이라서다.
-  /// 파생 트랙에서 내용을 고치면 그 샷만 true가 되고(기준 내용을 복사해 옴) 이후 독립한다.
-  bool detached;
+  /// 파생 샷이 **손댄 필드만** 담는 스파스 맵. 키 있으면 오버라이드, 없으면 기준 샷 상속.
+  Map<String, Object?> overrides;
 
   Shot({
     required this.id,
@@ -105,62 +104,78 @@ class Shot {
     this.note = '',
     this.videoNote = '',
     this.baseId,
-    this.detached = false,
-  }) : refCharacterIds = refCharacterIds ?? [];
-
-  /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이([videoSeconds]).
-  /// 재생되는 건 파일이므로 화면·합계는 전부 이걸 봐야 한다.
-  /// 실측이 0(측정 실패로 굳은 값)이면 주문값으로 떨어진다 — 0초로 표시되지 않게.
-  double get playSeconds => (videoActualSeconds != null && videoActualSeconds! > 0)
-      ? videoActualSeconds!
-      : videoSeconds;
-
-  /// 끝 프레임이 필요한 방식인지 — FE2V 하나뿐(I2V·스틸컷은 시작 한 장이면 된다).
-  bool get needsEndFrame => videoMode == VideoMode.fe2v;
-
-  /// AI 없이 시작 프레임을 그대로 영상화하는 스틸컷인지.
-  bool get isStill => videoMode == VideoMode.still;
+    Map<String, Object?>? overrides,
+  })  : refCharacterIds = refCharacterIds ?? [],
+        overrides = overrides ?? {};
 
   /// 파생 트랙의 샷인지(기준 트랙이면 false).
   bool get isDerived => baseId != null;
 
-  /// 기준 샷 내용을 그대로 따라가는 중인지 — 이 상태에서는 내용 편집이 잠긴다.
-  bool get inherits => baseId != null && !detached;
+  /// 이 필드가 이 샷에서 **자기 것으로 오버라이드**됐는지(파생 샷에서만 의미).
+  bool overrode(String key) => overrides.containsKey(key);
 
-  /// 기준 샷 [base]의 내용을 그대로 가져온다 — **영상([videoPath])과 정체성(id/연결정보)은 빼고**.
-  /// 따라가는 샷을 기준에 맞추는 데도, 분리(detach)할 때 출발점을 만드는 데도 같은 규칙을 쓴다.
-  void adoptContentFrom(Shot base) {
-    title = base.title;
-    refCharacterIds = [...base.refCharacterIds];
-    startPrompt = base.startPrompt;
-    startPromptKo = base.startPromptKo;
-    endPrompt = base.endPrompt;
-    endPromptKo = base.endPromptKo;
-    videoPrompt = base.videoPrompt;
-    videoPromptKo = base.videoPromptKo;
-    videoNegativePrompt = base.videoNegativePrompt;
-    videoSeconds = base.videoSeconds;
-    startImagePath = base.startImagePath;
-    endImagePath = base.endImagePath;
-    linkStart = base.linkStart;
-    videoMode = base.videoMode;
-    stillEffect = base.stillEffect;
-    note = base.note;
-    videoNote = base.videoNote;
+  // ───────── 리졸버: [base] = 이 샷이 비추는 기준 샷(기준 샷이면 null을 넘긴다) ─────────
+  // 기준 샷은 자기 타입 필드를, 파생 샷은 overrides에 있으면 그 값·없으면 base 값을 준다.
+
+  V _r<V>(String key, Shot? base, V Function(Shot) pick) {
+    if (!isDerived) return pick(this);
+    if (overrides.containsKey(key)) return overrides[key] as V;
+    return pick(base ?? this);
   }
 
-  /// 이 샷이 영상을 뽑을 준비가 됐는지 — 끝 프레임은 FE2V만 필요, 나머지는 시작 한 장이면 된다.
-  bool get videoInputsReady =>
-      (startImagePath?.isNotEmpty ?? false) &&
-      (!needsEndFrame || (endImagePath?.isNotEmpty ?? false));
+  String resolvedTitle(Shot? b) => _r(kTitle, b, (s) => s.title);
+  List<String> resolvedRefCharacterIds(Shot? b) =>
+      _r(kRefCharacters, b, (s) => s.refCharacterIds);
+  String resolvedStartPrompt(Shot? b) => _r(kStartPrompt, b, (s) => s.startPrompt);
+  String resolvedStartPromptKo(Shot? b) =>
+      _r(kStartPromptKo, b, (s) => s.startPromptKo);
+  String resolvedEndPrompt(Shot? b) => _r(kEndPrompt, b, (s) => s.endPrompt);
+  String resolvedEndPromptKo(Shot? b) =>
+      _r(kEndPromptKo, b, (s) => s.endPromptKo);
+  String resolvedVideoPrompt(Shot? b) => _r(kVideoPrompt, b, (s) => s.videoPrompt);
+  String resolvedVideoPromptKo(Shot? b) =>
+      _r(kVideoPromptKo, b, (s) => s.videoPromptKo);
+  String resolvedVideoNeg(Shot? b) => _r(kVideoNeg, b, (s) => s.videoNegativePrompt);
+  double resolvedVideoSeconds(Shot? b) => _r(kVideoSeconds, b, (s) => s.videoSeconds);
+  String? resolvedStartImage(Shot? b) =>
+      _r(kStartImage, b, (s) => s.startImagePath);
+  String? resolvedEndImage(Shot? b) => _r(kEndImage, b, (s) => s.endImagePath);
+  bool resolvedLinkStart(Shot? b) => _r(kLinkStart, b, (s) => s.linkStart);
+  VideoMode resolvedVideoMode(Shot? b) => _r(kVideoMode, b, (s) => s.videoMode);
+  StillEffect resolvedStillEffect(Shot? b) =>
+      _r(kStillEffect, b, (s) => s.stillEffect);
+  String resolvedNote(Shot? b) => _r(kNote, b, (s) => s.note);
+  String resolvedVideoNote(Shot? b) => _r(kVideoNote, b, (s) => s.videoNote);
+
+  /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이.
+  /// 실측이 0(측정 실패)이면 [orderedSeconds]로 떨어진다. 파생 샷의 주문 길이는 리졸버로
+  /// 해석해야 하므로 [base]가 필요하다(자기 영상이 있으면 base 없이도 실측으로 답한다).
+  double playSecondsWith(Shot? base) =>
+      (videoActualSeconds != null && videoActualSeconds! > 0)
+          ? videoActualSeconds!
+          : resolvedVideoSeconds(base);
+
+  /// 끝 프레임이 필요한 방식인지 — FE2V 하나뿐.
+  bool needsEndFrameWith(Shot? b) => resolvedVideoMode(b) == VideoMode.fe2v;
+
+  /// AI 없이 시작 프레임을 그대로 영상화하는 스틸컷인지.
+  bool isStillWith(Shot? b) => resolvedVideoMode(b) == VideoMode.still;
+
+  /// 이 샷이 영상을 뽑을 준비가 됐는지 — 끝 프레임은 FE2V만 필요.
+  bool videoInputsReadyWith(Shot? b) {
+    final start = resolvedStartImage(b);
+    final end = resolvedEndImage(b);
+    return (start?.isNotEmpty ?? false) &&
+        (!needsEndFrameWith(b) || (end?.isNotEmpty ?? false));
+  }
 
   Map<String, dynamic> toJson() {
-    // 따라가는 샷은 **자기 것만** 적는다 — 내용은 기준 샷 한 곳에만 있어야 둘이 어긋나지 않는다.
-    if (inherits) {
+    if (isDerived) {
+      // 파생 샷: 손댄 것(overrides) + 자기 영상 결과물만.
       return {
         'id': id,
         'base': baseId,
-        'detached': false,
+        'overrides': _overridesToJson(),
         'video': {
           'file': mediaName(videoPath),
           'actualSeconds': videoActualSeconds,
@@ -169,8 +184,6 @@ class Shot {
     }
     return {
       'id': id,
-      if (baseId != null) 'base': baseId,
-      if (baseId != null) 'detached': true,
       'title': title,
       'refCharacters': refCharacterIds,
       'startScene': {
@@ -189,7 +202,7 @@ class Shot {
         'promptKo': videoPromptKo,
         'negativePrompt': videoNegativePrompt,
         'seconds': videoSeconds,
-        'actualSeconds': videoActualSeconds, // 실제로 뽑힌 길이(주문값과 다를 수 있다)
+        'actualSeconds': videoActualSeconds,
         'file': mediaName(videoPath),
         'mode': videoMode.name,
         'stillEffect': stillEffect.name,
@@ -199,8 +212,45 @@ class Shot {
     };
   }
 
+  /// overrides 맵을 JSON으로 — 이미지 경로는 파일명으로, enum은 name으로 직렬화.
+  /// **키 존재 = 오버라이드**라, 값이 null인 키(명시적 없음)도 남긴다.
+  Map<String, dynamic> _overridesToJson() {
+    final out = <String, dynamic>{};
+    for (final e in overrides.entries) {
+      final v = e.value;
+      out[e.key] = switch (e.key) {
+        kStartImage || kEndImage => mediaName(v as String?),
+        kVideoMode => (v as VideoMode).name,
+        kStillEffect => (v as StillEffect).name,
+        _ => v, // String / double / bool / List<String> / null
+      };
+    }
+    return out;
+  }
+
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
   factory Shot.fromJson(Map<String, dynamic> j, String dir) {
+    final baseId = j['base'] as String?;
+    if (baseId != null) {
+      final video = (j['video'] as Map?)?.cast<String, dynamic>();
+      // 새 형식은 'overrides'. 옛 형식은 상속 샷=video만, 분리 샷=전체 필드+detached:true.
+      final Map<String, Object?> overrides;
+      if (j.containsKey('overrides')) {
+        overrides = _overridesFromJson(
+            (j['overrides'] as Map?)?.cast<String, dynamic>(), dir);
+      } else if (j['detached'] == true) {
+        overrides = _migrateDetached(j, dir); // 옛 분리 샷 내용을 오버라이드로 이관
+      } else {
+        overrides = {}; // 옛 상속 샷 = 아무것도 오버라이드 안 함
+      }
+      return Shot(
+        id: j['id'] as String,
+        baseId: baseId,
+        overrides: overrides,
+        videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
+        videoPath: mediaPath(dir, video?['file']),
+      );
+    }
     final start = (j['startScene'] as Map?)?.cast<String, dynamic>();
     final end = (j['endScene'] as Map?)?.cast<String, dynamic>();
     final video = (j['video'] as Map?)?.cast<String, dynamic>();
@@ -214,18 +264,13 @@ class Shot {
       endPromptKo: (end?['promptKo'] as String?) ?? '',
       videoPrompt: (video?['prompt'] as String?) ?? '',
       videoPromptKo: (video?['promptKo'] as String?) ?? '',
-      // 'negativePrompt'가 없는 옛 데이터는 빈 값 — 서버 기본 네거티브가 그대로 쓰인다.
       videoNegativePrompt: (video?['negativePrompt'] as String?) ?? '',
-      // 옛 데이터는 정수 초였다 — num으로 읽어 double로. (스틸컷은 0.1초까지 담긴다.)
       videoSeconds: (video?['seconds'] as num?)?.toDouble() ?? 5,
       videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),
       videoPath: mediaPath(dir, video?['file']),
-      // 'inherit'가 없는 옛 데이터는 꺼진 걸로 읽는다 — 켠 걸로 보면 이미 만들어 둔
-      // 시작 프레임을 앞 샷 것으로 말없이 갈아치우게 된다.
       linkStart: (start?['inherit'] as bool?) ?? false,
-      // 'mode'가 새 키. 없는 옛 데이터는 'i2v'(bool)로 읽어 매핑한다 — 그것도 없으면 FE2V.
       videoMode: _readVideoMode(video),
       stillEffect: StillEffect.values.firstWhere(
         (e) => e.name == video?['stillEffect'],
@@ -233,11 +278,70 @@ class Shot {
       ),
       note: (j['note'] as String?) ?? '',
       videoNote: (video?['note'] as String?) ?? '',
-      // 'base'가 있으면 파생 트랙의 샷 — 따라가는 중이면 위 내용은 전부 비어 있고,
-      // 불러온 뒤 기준 샷에서 채워진다([StoryboardProvider] 트랙 동기화).
-      baseId: j['base'] as String?,
-      detached: (j['detached'] as bool?) ?? false,
     );
+  }
+
+  /// 옛 **분리(detached) 샷**의 전체 필드를 새 overrides 맵으로 이관한다(내용 유실 방지).
+  /// 옛 분리 샷은 기준 샷과 같은 형식(startScene/endScene/video)으로 자기 내용을 통째로 저장했다.
+  static Map<String, Object?> _migrateDetached(
+      Map<String, dynamic> j, String dir) {
+    final start = (j['startScene'] as Map?)?.cast<String, dynamic>();
+    final end = (j['endScene'] as Map?)?.cast<String, dynamic>();
+    final video = (j['video'] as Map?)?.cast<String, dynamic>();
+    final ov = <String, Object?>{
+      kTitle: (j['title'] as String?) ?? '',
+      kRefCharacters: (j['refCharacters'] as List?)?.cast<String>() ?? <String>[],
+      kStartPrompt: (start?['prompt'] as String?) ?? '',
+      kStartPromptKo: (start?['promptKo'] as String?) ?? '',
+      kEndPrompt: (end?['prompt'] as String?) ?? '',
+      kEndPromptKo: (end?['promptKo'] as String?) ?? '',
+      kVideoPrompt: (video?['prompt'] as String?) ?? '',
+      kVideoPromptKo: (video?['promptKo'] as String?) ?? '',
+      kVideoNeg: (video?['negativePrompt'] as String?) ?? '',
+      kVideoSeconds: (video?['seconds'] as num?)?.toDouble() ?? 5,
+      kLinkStart: (start?['inherit'] as bool?) ?? false,
+      kVideoMode: _readVideoMode(video),
+      kStillEffect: StillEffect.values.firstWhere(
+          (e) => e.name == video?['stillEffect'],
+          orElse: () => StillEffect.none),
+      kNote: (j['note'] as String?) ?? '',
+      kVideoNote: (video?['note'] as String?) ?? '',
+    };
+    // 프레임 파일은 있을 때만 오버라이드(없으면 상속으로 두는 게 낫다).
+    final si = mediaPath(dir, start?['image']);
+    if (si != null) ov[kStartImage] = si;
+    final ei = mediaPath(dir, end?['image']);
+    if (ei != null) ov[kEndImage] = ei;
+    return ov;
+  }
+
+  /// overrides JSON을 메모리 맵으로 — 이미지 파일명→절대경로, enum name→값.
+  static Map<String, Object?> _overridesFromJson(
+      Map<String, dynamic>? j, String dir) {
+    final out = <String, Object?>{};
+    if (j == null) return out;
+    for (final e in j.entries) {
+      switch (e.key) {
+        case kStartImage:
+        case kEndImage:
+          out[e.key] = mediaPath(dir, e.value);
+        case kVideoMode:
+          out[e.key] = VideoMode.values.firstWhere(
+              (v) => v.name == e.value,
+              orElse: () => VideoMode.fe2v);
+        case kStillEffect:
+          out[e.key] = StillEffect.values.firstWhere(
+              (v) => v.name == e.value,
+              orElse: () => StillEffect.none);
+        case kRefCharacters:
+          out[e.key] = (e.value as List?)?.cast<String>() ?? <String>[];
+        case kVideoSeconds:
+          out[e.key] = (e.value as num?)?.toDouble();
+        default:
+          out[e.key] = e.value; // String / bool / null
+      }
+    }
+    return out;
   }
 }
 
@@ -257,7 +361,6 @@ String? mediaName(String? absPath) =>
     (absPath == null || absPath.isEmpty) ? null : absPath.split('/').last;
 
 /// JSON의 파일명 → 현재 프로젝트 폴더 기준 절대경로.
-/// 항상 basename만 취해 [dir]에 붙이므로 프로젝트 폴더를 옮겨도 경로가 살아난다.
 String? mediaPath(String dir, Object? nameOrPath) {
   if (nameOrPath is! String || nameOrPath.isEmpty) return null;
   return '$dir/${nameOrPath.split('/').last}';

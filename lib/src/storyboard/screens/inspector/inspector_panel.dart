@@ -42,8 +42,6 @@ part 'bgm/bgm_tab.dart';
 part 'common/chip_label.dart';
 part 'common/no_shot.dart';
 part 'common/center_note.dart';
-part 'common/track_link_bar.dart';
-part 'common/lock_if_inherited.dart';
 part 'common/shot_note.dart';
 part 'common/group_card.dart';
 part 'common/done_badge.dart';

@@ -9,8 +9,10 @@ class _CoverageBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final gap = beat.coverageGap;
+    final p = StoryboardScope.of(context);
+    final gap = p.beatCoverageGap(beat);
     if (gap == null) return const SizedBox.shrink();
+    final secs = p.beatSeconds(beat);
     final short = gap < -0.05; // 영상이 음성보다 짧다 = 대사가 잘림
     final over = gap > 0.05; // 영상이 더 길다 = 음성 뒤 여백
     final c = short
@@ -19,10 +21,10 @@ class _CoverageBadge extends StatelessWidget {
         ? Colors.white54
         : Colors.greenAccent;
     final msg = short
-        ? '샷 ${fmtSeconds(beat.seconds)} · 음성보다 ${fmtSeconds(-gap)} 짧음 — 대사가 잘립니다'
+        ? '샷 ${fmtSeconds(secs)} · 음성보다 ${fmtSeconds(-gap)} 짧음 — 대사가 잘립니다'
         : over
-        ? '샷 ${fmtSeconds(beat.seconds)} · 음성 뒤 ${fmtSeconds(gap)} 여백'
-        : '샷 ${fmtSeconds(beat.seconds)} · 음성과 맞음';
+        ? '샷 ${fmtSeconds(secs)} · 음성 뒤 ${fmtSeconds(gap)} 여백'
+        : '샷 ${fmtSeconds(secs)} · 음성과 맞음';
     return Row(
       children: [
         Icon(

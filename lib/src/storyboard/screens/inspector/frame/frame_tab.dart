@@ -11,9 +11,8 @@ class _FrameTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    // 따라가는 샷의 프레임은 기준 트랙 것을 함께 쓴다 — 여기서 고치면 비교 조건이 어긋나므로
-    // 통째로 잠근다(위 띠의 '이 트랙에서 수정'으로 분리한 뒤에 손댄다).
-    final locked = shot.inherits;
+    // 파생 샷도 바로 편집한다 — 어떤 칸을 고치면 그 프레임/프롬프트만 이 트랙 것으로 오버라이드되고
+    // 나머지는 기준 트랙을 그대로 상속한다(필드별 자동 분리).
     final body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -39,7 +38,7 @@ class _FrameTab extends StatelessWidget {
             mode: GenMode.imageStart,
           ),
           // 끝 프레임은 FE2V에서만 쓴다 — I2V·스틸컷이면 숨긴다(파일은 남아 되돌리면 보인다).
-          if (shot.needsEndFrame) ...[
+          if (p.shotNeedsEndFrame(shot)) ...[
             const SizedBox(height: 16),
             _FrameSection(
               title: '끝 프레임',
@@ -48,7 +47,7 @@ class _FrameTab extends StatelessWidget {
               hint: '샷의 마지막 프레임(끝)을 묘사',
               genLabel: '끝 프레임 생성',
               genIcon: Icons.last_page,
-              path: shot.endImagePath,
+              path: p.shotEndImage(shot),
               busyKey: p.busyKey(shot.id, GenMode.imageEnd),
               onGen: () => p.gen(shot, GenMode.imageEnd),
               onLoad: () => p.loadFrame(shot, GenMode.imageEnd),
@@ -80,13 +79,7 @@ class _FrameTab extends StatelessWidget {
     );
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _TrackLinkBar(shot: shot),
-          _LockIfInherited(locked: locked, child: body),
-        ],
-      ),
+      child: body,
     );
   }
 }

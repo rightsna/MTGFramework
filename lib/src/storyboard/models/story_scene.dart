@@ -50,8 +50,12 @@ class StoryScene {
   /// 씬의 구조(=기준 트랙의 비트들). 트랙끼리 구조가 같으므로 개수·순서를 물을 땐 이걸 본다.
   List<DialogueBeat> get beats => baseTrack.beats;
 
-  /// 씬 전체 길이(초) — 각 대사의 실제 길이(=샷 길이 합)의 합.
-  double get totalSeconds => beats.fold(0, (a, s) => a + s.seconds);
+  /// 씬 전체 길이(초) — 각 대사의 실제 길이(=샷 길이 합)의 합. 기준 트랙 기준이라 샷은 모두
+  /// 기준 샷(base=null)이므로 자기 길이로 계산된다.
+  double get totalSeconds => beats.fold(
+      0.0,
+      (a, b) =>
+          a + b.shots.fold(0.0, (x, s) => x + s.playSecondsWith(null)));
 
   /// 씬 안 샷 총 개수.
   int get shotCount => beats.fold(0, (a, s) => a + s.shots.length);

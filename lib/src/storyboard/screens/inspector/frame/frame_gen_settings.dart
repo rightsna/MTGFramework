@@ -14,8 +14,10 @@ class _FrameGenSettings extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final chars = p.characters;
-    final sel = shot.refCharacterIds;
+    final sel = p.shotRefCharacterIds(shot); // 상속/오버라이드 해석
     final atCap = sel.length >= 3;
+    final mode = p.shotVideoMode(shot);
+    final effect = p.shotStillEffect(shot);
     return _GroupCard(
       icon: Icons.tune,
       title: '프레임 설정',
@@ -30,7 +32,7 @@ class _FrameGenSettings extends StatelessWidget {
                 icon: Icons.compare_arrows,
                 title: 'FE2V',
                 desc: '시작·끝 두 장',
-                selected: shot.videoMode == VideoMode.fe2v,
+                selected: mode == VideoMode.fe2v,
                 onTap: () => p.setVideoMode(shot, VideoMode.fe2v),
               ),
               const SizedBox(width: 8),
@@ -38,7 +40,7 @@ class _FrameGenSettings extends StatelessWidget {
                 icon: Icons.play_arrow_rounded,
                 title: 'I2V',
                 desc: '시작 한 장',
-                selected: shot.videoMode == VideoMode.i2v,
+                selected: mode == VideoMode.i2v,
                 onTap: () => p.setVideoMode(shot, VideoMode.i2v),
               ),
               const SizedBox(width: 8),
@@ -46,13 +48,13 @@ class _FrameGenSettings extends StatelessWidget {
                 icon: Icons.photo_outlined,
                 title: '스틸컷',
                 desc: 'AI 없이 사진',
-                selected: shot.videoMode == VideoMode.still,
+                selected: mode == VideoMode.still,
                 onTap: () => p.setVideoMode(shot, VideoMode.still),
               ),
             ],
           ),
           // 스틸컷일 때만 켄번스(줌) 효과를 고른다.
-          if (shot.isStill) ...[
+          if (mode == VideoMode.still) ...[
             const SizedBox(height: 12),
             const _SectionLabel('효과 (켄번스)'),
             const SizedBox(height: 6),
@@ -66,7 +68,7 @@ class _FrameGenSettings extends StatelessWidget {
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    selected: shot.stillEffect == e,
+                    selected: effect == e,
                     onSelected: (_) => p.setStillEffect(shot, e),
                   ),
               ],
