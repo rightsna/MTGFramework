@@ -137,7 +137,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
         await c.dispose();
         return;
       }
-      c.addListener(_onTick); // 대사가 끝나는 순간을 잡아 다음 비트로 넘긴다(영상이 멈춰 있어도)
+      c.addListener(_onTick); // 대사 종료를 잡는다(영상이 멈춰 있어도) — 대사가 더 길면 그 끝에서 넘어간다
       _voice = c;
       if (_playing) await c.play();
     } catch (_) {
@@ -195,19 +195,23 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     }
 
     if (_hasVoiceNow) {
-      // 대사 우선: 대사가 끝나면 다음 비트로 넘어가며 남은 영상을 잘라낸다.
-      if (_voiceEnded) {
-        final ni = _nextBeatIndex;
-        if (ni != null) {
-          go(ni);
-        } else {
-          _stopAtEnd();
+      // 대사와 영상 중 **더 긴 쪽**까지 재생한다(어느 쪽도 잘리지 않는다).
+      if (_ended) {
+        if (_sameBeatNext) {
+          // 비트 안 다음 샷으로 — 영상을 이어서(음성은 유지). 대사가 짧아도 영상은 끝까지 본다.
+          go(_index + 1);
+        } else if (_voiceEnded) {
+          // 마지막 샷: 영상도 대사도 끝났다 = 둘 중 긴 쪽까지 끝 → 다음 비트로.
+          final ni = _nextBeatIndex;
+          if (ni != null) {
+            go(ni);
+          } else {
+            _stopAtEnd();
+          }
         }
-        return;
+        // else 마지막 샷 영상은 끝났지만 대사가 남음 → 대사가 더 길다 → 마지막 프레임 유지(대기).
       }
-      // 대사가 아직인데 영상이 먼저 끝나면: 같은 비트의 다음 샷으로. 마지막 샷이면 대사가
-      // 끝날 때까지 **마지막 프레임을 유지**(여기서 아무것도 안 함 → 다음 tick에서 대사 종료를 잡음).
-      if (_ended && _sameBeatNext) go(_index + 1);
+      // 영상이 아직 재생 중이면(대사가 먼저 끝나도) 그대로 둔다 — 영상이 더 길면 끝까지 본다.
     } else {
       // 대사 없는 비트: 영상이 끝나면 다음으로.
       if (_ended) {
