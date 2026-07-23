@@ -38,7 +38,7 @@ class _FrameSection extends StatelessWidget {
     final busy = p.isBusy(busyKey);
     // 연동은 시작 프레임에만 있다 — 끝 프레임은 물려받을 대상이 아니라 만드는 것이다.
     final canLink = mode == GenMode.imageStart && p.prevShotOf(shot) != null;
-    final linked = mode == GenMode.imageStart && shot.linkStart;
+    final linked = mode == GenMode.imageStart && p.shotLinkStart(shot);
     return _GroupCard(
       icon: genIcon,
       title: title,

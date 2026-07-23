@@ -35,14 +35,14 @@ class _DialogueEditorState extends State<_DialogueEditor> {
     final script = p.beatScript(beat); // 화자·텍스트(상속/오버라이드 해석)
     final speaker = script?.speakerId;
     final speakerChar = p.characterById(speaker);
-    // 보이스가 지정된 화자면 그 보이스, 아니면(내레이션·화자 미지정) **씬 기본 성우**.
-    final sceneVoice = p.selectedScene?.defaultVoiceName.trim() ?? '';
-    final hasSceneVoice =
-        (p.selectedScene?.defaultVoiceId.trim() ?? '').isNotEmpty;
+    // 보이스가 지정된 화자면 그 보이스, 아니면(내레이션·화자 미지정) **이 트랙의 기본 성우**.
+    final track = p.trackOfBeat(beat);
+    final trackVoice = track?.defaultVoiceName.trim() ?? '';
+    final hasTrackVoice = (track?.defaultVoiceId.trim() ?? '').isNotEmpty;
     final target = (speakerChar != null && speakerChar.hasVoice)
         ? '${speakerChar.name.trim().isEmpty ? '화자' : speakerChar.name.trim()} 보이스'
-        : hasSceneVoice
-        ? '씬 기본 성우${sceneVoice.isEmpty ? '' : '($sceneVoice)'}'
+        : hasTrackVoice
+        ? '트랙 기본 성우${trackVoice.isEmpty ? '' : '($trackVoice)'}'
         : null;
     final ownVoice = p.hasOwnVoice(beat);
     final has = p.hasAnyVoice(beat); // 자기 것이든 기준 트랙 상속이든
@@ -68,11 +68,11 @@ class _DialogueEditorState extends State<_DialogueEditor> {
             items: [
               DropdownMenuItem<String?>(
                 value: null,
-                // 화자 없음이라도 씬 기본 성우가 있으면 그 목소리로 읽힌다 — 그걸 드러낸다.
+                // 화자 없음이라도 트랙 기본 성우가 있으면 그 목소리로 읽힌다 — 그걸 드러낸다.
                 child: Text(
-                  hasSceneVoice
-                      ? '내레이션 · 🎙 씬 기본 성우'
-                          '${sceneVoice.isEmpty ? '' : '($sceneVoice)'}'
+                  hasTrackVoice
+                      ? '내레이션 · 🎙 트랙 기본 성우'
+                          '${trackVoice.isEmpty ? '' : '($trackVoice)'}'
                       : '내레이션 (화자 없음)',
                   overflow: TextOverflow.ellipsis,
                 ),

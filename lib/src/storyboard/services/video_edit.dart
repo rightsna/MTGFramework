@@ -218,7 +218,9 @@ class VideoEdit {
       fc.write('[$i:v]scale=$w:$h:force_original_aspect_ratio=decrease,'
           'pad=$w:$h:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24[v$i];');
       if (infos[i]?.hasAudio ?? false) {
-        fc.write('[$i:a]aresample=48000[a$i];');
+        // 채널 수를 stereo로 통일 — 안 그러면 mono/stereo가 섞여 concat 필터가 거부한다.
+        fc.write('[$i:a]aresample=48000,'
+            'aformat=sample_fmts=fltp:channel_layouts=stereo[a$i];');
       } else {
         // 무음 클립: A/V 길이가 어긋나지 않게 그 클립의 영상 길이만큼 무음을 깐다.
         final dur = infos[i]?.duration ?? 3.0;
@@ -280,22 +282,115 @@ class VideoEdit {
     final tmp = Directory('${outPath}_export_tmp');
     if (await tmp.exists()) await tmp.delete(recursive: true);
     await tmp.create(recursive: true);
+    // 자막(ASS) 파일은 **경로에 특수문자가 없는** 시스템 임시폴더에 둔다 — subtitles 필터는
+    // 파일 경로 이스케이프가 까다로워서, 사용자가 고른 저장 경로(한글·공백 가능) 밑을 피한다.
+    final capDir = Directory.systemTemp.createTempSync('mtg_cap');
     try {
       // 1) 비트마다 영상+오디오를 합쳐 한 세그먼트로.
       final segs = <String>[];
       for (var i = 0; i < beats.length; i++) {
         final seg = '${tmp.path}/beat_$i.mp4';
-        await _renderBeat(ffmpeg, beats[i], width, height, fps, seg);
+        // 자막이 있으면 이 비트의 ASS를 굽고(시간은 비트 시작=0 기준) 경로를 넘긴다.
+        final assPath = _writeBeatAss(
+            beats[i].caption, width, height, '${capDir.path}/beat_$i.ass');
+        await _renderBeat(ffmpeg, beats[i], width, height, fps, seg, assPath);
         segs.add(seg);
       }
-      // 2) 세그먼트들을 이어붙인다(모두 같은 규격이라 concat이 처리).
+      // 2) 세그먼트들을 이어붙인다 — **영상은 무손실 복사 + 오디오는 stereo aac로 재인코딩**.
+      //    세그먼트마다 채널 수가 다르거나(대사 mono vs 효과음 mix stereo) aac 프라이밍이 있으면
+      //    순수 스트림복사 concat은 그 경계부터 오디오가 어긋난다("효과음 뒤 대사 사라짐"). 오디오만
+      //    다시 구우면 채널·타임스탬프가 통일돼 안전하고, 영상은 그대로라 화질 손실이 없다.
       final scene = bgm == null ? outPath : '${tmp.path}/scene.mp4';
-      await concat(segs, scene);
+      await _concatExport(ffmpeg, segs, scene);
       // 3) 배경음을 전체에 깐다(있으면).
       if (bgm != null) await _mixBgm(ffmpeg, scene, bgm, bgmVolume, outPath);
     } finally {
       if (await tmp.exists()) await tmp.delete(recursive: true);
+      if (await capDir.exists()) await capDir.delete(recursive: true);
     }
+  }
+
+  /// 내보내기용 이어붙이기 — 영상은 무손실 복사, 오디오는 stereo·48k aac로 재인코딩해 통일한다.
+  /// 세그먼트 채널 수가 섞여도(대사 mono vs 효과음 mix stereo) 오디오가 어긋나지 않는다.
+  /// 실패하면(드묾) 필터 재인코딩 concat으로 폴백.
+  static Future<void> _concatExport(
+      String ffmpeg, List<String> segs, String outPath) async {
+    if (segs.isEmpty) throw Exception('이어붙일 영상이 없습니다.');
+    final list = File('$outPath.list.txt');
+    await list.writeAsString(
+        segs.map((p) => "file '${p.replaceAll("'", r"'\''")}'").join('\n'));
+    final r = await Process.run(ffmpeg, [
+      '-y', '-f', 'concat', '-safe', '0', '-i', list.path,
+      '-c:v', 'copy',
+      '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
+      outPath,
+    ]);
+    await list.delete();
+    if (r.exitCode == 0) return;
+    // 폴백: 영상까지 재인코딩하는 필터 concat.
+    await concat(segs, outPath);
+  }
+
+  /// 비트 자막을 ASS 파일로 쓴다(구간별 Dialogue). 자막이 없거나 전부 공백이면 null.
+  /// 시간은 **비트 시작=0** 기준(세그먼트가 그 시점부터 시작하므로) — concat 후 자연히 맞는다.
+  static String? _writeBeatAss(
+      ExportCaption? cap, int w, int h, String assPath) {
+    if (cap == null || !cap.hasText) return null;
+    final align = switch (cap.position) { 'top' => 8, 'middle' => 5, _ => 2 };
+    final fontSize = (h * 0.055).round().clamp(18, 96);
+    final marginV = (h * 0.045).round();
+    // 미리보기처럼 글씨 뒤에 반투명 검은 박스를 깐다(BorderStyle=3). 박스 색은 OutlineColour,
+    // Outline 값이 글씨 둘레 여백. ASS 알파는 00=불투명 → 미리보기 60% 불투명(0x99) ≈ &H66.
+    final boxPad = (fontSize * 0.22).round().clamp(2, 14);
+    final sb = StringBuffer()
+      ..writeln('[Script Info]')
+      ..writeln('ScriptType: v4.00+')
+      ..writeln('PlayResX: $w')
+      ..writeln('PlayResY: $h')
+      ..writeln('WrapStyle: 0')
+      ..writeln('ScaledBorderAndShadow: yes')
+      ..writeln('')
+      ..writeln('[V4+ Styles]')
+      ..writeln('Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, '
+          'OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, '
+          'ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, '
+          'MarginL, MarginR, MarginV, Encoding')
+      // 흰 글씨 + 반투명 검은 박스(BorderStyle=3, 박스색=OutlineColour &H66000000).
+      // 한글은 libass가 폴백 폰트로 렌더. (BackColour는 그림자용 — 안 씀.)
+      ..writeln('Style: Default,Arial,$fontSize,&H00FFFFFF,&H000000FF,&H66000000,'
+          '&H00000000,0,0,0,0,100,100,0,0,3,$boxPad,0,$align,60,60,$marginV,1')
+      ..writeln('')
+      ..writeln('[Events]')
+      ..writeln('Format: Layer, Start, End, Style, Name, MarginL, MarginR, '
+          'MarginV, Effect, Text');
+    var t = 0.0;
+    for (final cue in cap.cues) {
+      final start = t;
+      final end = t + cue.seconds;
+      t = end;
+      final text = cue.text.trim();
+      if (text.isEmpty) continue; // 공백 구간(자막 없음)
+      final safe = text
+          .replaceAll('\\', '\\\\')
+          .replaceAll('\n', '\\N')
+          .replaceAll('{', '(')
+          .replaceAll('}', ')');
+      sb.writeln('Dialogue: 0,${_assTime(start)},${_assTime(end)},'
+          'Default,,0,0,0,,$safe');
+    }
+    File(assPath).writeAsStringSync(sb.toString());
+    return assPath;
+  }
+
+  /// 초 → ASS 시간 문자열(H:MM:SS.cc, 센티초).
+  static String _assTime(double sec) {
+    final cs = (math.max(0.0, sec) * 100).round();
+    final h = cs ~/ 360000;
+    final m = (cs % 360000) ~/ 6000;
+    final s = (cs % 6000) ~/ 100;
+    final c = cs % 100;
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '$h:${two(m)}:${two(s)}.${two(c)}';
   }
 
   /// 비트 하나를 세그먼트로 굽는다 — 클립 이어붙이기 + (대사가 길면)프레임 정지 연장 + 오디오 믹스.
@@ -306,6 +401,7 @@ class VideoEdit {
     int h,
     double fps,
     String outPath,
+    String? assPath, // 자막 ASS 경로(없으면 null)
   ) async {
     var dv = 0.0; // 영상 길이 합
     for (final c in b.clips) {
@@ -337,28 +433,39 @@ class VideoEdit {
     // 대사가 더 길면 마지막 프레임을 그만큼 정지시켜 늘린다.
     final ext = beatDur - dv;
     if (ext > 0.02) {
-      fc.write('[vc]tpad=stop_mode=clone:stop_duration=${ext.toStringAsFixed(3)}[v];');
+      fc.write('[vc]tpad=stop_mode=clone:stop_duration=${ext.toStringAsFixed(3)}[vp];');
     } else {
-      fc.write('[vc]null[v];');
+      fc.write('[vc]null[vp];');
+    }
+    // 자막을 영상 위에 구워 넣는다(있으면). 경로는 특수문자 없는 임시폴더라 그대로 태운다.
+    if (assPath != null) {
+      fc.write('[vp]subtitles=$assPath[v];');
+    } else {
+      fc.write('[vp]null[v];');
     }
     // 오디오: 대사·효과음을 비트 시작부터 얹고 비트 길이에 맞춘다(짧으면 무음 패딩, 길면 컷).
+    // ⚠️ 모든 비트의 오디오를 **stereo·48kHz로 통일**한다 — 안 그러면 mono 음성 비트와
+    //    stereo 효과음 섞은 비트의 채널 수가 달라, 세그먼트 이어붙일(concat) 때 그 지점부터
+    //    오디오가 떨어져 나간다(효과음 비트 이후 대사가 사라지던 버그).
+    const aFmt = 'aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo';
     final aparts = <String>[];
     if (voiceIdx >= 0) {
-      fc.write('[$voiceIdx:a]aresample=48000,apad,atrim=0:$durStr,'
+      fc.write('[$voiceIdx:a]$aFmt,apad,atrim=0:$durStr,'
           'asetpts=PTS-STARTPTS[av];');
       aparts.add('[av]');
     }
     if (sfxIdx >= 0) {
-      fc.write('[$sfxIdx:a]aresample=48000,apad,atrim=0:$durStr,'
+      fc.write('[$sfxIdx:a]$aFmt,apad,atrim=0:$durStr,'
           'asetpts=PTS-STARTPTS[as];');
       aparts.add('[as]');
     }
     if (aparts.isEmpty) {
       fc.write('anullsrc=r=48000:cl=stereo,atrim=0:$durStr[a];');
     } else if (aparts.length == 1) {
-      fc.write('${aparts.first}anull[a];');
+      fc.write('${aparts.first}$aFmt[a];');
     } else {
-      fc.write('${aparts.join()}amix=inputs=${aparts.length}:normalize=0[a];');
+      fc.write('${aparts.join()}amix=inputs=${aparts.length}:normalize=0,'
+          '$aFmt[a];');
     }
 
     args.addAll([
@@ -404,14 +511,29 @@ class VideoEdit {
   }
 }
 
-/// [VideoEdit.exportScene]에 넘기는 비트 하나 — 영상 클립들 + (있으면)대사 음성·효과음.
+/// [VideoEdit.exportScene]에 넘기는 비트 하나 — 영상 클립들 + (있으면)대사 음성·효과음·자막.
 class ExportBeat {
-  const ExportBeat({required this.clips, this.voice, this.sfx});
+  const ExportBeat({required this.clips, this.voice, this.sfx, this.caption});
 
   /// 이 비트의 영상들(순서대로) — 최소 1개. 없으면 이 비트는 내보내기에서 빠진다.
   final List<String> clips;
   final String? voice; // 대사 음성(mp3)
   final String? sfx; // 효과음(mp3)
+  final ExportCaption? caption; // 자막(시간순 구간 + 위치) — 영상 위에 구워 넣는다
+}
+
+/// 내보내기용 자막 한 벌 — 비트 시작부터 순서대로 흐르는 구간들 + 세로 위치.
+/// (모델의 Caption을 video_edit이 모델을 몰라도 되게 원시값으로 옮긴 것.)
+class ExportCaption {
+  const ExportCaption({required this.cues, required this.position});
+
+  /// (초, 텍스트) 순서대로. 텍스트가 빈 구간은 공백(그 시간만큼 자막 없음).
+  final List<({double seconds, String text})> cues;
+
+  /// 세로 위치 — 'top' | 'middle' | 'bottom'.
+  final String position;
+
+  bool get hasText => cues.any((c) => c.text.trim().isNotEmpty);
 }
 
 /// [VideoEdit.probe] 결과.

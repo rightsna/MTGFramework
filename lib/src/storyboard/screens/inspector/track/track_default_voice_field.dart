@@ -1,16 +1,18 @@
 part of '../inspector_panel.dart';
 
-/// 씬 기본 성우 선택 — 일레븐랩스 보이스 목록에서 하나 고른다(내레이션·화자 미지정용).
-/// 인물 관리의 보이스 드롭다운과 같은 방식(설정의 키로 목록을 받아온다).
-class _SceneDefaultVoiceField extends StatefulWidget {
-  const _SceneDefaultVoiceField({required super.key});
+/// 트랙 기본 성우 선택 — 일레븐랩스 보이스 목록에서 하나 고른다(내레이션·화자 미지정용).
+/// **트랙 단위** — 트랙마다 다른 성우로 뽑아 비교한다.
+class _TrackDefaultVoiceField extends StatefulWidget {
+  const _TrackDefaultVoiceField({required super.key, required this.track});
+
+  final VideoTrack track;
 
   @override
-  State<_SceneDefaultVoiceField> createState() =>
-      _SceneDefaultVoiceFieldState();
+  State<_TrackDefaultVoiceField> createState() =>
+      _TrackDefaultVoiceFieldState();
 }
 
-class _SceneDefaultVoiceFieldState extends State<_SceneDefaultVoiceField> {
+class _TrackDefaultVoiceFieldState extends State<_TrackDefaultVoiceField> {
   List<ElevenVoice> _voices = [];
   bool _loading = false;
   String? _error;
@@ -44,8 +46,8 @@ class _SceneDefaultVoiceFieldState extends State<_SceneDefaultVoiceField> {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final sc = p.selectedScene;
-    final currentId = sc?.defaultVoiceId.trim() ?? '';
+    final track = widget.track;
+    final currentId = track.defaultVoiceId.trim();
 
     if (p.settings.elevenKey.trim().isEmpty) {
       return const Text('설정에서 일레븐랩스 키를 넣어야 성우를 고를 수 있어요',
@@ -66,8 +68,7 @@ class _SceneDefaultVoiceFieldState extends State<_SceneDefaultVoiceField> {
         children: [
           Expanded(
             child: Text('보이스 목록 실패: $_error',
-                style:
-                    const TextStyle(fontSize: 12, color: Colors.redAccent)),
+                style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
           ),
           TextButton(onPressed: _loadVoices, child: const Text('다시 시도')),
         ],
@@ -94,7 +95,7 @@ class _SceneDefaultVoiceFieldState extends State<_SceneDefaultVoiceField> {
           DropdownMenuItem<String?>(
             value: currentId,
             child: Text(
-              '${sc!.defaultVoiceName.isEmpty ? currentId : sc.defaultVoiceName} (목록에 없음)',
+              '${track.defaultVoiceName.isEmpty ? currentId : track.defaultVoiceName} (목록에 없음)',
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -109,10 +110,11 @@ class _SceneDefaultVoiceFieldState extends State<_SceneDefaultVoiceField> {
       ],
       onChanged: (id) {
         if (id == null) {
-          p.setSceneDefaultVoice('', '');
+          p.setTrackDefaultVoice(track, '', '');
         } else {
           final match = _voices.where((v) => v.id == id);
-          p.setSceneDefaultVoice(id, match.isEmpty ? '' : match.first.name);
+          p.setTrackDefaultVoice(
+              track, id, match.isEmpty ? '' : match.first.name);
         }
       },
     );

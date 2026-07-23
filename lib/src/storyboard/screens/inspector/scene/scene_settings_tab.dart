@@ -25,10 +25,10 @@ class _SceneSettingsTab extends StatelessWidget {
               key: ValueKey('scene_note_${sc.id}'),
               controller: p.sceneNoteCtrl(sc.id)),
           const SizedBox(height: 16),
-          // 해상도·LoRA는 전부 **씬 단위** — 씬마다 따로 저장된다(다른 씬에 영향 없음).
+          // 해상도는 **씬 단위** — 씬마다 따로 저장된다. (LoRA·기본 성우는 '트랙' 탭으로 옮겼다.)
           _GroupCard(
-            icon: Icons.tune,
-            title: '생성 설정',
+            icon: Icons.aspect_ratio,
+            title: '해상도',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -67,21 +67,6 @@ class _SceneSettingsTab extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                _SectionLabel('LoRA (씬 단위 · LTX-2.3용)'),
-                const SizedBox(height: 6),
-                _LoraField(key: ValueKey('lora_${sc.id}')),
-                const SizedBox(height: 14),
-                // 기본 성우 — 화자 미지정(내레이션) 대사에 쓰는 보이스. 씬 단위라 여기 함께 둔다.
-                _SectionLabel('기본 성우 (내레이션)'),
-                const SizedBox(height: 2),
-                const Text(
-                  '화자를 지정하지 않은 대사(내레이션)에 쓰는 보이스입니다. '
-                  '화자에 목소리가 있으면 그 화자 보이스가 우선합니다.',
-                  style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
-                ),
-                const SizedBox(height: 6),
-                _SceneDefaultVoiceField(key: ValueKey('scene_voice_${sc.id}')),
               ],
             ),
           ),

@@ -14,32 +14,25 @@ class StoryScene {
   String title; // 씬 제목 (비우면 SCENE n 으로 표시)
   String commonPrompt; // 이 씬 공통 프롬프트 — 씬 내 모든 샷 생성에 함께 붙는다
   List<VideoTrack> tracks; // 비교용 트랙들(첫 번째가 기준). 최소 1개는 항상 있다
-  String loraUrl; // 이 씬의 LoRA URL (씬 안 샷들끼리 공유, 씬끼리 별개)
-  double loraStrength; // 이 씬의 LoRA 강도
+  // LoRA·기본 성우는 **트랙별**로 옮겼다([VideoTrack.loraUrl] / [VideoTrack.defaultVoiceId]).
   String bgmPrompt; // 이 씬의 배경음 스타일 태그(장르·분위기·악기) — ACE-Step BGM 생성용
   String? bgmPath; // 생성된 배경음(mp3) 파일 경로(런타임 절대경로)
   int bgmSeconds; // 배경음 길이(초)
   String note; // 씬 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
   ImageRes imageRes; // 이 씬의 프레임(시작·끝) 생성 해상도 — **씬별**
   VideoRes videoRes; // 이 씬의 영상 생성 해상도 — **씬별**
-  String defaultVoiceId; // 이 씬의 기본 성우(내레이션·화자 미지정 대사용). 비면 미지정
-  String defaultVoiceName; // 사람이 읽는 기본 성우 이름(라벨)
 
   StoryScene({
     required this.id,
     this.title = '',
     this.commonPrompt = '',
     List<VideoTrack>? tracks,
-    this.loraUrl = '',
-    this.loraStrength = 0.8,
     this.bgmPrompt = '',
     this.bgmPath,
     this.bgmSeconds = 30,
     this.note = '',
     this.imageRes = ImageRes.p704x1280,
     this.videoRes = VideoRes.p352x640,
-    this.defaultVoiceId = '',
-    this.defaultVoiceName = '',
   }) : tracks = (tracks == null || tracks.isEmpty)
             ? [VideoTrack(id: '${id}_track1', name: '트랙 1')]
             : tracks;
@@ -70,17 +63,10 @@ class StoryScene {
           'seconds': bgmSeconds,
           'file': mediaName(bgmPath),
         },
-        'lora': {
-          'url': loraUrl,
-          'strength': loraStrength,
-        },
+        // LoRA·기본 성우는 트랙별로 옮겨 각 트랙 JSON에 적힌다(여기서 안 적는다).
         'res': {
           'image': imageRes.name,
           'video': videoRes.name,
-        },
-        'voice': {
-          'id': defaultVoiceId,
-          'name': defaultVoiceName,
         },
         'note': note,
       };
@@ -88,16 +74,30 @@ class StoryScene {
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
   factory StoryScene.fromJson(Map<String, dynamic> j, String dir) {
     final bgm = (j['bgm'] as Map?)?.cast<String, dynamic>();
-    final lora = (j['lora'] as Map?)?.cast<String, dynamic>();
     final res = (j['res'] as Map?)?.cast<String, dynamic>();
-    final voice = (j['voice'] as Map?)?.cast<String, dynamic>();
+    final tracks = _readTracks(j, dir);
+
+    // 마이그레이션: 옛 파일은 LoRA·기본 성우가 **씬 단위**였다. 그 값을 각 트랙에 시드한다
+    // (옛 동작 = 모든 트랙이 씬 값을 공유했으므로 모든 트랙에 넣는다). 트랙이 자기 값을 이미
+    // 가졌으면(새 형식) 건드리지 않는다.
+    final oldLora = (j['lora'] as Map?)?.cast<String, dynamic>();
+    final oldVoice = (j['voice'] as Map?)?.cast<String, dynamic>();
+    for (final t in tracks) {
+      if (oldLora != null && t.loraUrl.isEmpty) {
+        t.loraUrl = (oldLora['url'] as String?) ?? '';
+        t.loraStrength = (oldLora['strength'] as num?)?.toDouble() ?? 0.8;
+      }
+      if (oldVoice != null && t.defaultVoiceId.isEmpty) {
+        t.defaultVoiceId = (oldVoice['id'] as String?) ?? '';
+        t.defaultVoiceName = (oldVoice['name'] as String?) ?? '';
+      }
+    }
+
     return StoryScene(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
       commonPrompt: (j['commonPrompt'] as String?) ?? '',
-      tracks: _readTracks(j, dir),
-      loraUrl: (lora?['url'] as String?) ?? '',
-      loraStrength: (lora?['strength'] as num?)?.toDouble() ?? 0.8,
+      tracks: tracks,
       bgmPrompt: (bgm?['prompt'] as String?) ?? '',
       bgmPath: mediaPath(dir, bgm?['file']),
       bgmSeconds: (bgm?['seconds'] as int?) ?? 30,
@@ -111,8 +111,6 @@ class StoryScene {
         (e) => e.name == res?['video'],
         orElse: () => VideoRes.p352x640,
       ),
-      defaultVoiceId: (voice?['id'] as String?) ?? '',
-      defaultVoiceName: (voice?['name'] as String?) ?? '',
     );
   }
 

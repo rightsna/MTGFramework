@@ -61,10 +61,11 @@ class _SceneTitleBar extends StatelessWidget {
                 _statePill(Icons.layers_outlined, '트랙 ${p.tracks.length}'),
                 _statePill(Icons.view_agenda_outlined,
                     '비트 ${p.baseBeats.length} · 샷 ${sc.shotCount}'),
-                if (sc.defaultVoiceName.trim().isNotEmpty)
+                // 성우·LoRA는 트랙별 — 지금 보고 있는 트랙 기준으로 보여 준다('트랙' 탭에서 편집).
+                if ((p.selectedTrack?.defaultVoiceName.trim() ?? '').isNotEmpty)
                   _statePill(Icons.record_voice_over_outlined,
-                      '성우 ${sc.defaultVoiceName.trim()}'),
-                if (sc.loraUrl.trim().isNotEmpty)
+                      '성우 ${p.selectedTrack!.defaultVoiceName.trim()}'),
+                if ((p.selectedTrack?.loraUrl.trim() ?? '').isNotEmpty)
                   _statePill(Icons.tune, 'LoRA'),
                 if (sc.bgmPath != null || sc.bgmPrompt.trim().isNotEmpty)
                   _statePill(Icons.music_note, 'BGM'),

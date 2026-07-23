@@ -11,9 +11,9 @@ class _LinkStartToggle extends StatelessWidget {
     final p = StoryboardScope.of(context);
     final prev = p.prevShotOf(shot);
     if (prev == null) return const SizedBox.shrink();
-    final on = shot.linkStart;
+    final on = p.shotLinkStart(shot); // 상속/오버라이드 해석
     final prevName = p.shotLabel(prev);
-    final prevHasEnd = prev.endImagePath != null;
+    final prevHasEnd = p.shotEndImage(prev) != null;
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 2, 6, 2),
       decoration: BoxDecoration(

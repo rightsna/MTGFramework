@@ -51,8 +51,8 @@ class _ShotCard extends StatelessWidget {
                               fontSize: 11,
                               letterSpacing: 1.0,
                               color: Color(0xAAFFFFFF))),
-                      if (beat.title.trim().isNotEmpty)
-                        Text(beat.title.trim(),
+                      if (p.beatTitle(beat).trim().isNotEmpty)
+                        Text(p.beatTitle(beat).trim(),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(

@@ -84,12 +84,13 @@ class SceneListSidebar extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: _SceneOpButton(
-                    // 씬의 영상에 대사 음성·효과음·배경음까지 합쳐 하나의 mp4로 저장한다.
+                    // 기준 트랙(트랙 1)의 영상에 대사 음성·효과음·배경음을 합쳐 하나의 mp4로.
+                    // (다른 트랙 내보내기는 인스펙터 '트랙' 탭에서.)
                     icon: Icons.movie_outlined,
-                    tooltip: '씬 무비 내보내기 (음성·효과음·배경음 합성)',
+                    tooltip: '트랙 1 무비 내보내기 (음성·효과음·배경음 합성)',
                     onPressed: p.selectedScene == null
                         ? null
-                        : () => p.exportSceneMovie(),
+                        : () => p.exportTrackMovie(p.selectedScene!.baseTrack),
                   ),
                 ),
               ],

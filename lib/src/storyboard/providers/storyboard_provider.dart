@@ -1656,21 +1656,29 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 이 대사에 쓸 보이스 — 화자에 보이스가 있으면 그것, 없으면(내레이션·화자 미지정)
   /// **씬 기본 성우**로 떨어진다. 둘 다 없으면 null → 음성 생성 불가.
-  String? _voiceIdFor(String? speakerId, StoryScene? scene) {
+  String? _voiceIdFor(String? speakerId, VideoTrack? track) {
     final speaker = characterById(speakerId);
     if (speaker != null && speaker.hasVoice) return speaker.voiceId.trim();
-    final fallback = scene?.defaultVoiceId.trim() ?? '';
+    final fallback = track?.defaultVoiceId.trim() ?? '';
     return fallback.isEmpty ? null : fallback;
   }
 
-  /// 이 씬의 기본 성우(내레이션·화자 미지정 대사에 쓰는 보이스) 지정. 비우면 미지정.
-  void setSceneDefaultVoice(String voiceId, String voiceName) {
-    final sc = selectedScene;
-    if (sc == null) return;
-    sc.defaultVoiceId = voiceId.trim();
-    sc.defaultVoiceName = voiceName.trim();
+  /// **이 트랙**의 기본 성우(내레이션·화자 미지정 대사에 쓰는 보이스) 지정. 비우면 미지정.
+  void setTrackDefaultVoice(VideoTrack track, String voiceId, String voiceName) {
+    track.defaultVoiceId = voiceId.trim();
+    track.defaultVoiceName = voiceName.trim();
     notifyListeners();
     save();
+  }
+
+  /// 이 비트가 속한 트랙(어느 씬이든).
+  VideoTrack? trackOfBeat(DialogueBeat beat) {
+    for (final sc in _scenes) {
+      for (final t in sc.tracks) {
+        if (t.beats.contains(beat)) return t;
+      }
+    }
+    return null;
   }
 
   /// 미디어 파일 길이(초) 실측 — 음성이든 영상이든. 길이가 타임라인을 정하므로
@@ -1746,7 +1754,7 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(voiceBlockReason!);
       return;
     }
-    final voiceId = _voiceIdFor(script.speakerId, sceneOf2(beat));
+    final voiceId = _voiceIdFor(script.speakerId, trackOfBeat(beat));
     if (voiceId == null) {
       messenger?.call('보이스가 없습니다 — 화자에 목소리를 지정하거나 씬 탭에서 기본 성우를 정하세요');
       return;
@@ -2102,7 +2110,8 @@ class StoryboardProvider extends ChangeNotifier {
           throw Exception('끝 프레임을 먼저 만들어 주세요 (FE2V) — '
               '끝 없이 뽑으려면 프레임 탭에서 I2V로 바꾸세요');
         }
-        final sc = sceneOf(shot); // 해상도·LoRA는 씬 단위
+        final sc = sceneOf(shot); // 해상도는 씬 단위
+        final track = trackOf(shot); // LoRA는 트랙 단위
         final res = sc?.videoRes ?? _settings.videoRes;
         // 네거티브는 샷 칸이 먼저고, 비어 있으면 설정의 전역 값으로 떨어진다.
         // 둘 다 비면 서버 워크플로에 박힌 기본 네거티브가 쓰인다.
@@ -2116,8 +2125,8 @@ class StoryboardProvider extends ChangeNotifier {
           width: res.width,
           height: res.height,
           seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
-          loraUrl: _effectiveLoraUrl(sc),
-          loraStrength: sc?.loraStrength ?? 0.8,
+          loraUrl: _effectiveLoraUrl(track),
+          loraStrength: track?.loraStrength ?? 0.8,
           onProgress: (st) => _setProgress(progressKey, st),
         );
     }
@@ -2160,20 +2169,16 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
-  /// 선택 씬의 LoRA URL 저장(같은 씬 샷들끼리 공유, 씬끼리 별개).
-  void setSceneLoraUrl(String url) {
-    final sc = selectedScene;
-    if (sc == null) return;
-    sc.loraUrl = url.trim();
+  /// **이 트랙**의 LoRA URL 저장(트랙끼리 별개).
+  void setTrackLoraUrl(VideoTrack track, String url) {
+    track.loraUrl = url.trim();
     notifyListeners();
     save();
   }
 
-  /// 선택 씬의 LoRA 강도(0~1.5) 저장.
-  void setSceneLoraStrength(double v) {
-    final sc = selectedScene;
-    if (sc == null) return;
-    sc.loraStrength = v.clamp(0.0, 1.5);
+  /// **이 트랙**의 LoRA 강도(0~1.5) 저장.
+  void setTrackLoraStrength(VideoTrack track, double v) {
+    track.loraStrength = v.clamp(0.0, 1.5);
     notifyListeners();
     save();
   }
@@ -2682,8 +2687,8 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// LoRA URL 정규화: civitai 페이지 URL → api/download 링크로 변환 + 토큰 자동 부착.
-  String _effectiveLoraUrl(StoryScene? sc) {
-    var url = (sc?.loraUrl ?? '').trim();
+  String _effectiveLoraUrl(VideoTrack? track) {
+    var url = (track?.loraUrl ?? '').trim();
     if (url.isEmpty) return '';
     if (url.contains('civitai.com')) {
       if (!url.contains('/api/download/')) {
@@ -2777,12 +2782,24 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 선택 씬의 클립을 샷 순서대로 하나의 mp4로 이어붙여 내보낸다(씬 무비).
-  /// 영상이 없는 샷은 건너뛰고, 몇 개를 건너뛰었는지 알려준다.
-  /// 씬 무비 내보내기 — **보고 있는 트랙**의 영상에 대사 음성·효과음·배경음까지 합쳐 한 파일로.
-  /// 미리보기(영상 재생 팝업)와 같은 규칙(비트 = 영상·대사 중 긴 쪽, 대사가 길면 프레임 정지)이다.
-  Future<void> exportSceneMovie() async {
-    final sc = selectedScene;
+  /// 내보내기 진행 상태 키(트랙 단위) — 버튼 비활성/스피너 표시용.
+  String exportBusyKey(VideoTrack track) => 'export:${track.id}';
+
+  /// 씬을 볼 수 있는지(=이 트랙에 실제로 뽑힌 영상이 하나라도 있는지) — 내보내기 버튼 활성 판단.
+  bool trackHasVideo(VideoTrack track) {
+    for (final beat in track.beats) {
+      for (final s in beat.shots) {
+        if (_hasFile(videoPathOf(s))) return true;
+      }
+    }
+    return false;
+  }
+
+  /// **트랙 하나**를 하나의 mp4로 내보낸다 — 그 트랙의 영상에 대사 음성·효과음·배경음까지 합쳐서.
+  /// 영상이 없는 비트는 건너뛴다. 미리보기(영상 재생 팝업)와 같은 규칙(비트 = 영상·대사 중 긴 쪽).
+  /// 트랙별 영상/음성은 [videoPathOf]/[voicePathOf]가 그 트랙 것(없으면 기준 상속)으로 해석한다.
+  Future<void> exportTrackMovie(VideoTrack track) async {
+    final sc = sceneOfTrack(track) ?? selectedScene;
     if (sc == null) return;
     if (!VideoEdit.available) {
       messenger?.call(VideoEdit.missingHint);
@@ -2790,28 +2807,42 @@ class StoryboardProvider extends ChangeNotifier {
     }
     // 비트마다 영상 클립(상속 포함) + 대사 음성 + 효과음을 모은다. 영상 없는 비트는 뺀다.
     final beats = <ExportBeat>[];
-    for (final beat in dialogues) {
+    for (final beat in track.beats) {
       final clips = <String>[
         for (final s in beat.shots)
           if (_hasFile(videoPathOf(s))) videoPathOf(s)!,
       ];
       if (clips.isEmpty) continue;
+      // 자막(트랙별 해석). 텍스트가 하나라도 있으면 영상 위에 구워 넣는다.
+      final cap = captionOf(beat);
+      final expCap = (cap != null && cap.cues.any((c) => c.text.trim().isNotEmpty))
+          ? ExportCaption(
+              cues: [for (final c in cap.cues) (seconds: c.seconds, text: c.text)],
+              position: cap.position.name, // 'top' | 'middle' | 'bottom'
+            )
+          : null;
       beats.add(ExportBeat(
         clips: clips,
         voice: _hasFile(voicePathOf(beat)) ? voicePathOf(beat) : null,
         sfx: _hasFile(sfxPathOf(beat)) ? sfxPathOf(beat) : null,
+        caption: expCap,
       ));
     }
     if (beats.isEmpty) {
-      messenger?.call('이 씬에는 생성된 영상이 없습니다');
+      messenger?.call('${trackLabel(track)}에는 생성된 영상이 없습니다');
       return;
     }
-    // 파일명에 못 쓰는 문자만 걸러낸 씬 제목을 기본 이름으로.
+    // 파일명: "<씬 제목> - <트랙 이름>.mp4" (못 쓰는 문자만 걸러낸다).
     final title = sc.title.trim().isEmpty ? sc.id : sc.title.trim();
-    final safe = title.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
+    final base = '$title - ${trackLabel(track)}';
+    final safe = base.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
     final loc = await fs.getSaveLocation(suggestedName: '$safe.mp4');
     if (loc == null) return;
-    messenger?.call('씬 무비 합치는 중… (비트 ${beats.length}개 · 음성·효과음·배경음 합성)');
+    final key = exportBusyKey(track);
+    _busy.add(key);
+    notifyListeners();
+    messenger?.call(
+        '${trackLabel(track)} 무비 합치는 중… (비트 ${beats.length}개 · 음성·효과음·배경음 합성)');
     try {
       await VideoEdit.exportScene(
         beats: beats,
@@ -2820,11 +2851,22 @@ class StoryboardProvider extends ChangeNotifier {
         height: sc.videoRes.height,
         outPath: loc.path,
       );
-      messenger?.call('씬 무비 저장: ${loc.path}');
+      messenger?.call('${trackLabel(track)} 무비 저장: ${loc.path}');
     } catch (e, st) {
-      debugPrint('[sceneMovie] 실패: $e\n$st');
-      messenger?.call('씬 무비 실패: $e');
+      debugPrint('[trackMovie] 실패: $e\n$st');
+      messenger?.call('무비 내보내기 실패: $e');
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
     }
+  }
+
+  /// 이 트랙이 속한 씬.
+  StoryScene? sceneOfTrack(VideoTrack track) {
+    for (final sc in _scenes) {
+      if (sc.tracks.contains(track)) return sc;
+    }
+    return null;
   }
 
   // ───────── 사이드/플레이어 토글 ─────────

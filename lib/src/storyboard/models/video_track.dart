@@ -18,11 +18,21 @@ class VideoTrack {
   VideoBackend backend; // 이 트랙의 영상을 뽑을 백엔드 — 트랙을 가르는 기준
   List<DialogueBeat> beats; // 이 트랙의 비트들(기준 트랙과 개수·순서가 항상 같다)
 
+  // ── 생성 설정도 **트랙별**이다 — 트랙마다 다른 LoRA·성우로 뽑아 비교한다(예전엔 씬 단위였다). ──
+  String loraUrl; // 이 트랙의 LoRA URL (LTX-2.3용)
+  double loraStrength; // 이 트랙의 LoRA 강도
+  String defaultVoiceId; // 이 트랙의 기본 성우(내레이션·화자 미지정 대사용). 비면 미지정
+  String defaultVoiceName; // 사람이 읽는 기본 성우 이름(라벨)
+
   VideoTrack({
     required this.id,
     this.name = '',
     this.backend = VideoBackend.serviceApi,
     List<DialogueBeat>? beats,
+    this.loraUrl = '',
+    this.loraStrength = 0.8,
+    this.defaultVoiceId = '',
+    this.defaultVoiceName = '',
   }) : beats = beats ?? [];
 
   /// 이 트랙의 샷 총 개수(트랙끼리 같다).
@@ -36,20 +46,30 @@ class VideoTrack {
         'id': id,
         'name': name,
         'backend': backend.name,
+        'lora': {'url': loraUrl, 'strength': loraStrength},
+        'voice': {'id': defaultVoiceId, 'name': defaultVoiceName},
         'beats': beats.map((b) => b.toJson()).toList(),
       };
 
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
-  factory VideoTrack.fromJson(Map<String, dynamic> j, String dir) => VideoTrack(
-        id: j['id'] as String,
-        name: (j['name'] as String?) ?? '',
-        backend: VideoBackend.values.firstWhere(
-          (e) => e.name == j['backend'],
-          orElse: () => VideoBackend.serviceApi,
-        ),
-        beats: ((j['beats'] as List?) ?? const [])
-            .map((e) =>
-                DialogueBeat.fromJson((e as Map).cast<String, dynamic>(), dir))
-            .toList(),
-      );
+  factory VideoTrack.fromJson(Map<String, dynamic> j, String dir) {
+    final lora = (j['lora'] as Map?)?.cast<String, dynamic>();
+    final voice = (j['voice'] as Map?)?.cast<String, dynamic>();
+    return VideoTrack(
+      id: j['id'] as String,
+      name: (j['name'] as String?) ?? '',
+      backend: VideoBackend.values.firstWhere(
+        (e) => e.name == j['backend'],
+        orElse: () => VideoBackend.serviceApi,
+      ),
+      loraUrl: (lora?['url'] as String?) ?? '',
+      loraStrength: (lora?['strength'] as num?)?.toDouble() ?? 0.8,
+      defaultVoiceId: (voice?['id'] as String?) ?? '',
+      defaultVoiceName: (voice?['name'] as String?) ?? '',
+      beats: ((j['beats'] as List?) ?? const [])
+          .map((e) =>
+              DialogueBeat.fromJson((e as Map).cast<String, dynamic>(), dir))
+          .toList(),
+    );
+  }
 }

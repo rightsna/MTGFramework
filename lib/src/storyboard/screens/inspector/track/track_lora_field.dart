@@ -1,22 +1,19 @@
 part of '../inspector_panel.dart';
 
-/// LoRA URL 입력 + 강도 슬라이더 (씬 단위 — 같은 씬 샷들끼리 공유).
-class _LoraField extends StatefulWidget {
-  const _LoraField({required super.key});
+/// LoRA URL 입력 + 강도 슬라이더 (**트랙 단위** — 트랙마다 다른 LoRA로 뽑아 비교).
+class _TrackLoraField extends StatefulWidget {
+  const _TrackLoraField({required super.key, required this.track});
+
+  final VideoTrack track;
 
   @override
-  State<_LoraField> createState() => _LoraFieldState();
+  State<_TrackLoraField> createState() => _TrackLoraFieldState();
 }
 
-class _LoraFieldState extends State<_LoraField> {
-  late final TextEditingController _url = TextEditingController(
-    text: StoryboardScope.read(context).selectedScene?.loraUrl ?? '',
-  );
-  late double _strength =
-      (StoryboardScope.read(context).selectedScene?.loraStrength ?? 0.8).clamp(
-        0.0,
-        1.5,
-      );
+class _TrackLoraFieldState extends State<_TrackLoraField> {
+  late final TextEditingController _url =
+      TextEditingController(text: widget.track.loraUrl);
+  late double _strength = widget.track.loraStrength.clamp(0.0, 1.5).toDouble();
 
   @override
   void dispose() {
@@ -32,9 +29,9 @@ class _LoraFieldState extends State<_LoraField> {
       children: [
         TextField(
           controller: _url,
-          onSubmitted: (v) => p.setSceneLoraUrl(v),
+          onSubmitted: (v) => p.setTrackLoraUrl(widget.track, v),
           onTapOutside: (_) {
-            p.setSceneLoraUrl(_url.text);
+            p.setTrackLoraUrl(widget.track, _url.text);
             FocusManager.instance.primaryFocus?.unfocus();
           },
           decoration: InputDecoration(
@@ -42,7 +39,7 @@ class _LoraFieldState extends State<_LoraField> {
             border: const OutlineInputBorder(),
             hintText: 'LoRA URL (비우면 미적용)',
             hintStyle: _hintStyle.copyWith(fontSize: 12),
-            helperText: '씬 단위 · LTX-2.3용만 · civitai 페이지 URL 가능(토큰은 설정에)',
+            helperText: '트랙 단위 · LTX-2.3용만 · civitai 페이지 URL 가능(토큰은 설정에)',
             suffixIcon: IconButton(
               tooltip: 'URL 복사',
               icon: const Icon(Icons.copy, size: 16),
@@ -70,7 +67,7 @@ class _LoraFieldState extends State<_LoraField> {
                 divisions: 15,
                 label: _strength.toStringAsFixed(1),
                 onChanged: (v) => setState(() => _strength = v),
-                onChangeEnd: (v) => p.setSceneLoraStrength(v),
+                onChangeEnd: (v) => p.setTrackLoraStrength(widget.track, v),
               ),
             ),
             SizedBox(
