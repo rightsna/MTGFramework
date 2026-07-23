@@ -62,7 +62,7 @@ class DialogueBeat {
   }
 
   /// 이 대사에 **주문한** 샷 길이 합(초).
-  int get shotSeconds => shots.fold(0, (a, c) => a + c.videoSeconds);
+  double get shotSeconds => shots.fold(0.0, (a, c) => a + c.videoSeconds);
 
   /// 이 대사의 **실제 길이(초) = 샷 길이 합**. 재생되는 건 영상이고, 음성은 그 위에 얹히는
   /// 트랙일 뿐이라 영상 합계가 진짜 길이다. 뽑힌 샷은 주문값이 아니라 **실제 길이**로 센다

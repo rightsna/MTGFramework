@@ -339,7 +339,7 @@ class StoryboardProvider extends ChangeNotifier {
   double shotDisplaySeconds(Shot c) {
     final actual = videoActualSecondsOf(c);
     if (actual != null && actual > 0) return actual;
-    return c.orderedSeconds;
+    return c.videoSeconds;
   }
 
   /// 이 비트 자리에 **들려 줄** 대사 음성 — 자기 것이 있으면 그것, 없으면 기준 트랙 것 상속.
@@ -1235,7 +1235,8 @@ class StoryboardProvider extends ChangeNotifier {
     final scene = selectedScene;
     final base = beat.isDerived ? baseBeatOf(beat) : beat;
     if (scene == null || base == null) return;
-    final shot = Shot(id: _newId('clip'), videoSeconds: _settings.videoSeconds);
+    final shot =
+        Shot(id: _newId('clip'), videoSeconds: _settings.videoSeconds.toDouble());
     _addShotControllers(shot);
     base.shots.add(shot);
     // FE2V 컷 연속성: 컷은 이어지는 게 기본이라 앞 샷이 있으면 시작장면을 연동해서 시작한다.
@@ -1282,21 +1283,14 @@ class StoryboardProvider extends ChangeNotifier {
     messenger?.call('${trackLabel(trackOf(shot) ?? tracks.first)}에서 이 샷을 분리했습니다');
   }
 
-  /// 샷별 영상 길이(초, 1~15) 저장. 마지막 값은 새 샷 기본값으로도 기억한다.
-  Future<void> setShotSeconds(Shot shot, int sec) async {
+  /// 샷별 영상 길이(초) 저장. 스틸컷은 0.1초 단위까지, AI는 정수 초로 슬라이더가 넘겨준다.
+  /// 0.1 단위로 반올림해 부동소수 오차를 남기지 않는다. 마지막 값은 새 샷 기본값으로도 기억.
+  Future<void> setShotSeconds(Shot shot, double sec) async {
     await _ensureEditable(shot);
-    final v = sec.clamp(1, 15);
+    final v = (sec.clamp(0.1, 15) * 10).round() / 10;
     shot.videoSeconds = v;
-    _settings = _settings.copyWith(videoSeconds: v);
+    _settings = _settings.copyWith(videoSeconds: v.round()); // 새 샷 기본값(정수로 씨앗만)
     _settingsStore.save(_settings);
-    save();
-  }
-
-  /// 스틸컷 길이(초, 0.1 단위, 0.1~15) 저장. 소수 초까지 자유롭게.
-  Future<void> setStillSeconds(Shot shot, double sec) async {
-    await _ensureEditable(shot);
-    // 0.1 단위로 반올림해 부동소수 오차를 남기지 않는다.
-    shot.stillSeconds = (sec.clamp(0.1, 15) * 10).round() / 10;
     save();
   }
 
@@ -1696,7 +1690,7 @@ class StoryboardProvider extends ChangeNotifier {
       await VideoEdit.stillClip(
         image: img!,
         outPath: out,
-        seconds: shot.stillSeconds,
+        seconds: shot.videoSeconds, // 0.1초 단위 그대로
         effect: shot.stillEffect,
         width: res.width,
         height: res.height,
@@ -1810,7 +1804,7 @@ class StoryboardProvider extends ChangeNotifier {
           resolution: _settings.videoResolution.value,
           // 길이는 **샷이 정한다**. Veo는 4·6·8초만 되므로 가장 가까운 값으로 내려간다
           // (그래서 뽑고 나면 실제 길이를 다시 재서 적는다 — gen() 참고).
-          durationSeconds: _veoSeconds(shot.videoSeconds),
+          durationSeconds: _veoSeconds(shot.videoSeconds.round()),
           negativePrompt: _settings.videoNegativePrompt,
           onProgress: (st) => _setProgress(progressKey, st),
         );
@@ -1838,7 +1832,7 @@ class StoryboardProvider extends ChangeNotifier {
               neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
           width: res.width,
           height: res.height,
-          seconds: shot.videoSeconds,
+          seconds: shot.videoSeconds.round(), // 자체 서버는 정수 초
           loraUrl: _effectiveLoraUrl(sc),
           loraStrength: sc?.loraStrength ?? 0.8,
           onProgress: (st) => _setProgress(progressKey, st),

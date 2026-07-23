@@ -37,11 +37,10 @@ class Shot {
   /// 프롬프트 본문에 "no hand" 식으로 쓰면 오히려 그게 불려 나오므로(언급이 곧 소환),
   /// 부정은 전부 이 칸으로 보낸다. 비우면 서버 워크플로의 기본 네거티브를 그대로 쓴다.
   String videoNegativePrompt;
-  int videoSeconds; // 이 샷에 **주문할** 영상 길이(초, 1~15). AI 백엔드는 정수만 받는다.
-
-  /// 스틸컷 길이(초, **0.1 단위**). AI 방식은 정수 [videoSeconds]를 쓰지만, 스틸컷은
-  /// 로컬 ffmpeg라 소수 초까지 자유롭게 채운다(사진 한 장을 이 길이만큼).
-  double stillSeconds;
+  /// 이 샷에 **주문할** 영상 길이(초). 하나로 통일된 값이다 —
+  /// AI 방식은 정수 초로 다루고(슬라이더 1초 단위, 백엔드엔 반올림해 보냄),
+  /// 스틸컷은 로컬 ffmpeg라 0.1초 단위까지 그대로 쓴다.
+  double videoSeconds;
 
   /// 뽑힌 영상의 **실제 길이(초)**. 주문한 길이([videoSeconds])와 다를 수 있다 —
   /// 백엔드가 지원하는 길이로 내려가거나(Veo는 4·6·8초만), 트림으로 잘리거나,
@@ -96,7 +95,6 @@ class Shot {
     this.videoPromptKo = '',
     this.videoNegativePrompt = '',
     this.videoSeconds = 5,
-    this.stillSeconds = 1.0,
     this.videoActualSeconds,
     this.startImagePath,
     this.endImagePath,
@@ -110,15 +108,12 @@ class Shot {
     this.detached = false,
   }) : refCharacterIds = refCharacterIds ?? [];
 
-  /// 주문한 길이(초) — AI 방식은 정수 [videoSeconds], 스틸컷은 [stillSeconds](0.1 단위).
-  double get orderedSeconds => isStill ? stillSeconds : videoSeconds.toDouble();
-
-  /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이.
+  /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이([videoSeconds]).
   /// 재생되는 건 파일이므로 화면·합계는 전부 이걸 봐야 한다.
   /// 실측이 0(측정 실패로 굳은 값)이면 주문값으로 떨어진다 — 0초로 표시되지 않게.
   double get playSeconds => (videoActualSeconds != null && videoActualSeconds! > 0)
       ? videoActualSeconds!
-      : orderedSeconds;
+      : videoSeconds;
 
   /// 끝 프레임이 필요한 방식인지 — FE2V 하나뿐(I2V·스틸컷은 시작 한 장이면 된다).
   bool get needsEndFrame => videoMode == VideoMode.fe2v;
@@ -145,7 +140,6 @@ class Shot {
     videoPromptKo = base.videoPromptKo;
     videoNegativePrompt = base.videoNegativePrompt;
     videoSeconds = base.videoSeconds;
-    stillSeconds = base.stillSeconds;
     startImagePath = base.startImagePath;
     endImagePath = base.endImagePath;
     linkStart = base.linkStart;
@@ -195,7 +189,6 @@ class Shot {
         'promptKo': videoPromptKo,
         'negativePrompt': videoNegativePrompt,
         'seconds': videoSeconds,
-        'stillSeconds': stillSeconds,
         'actualSeconds': videoActualSeconds, // 실제로 뽑힌 길이(주문값과 다를 수 있다)
         'file': mediaName(videoPath),
         'mode': videoMode.name,
@@ -223,8 +216,8 @@ class Shot {
       videoPromptKo: (video?['promptKo'] as String?) ?? '',
       // 'negativePrompt'가 없는 옛 데이터는 빈 값 — 서버 기본 네거티브가 그대로 쓰인다.
       videoNegativePrompt: (video?['negativePrompt'] as String?) ?? '',
-      videoSeconds: (video?['seconds'] as int?) ?? 5,
-      stillSeconds: (video?['stillSeconds'] as num?)?.toDouble() ?? 1.0,
+      // 옛 데이터는 정수 초였다 — num으로 읽어 double로. (스틸컷은 0.1초까지 담긴다.)
+      videoSeconds: (video?['seconds'] as num?)?.toDouble() ?? 5,
       videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),

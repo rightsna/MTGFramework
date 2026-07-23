@@ -107,8 +107,7 @@ void main() {
       'prompt': '카메라 천천히 전진',
       'promptKo': '',
       'negativePrompt': '',
-      'seconds': 3,
-      'stillSeconds': 1.0, // 스틸컷 길이(0.1 단위, 기본 1.0)
+      'seconds': 3.0, // 길이는 double 하나로 통일(스틸컷 0.1초·AI 정수 초 공용)
       'actualSeconds': null, // 아직 안 재본 것(뽑고 나면 실제 길이가 들어간다)
       'file': 'clip_1_vlow.mp4',
       'mode': 'fe2v',

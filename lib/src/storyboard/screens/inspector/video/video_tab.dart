@@ -79,13 +79,13 @@ class _VideoTab extends StatelessWidget {
                         ),
                         const SizedBox(height: 14),
                       ],
-                      // 스틸컷은 0.1초 단위, AI 방식은 정수 초.
-                      _SectionLabel(c.isStill ? '길이 (초 · 0.1 단위)' : '길이 (초 · 이 샷)'),
+                      // 스틸컷은 0.1초 단위, AI 방식은 1초 단위 — 값은 하나(videoSeconds).
+                      _SectionLabel(
+                          c.isStill ? '길이 (초 · 0.1 단위)' : '길이 (초 · 이 샷)'),
                       const SizedBox(height: 6),
-                      if (c.isStill)
-                        _StillSecondsField(key: ValueKey('still_sec_${c.id}'))
-                      else
-                        _SecondsField(key: ValueKey('sec_${c.id}')),
+                      _SecondsField(
+                          key: ValueKey('sec_${c.id}_${c.isStill}'),
+                          still: c.isStill),
                     ],
                   ),
                 ),
