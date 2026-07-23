@@ -67,6 +67,16 @@ class CanvasView extends StatelessWidget {
         ),
       );
     }
+    // 씬 제목 바는 줌/팬에 안 딸려 가도록 캔버스 위에 고정으로 얹는다.
+    return Column(
+      children: [
+        const _SceneTitleBar(),
+        Expanded(child: _canvasBody(context, p)),
+      ],
+    );
+  }
+
+  Widget _canvasBody(BuildContext context, StoryboardProvider p) {
     // 구조(비트 수)는 기준 트랙이 정본 — 트랙끼리 같으므로 비었는지도 이걸로 본다.
     final dialogues = p.baseBeats;
     if (dialogues.isEmpty) {

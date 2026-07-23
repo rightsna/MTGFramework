@@ -60,9 +60,16 @@ class _DialogueEditorState extends State<_DialogueEditor> {
               border: OutlineInputBorder(),
             ),
             items: [
-              const DropdownMenuItem<String?>(
+              DropdownMenuItem<String?>(
                 value: null,
-                child: Text('내레이션 (화자 없음)'),
+                // 화자 없음이라도 씬 기본 성우가 있으면 그 목소리로 읽힌다 — 그걸 드러낸다.
+                child: Text(
+                  hasSceneVoice
+                      ? '내레이션 · 🎙 씬 기본 성우'
+                          '${sceneVoice.isEmpty ? '' : '($sceneVoice)'}'
+                      : '내레이션 (화자 없음)',
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               for (final c in p.characters)
                 DropdownMenuItem<String?>(

@@ -2,7 +2,7 @@ part of '../inspector_panel.dart';
 
 /// 씬 탭 — 선택 씬 전체 설정(제목·생성 설정·일괄 생성·삭제). 배경음은 별도 '배경음' 탭.
 
-/// 씬 탭 — 선택 씬의 것들을 한곳에: 제목 · 생성 설정 · 영상 일괄 생성 · 삭제.
+/// 씬 탭 — 선택 씬의 것들을 한곳에: 생성 설정(해상도·LoRA·기본 성우) · 삭제. (제목은 캔버스 바.)
 class _SceneSettingsTab extends StatelessWidget {
   const _SceneSettingsTab();
 
@@ -20,37 +20,10 @@ class _SceneSettingsTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 씬 메모 — 다른 탭과 마찬가지로 최상단.
+          // 씬 메모 — 다른 탭과 마찬가지로 최상단. (제목은 캔버스 상단 바로 옮겼다.)
           _ShotNote(
               key: ValueKey('scene_note_${sc.id}'),
               controller: p.sceneNoteCtrl(sc.id)),
-          const SizedBox(height: 16),
-          _GroupCard(
-            icon: Icons.movie_filter_outlined,
-            title: '씬',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _SectionLabel('제목'),
-                const SizedBox(height: 6),
-                TextField(
-                  key: ValueKey('scene_title_${sc.id}'),
-                  controller: p.sceneTitleCtrl(sc.id),
-                  style:
-                      const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                  decoration: const InputDecoration(
-                    hintText: '씬 제목 (선택)',
-                    hintStyle: _hintStyle,
-                    isDense: true,
-                    filled: true,
-                    fillColor: previewBg,
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (_) => p.noteEdited(),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 16),
           // 해상도·LoRA는 전부 **씬 단위** — 씬마다 따로 저장된다(다른 씬에 영향 없음).
           _GroupCard(
@@ -98,33 +71,19 @@ class _SceneSettingsTab extends StatelessWidget {
                 _SectionLabel('LoRA (씬 단위 · LTX-2.3용)'),
                 const SizedBox(height: 6),
                 _LoraField(key: ValueKey('lora_${sc.id}')),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          // 기본 성우 — 화자 미지정(내레이션) 대사에 쓰는 보이스. 씬 단위.
-          _GroupCard(
-            icon: Icons.record_voice_over_outlined,
-            title: '기본 성우 (내레이션)',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+                const SizedBox(height: 14),
+                // 기본 성우 — 화자 미지정(내레이션) 대사에 쓰는 보이스. 씬 단위라 여기 함께 둔다.
+                _SectionLabel('기본 성우 (내레이션)'),
+                const SizedBox(height: 2),
                 const Text(
                   '화자를 지정하지 않은 대사(내레이션)에 쓰는 보이스입니다. '
                   '화자에 목소리가 있으면 그 화자 보이스가 우선합니다.',
-                  style:
-                      TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                  style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 _SceneDefaultVoiceField(key: ValueKey('scene_voice_${sc.id}')),
               ],
             ),
-          ),
-          const SizedBox(height: 16),
-          const _GroupCard(
-            icon: Icons.auto_awesome_motion_outlined,
-            title: '영상 일괄 생성',
-            child: VideoBatch(),
           ),
           // 배경음은 별도 '배경음' 탭으로 옮겼다.
           const SizedBox(height: 24),

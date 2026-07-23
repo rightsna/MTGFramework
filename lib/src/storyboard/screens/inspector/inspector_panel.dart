@@ -13,7 +13,6 @@ import '../canvas/canvas_view.dart' show fmtSeconds;
 import '../common/output_preview.dart';
 import '../common/audio_box.dart';
 import '../common/image_zoom_dialog.dart';
-import '../common/video_batch.dart';
 import '../common/video_play_dialog.dart';
 import '../common/video_trim_dialog.dart';
 import '../ui.dart';
