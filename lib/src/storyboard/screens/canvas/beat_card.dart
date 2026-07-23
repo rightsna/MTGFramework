@@ -509,8 +509,8 @@ class _ShotThumbState extends State<_ShotThumb>
                                 ? Colors.white54
                                 : Colors.white38),
                     const SizedBox(width: 3),
-                    // 뽑힌 게 있으면 그 실제 길이, 없으면 주문한 길이([Shot.playSeconds]).
-                    Text(fmtSeconds(shot.playSeconds),
+                    // 화면에 걸린 영상(자기 것이든 상속이든)의 실제 길이. 실측 없으면 주문값.
+                    Text(fmtSeconds(p.shotDisplaySeconds(shot)),
                         style: const TextStyle(
                             fontSize: 9, color: Colors.white70)),
                   ],

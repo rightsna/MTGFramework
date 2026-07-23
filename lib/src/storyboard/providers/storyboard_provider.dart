@@ -329,6 +329,15 @@ class StoryboardProvider extends ChangeNotifier {
       ? c.videoActualSeconds
       : (c.isDerived ? baseShotOf(c)?.videoActualSeconds : null);
 
+  /// 캔버스·타임라인에 **보여 줄 길이(초)** — 화면에 실제로 걸린 영상(자기 것이든 상속이든)의
+  /// 실측 길이. 실측이 없거나 0이면(아직 못 쟀거나 측정 실패) 주문한 길이로 떨어진다 — 0초로
+  /// 표시되지 않게. (0초로 뜨던 버그: 상속 영상은 실측이 자기 필드에 없어 0/주문값이 섞였다.)
+  double shotDisplaySeconds(Shot c) {
+    final actual = videoActualSecondsOf(c);
+    if (actual != null && actual > 0) return actual;
+    return c.videoSeconds.toDouble();
+  }
+
   /// 이 비트 자리에 **들려 줄** 대사 음성 — 자기 것이 있으면 그것, 없으면 기준 트랙 것 상속.
   String? voicePathOf(DialogueBeat b) =>
       b.dialogue?.voicePath ??
@@ -812,7 +821,9 @@ class StoryboardProvider extends ChangeNotifier {
         for (final beat in track.beats) {
           for (final shot in beat.shots) {
             final path = shot.videoPath;
-            if (path == null || shot.videoActualSeconds != null) continue;
+            // 실측이 아직 없거나 **0으로 굳은 것**(옛 측정 버그)도 다시 잰다.
+            final have = shot.videoActualSeconds;
+            if (path == null || (have != null && have > 0)) continue;
             final f = File(path);
             if (!await f.exists()) continue;
             final sec = await _measureSeconds(f);
@@ -1354,9 +1365,11 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 파일 길이(초)를 재되, 못 재면 null — 길이 하나 때문에 생성 결과를 날릴 순 없다.
+  /// 0(초기화 전/미지원 코덱)도 실패로 봐 **null로 반환**한다 — 0을 저장하면 화면이 0초로 굳는다.
   Future<double?> _measureSeconds(File f) async {
     try {
-      return await _audioSeconds(f);
+      final s = await _audioSeconds(f);
+      return s > 0 ? s : null;
     } catch (e) {
       debugPrint('[measure] 길이 실측 실패(무시): $e');
       return null;

@@ -88,7 +88,10 @@ class Shot {
 
   /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이.
   /// 재생되는 건 파일이므로 화면·합계는 전부 이걸 봐야 한다.
-  double get playSeconds => videoActualSeconds ?? videoSeconds.toDouble();
+  /// 실측이 0(측정 실패로 굳은 값)이면 주문값으로 떨어진다 — 0초로 표시되지 않게.
+  double get playSeconds => (videoActualSeconds != null && videoActualSeconds! > 0)
+      ? videoActualSeconds!
+      : videoSeconds.toDouble();
 
   /// 파생 트랙의 샷인지(기준 트랙이면 false).
   bool get isDerived => baseId != null;
