@@ -29,6 +29,7 @@ class _PromptField extends StatelessWidget {
       ),
       decoration: InputDecoration(
         hintText: hint,
+        hintStyle: _hintStyle,
         isDense: true,
         filled: true,
         fillColor: previewBg,

@@ -68,7 +68,8 @@ class _TrackMenu extends StatelessWidget {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '예: 자체서버 / Veo 3.1'),
+          decoration: const InputDecoration(
+              hintText: '예: 자체서버 / Veo 3.1', hintStyle: hintStyle),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [

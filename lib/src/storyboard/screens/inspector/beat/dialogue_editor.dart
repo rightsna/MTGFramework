@@ -86,6 +86,7 @@ class _DialogueEditorState extends State<_DialogueEditor> {
             style: const TextStyle(fontSize: 14, height: 1.4),
             decoration: const InputDecoration(
               hintText: '이 비트에서 말할 내용(또는 내레이션). 비우면 무음',
+              hintStyle: _hintStyle,
               isDense: true,
               border: OutlineInputBorder(),
             ),

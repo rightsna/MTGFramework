@@ -58,6 +58,7 @@ class _BeatTab extends StatelessWidget {
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             decoration: const InputDecoration(
               hintText: '비트 제목 (선택)',
+              hintStyle: _hintStyle,
               isDense: true,
               filled: true,
               fillColor: previewBg,

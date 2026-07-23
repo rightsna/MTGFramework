@@ -50,6 +50,7 @@ class _ShotNote extends StatelessWidget {
             style: const TextStyle(fontSize: 13, height: 1.4),
             decoration: const InputDecoration(
               hintText: '이 샷의 특이사항·참고를 자유롭게 기록 (프롬프트 아님)',
+              hintStyle: _hintStyle,
               isDense: true,
               filled: true,
               fillColor: previewBg,

@@ -3,6 +3,7 @@ import 'package:framework/framework.dart';
 
 import '../../services/api_service.dart';
 import '../../services/movie_settings.dart';
+import '../ui.dart';
 import 'lora_manager.dart';
 
 /// 설정 팝업(전역): Veo 키·옵션 / 자체 서버 / 대사 음성.
@@ -300,6 +301,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           decoration: const InputDecoration(
             isDense: true,
             hintText: 'AIza...',
+            hintStyle: hintStyle,
             border: OutlineInputBorder(),
           ),
         ),
@@ -367,6 +369,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           decoration: const InputDecoration(
             labelText: '네거티브 프롬프트 (선택)',
             hintText: '영상에서 피하고 싶은 요소',
+            hintStyle: hintStyle,
             isDense: true,
             border: OutlineInputBorder(),
           ),
@@ -396,6 +399,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: kServerDomain,
+                  hintStyle: hintStyle,
                   helperText: '비우면 이 기본 도메인으로 연결',
                   helperStyle: const TextStyle(
                     fontSize: 11,
@@ -440,6 +444,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             helperStyle: TextStyle(fontSize: 11, color: Colors.white38),
             isDense: true,
             hintText: 'civitai API key',
+            hintStyle: hintStyle,
             border: OutlineInputBorder(),
           ),
         ),
@@ -465,6 +470,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           decoration: const InputDecoration(
             isDense: true,
             hintText: 'sk_... (일레븐랩스 API 키)',
+            hintStyle: hintStyle,
             border: OutlineInputBorder(),
           ),
         ),

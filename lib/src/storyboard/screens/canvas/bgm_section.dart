@@ -154,6 +154,7 @@ class _BgmControlsState extends State<_BgmControls> {
             fillColor: previewBg,
             border: OutlineInputBorder(),
             hintText: '스타일 태그 (인스트루멘탈) — 예: cinematic, ambient, calm, piano',
+            hintStyle: hintStyle,
           ),
         ),
         const SizedBox(height: 8),

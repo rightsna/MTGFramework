@@ -41,6 +41,7 @@ class _LoraFieldState extends State<_LoraField> {
             isDense: true,
             border: const OutlineInputBorder(),
             hintText: 'LoRA URL (비우면 미적용)',
+            hintStyle: _hintStyle.copyWith(fontSize: 12),
             helperText: '씬 단위 · LTX-2.3용만 · civitai 페이지 URL 가능(토큰은 설정에)',
             suffixIcon: IconButton(
               tooltip: 'URL 복사',

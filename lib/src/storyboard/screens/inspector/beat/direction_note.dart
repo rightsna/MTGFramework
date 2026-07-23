@@ -49,6 +49,7 @@ class _DirectionNote extends StatelessWidget {
             style: const TextStyle(fontSize: 13, height: 1.4),
             decoration: const InputDecoration(
               hintText: '이 비트에서 무엇을 표현할지 (대사는 그중 하나)',
+              hintStyle: _hintStyle,
               isDense: true,
               filled: true,
               fillColor: previewBg,

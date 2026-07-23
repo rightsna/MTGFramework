@@ -7,6 +7,9 @@ const accent2 = Color(0xFF5BD1C0);
 const previewBg = Color(0xFF10131A);
 const panelBg = Color(0xFF161A23);
 
+/// 입력칸 힌트(placeholder) 공용 색 — 기본보다 살짝 어둡게(입력값과 대비 낮춤).
+const hintStyle = TextStyle(color: Color(0x40FFFFFF));
+
 // 캔버스 카드 레이아웃.
 const double cardW = 220;
 const double cardH = 268;

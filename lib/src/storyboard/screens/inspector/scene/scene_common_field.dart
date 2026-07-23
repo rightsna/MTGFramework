@@ -30,6 +30,7 @@ class _SceneCommonFieldState extends State<_SceneCommonField> {
       onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
       decoration: const InputDecoration(
         hintText: '예: 이 씬의 장소·분위기·시간대…',
+        hintStyle: _hintStyle,
         isDense: true,
         filled: true,
         fillColor: previewBg,

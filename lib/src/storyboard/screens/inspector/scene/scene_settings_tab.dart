@@ -40,6 +40,7 @@ class _SceneSettingsTab extends StatelessWidget {
                       const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                   decoration: const InputDecoration(
                     hintText: '씬 제목 (선택)',
+                    hintStyle: _hintStyle,
                     isDense: true,
                     filled: true,
                     fillColor: previewBg,
