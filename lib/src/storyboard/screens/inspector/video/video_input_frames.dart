@@ -11,7 +11,7 @@ class _VideoInputFrames extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final start = p.startPathOf(shot); // 연동 중이면 앞 샷의 끝장면
-    final end = shot.i2v ? null : shot.endImagePath;
+    final end = shot.needsEndFrame ? shot.endImagePath : null;
 
     Widget frame(String label, String? path, GenMode mode) {
       final key = p.busyKey(shot.id, mode);
@@ -55,7 +55,7 @@ class _VideoInputFrames extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             frame('시작', start, GenMode.imageStart),
-            if (!shot.i2v) ...[
+            if (shot.needsEndFrame) ...[
               const SizedBox(width: 8),
               frame('끝', end, GenMode.imageEnd),
             ],

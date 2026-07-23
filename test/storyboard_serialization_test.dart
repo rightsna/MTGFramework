@@ -101,16 +101,18 @@ void main() {
       'image': 'clip_1_start.png',
       'inherit': false,
     });
-    // i2v = 끝 프레임 없이(시작 한 장으로) 뽑을지. 기본은 FE2V(false).
+    // mode = 영상 생성 방식(fe2v/i2v/still). 기본은 fe2v. stillEffect = 스틸컷 켄번스(기본 none).
     // negativePrompt = 빼고 싶은 것만 적는 칸(비면 서버 워크플로 기본 네거티브).
     expect(c1['video'], {
       'prompt': '카메라 천천히 전진',
       'promptKo': '',
       'negativePrompt': '',
       'seconds': 3,
+      'stillSeconds': 1.0, // 스틸컷 길이(0.1 단위, 기본 1.0)
       'actualSeconds': null, // 아직 안 재본 것(뽑고 나면 실제 길이가 들어간다)
       'file': 'clip_1_vlow.mp4',
-      'i2v': false,
+      'mode': 'fe2v',
+      'stillEffect': 'none',
       'note': '', // 영상 탭 메모(장면 메모와 별개)
     });
 
@@ -180,11 +182,18 @@ void main() {
     expect(back.videoNegativePrompt, 'hand, text, watermark');
 
     // 'negativePrompt' 키가 없던 옛 데이터 — 빈 값으로 읽혀 서버 기본 네거티브를 쓴다.
+    // 옛 'i2v' bool은 새 videoMode로 매핑된다(true→i2v, false/없음→fe2v).
     final old = Shot.fromJson({
       'id': 'clip_old',
       'video': {'prompt': 'x', 'seconds': 3, 'i2v': false},
     }, dir);
     expect(old.videoNegativePrompt, '');
+    expect(old.videoMode, VideoMode.fe2v);
+    final oldI2v = Shot.fromJson({
+      'id': 'clip_old2',
+      'video': {'prompt': 'x', 'seconds': 3, 'i2v': true},
+    }, dir);
+    expect(oldI2v.videoMode, VideoMode.i2v);
   });
 
   test('폴더가 이동해도 미디어 경로가 새 dir 기준으로 복원된다', () {

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../models/shot.dart' show StillEffect;
+
 /// 생성된 영상 파일을 다루는 로컬 도구 — ffmpeg/ffprobe 래퍼.
 /// 지금 하는 일은 **트림(앞뒤 자르기)** 하나뿐이다: FE2V 결과에 가끔 섞이는 이상한 프레임을
 /// 양 끝에서 잘라낸다. (중간 잘라내기·이어붙이기는 안 한다.)
@@ -125,6 +127,62 @@ class VideoEdit {
     await tmp.rename(path);
     return (last - first + 1) / fps;
   }
+
+  /// 사진 한 장([image])을 [seconds]초짜리 영상([outPath])으로 만든다 — **스틸컷**(AI 없이).
+  /// [effect]로 켄번스(줌 인/아웃)를 준다. 출력은 [width]×[height] — FE2V 결과와 섞어
+  /// 이어붙일 수 있게 규격을 맞춘다. 24fps·H.264·무음.
+  static Future<void> stillClip({
+    required String image,
+    required String outPath,
+    required double seconds,
+    required StillEffect effect,
+    required int width,
+    required int height,
+    double fps = 24,
+  }) async {
+    final ffmpeg = toolPath('ffmpeg');
+    if (ffmpeg == null) throw Exception(missingHint);
+    final sec = seconds < 0.1 ? 0.1 : seconds; // 최소 0.1초
+    final frames = (sec * fps).round();
+    final w = width, h = height;
+
+    // 켄번스는 12%까지 아주 천천히 — 앨범 미리보기처럼. on = 출력 프레임 인덱스(시간축).
+    final vf = switch (effect) {
+      StillEffect.none =>
+        'scale=$w:$h:force_original_aspect_ratio=increase,'
+            'crop=$w:$h,setsar=1,format=yuv420p',
+      StillEffect.zoomIn => _kenBurns(w, h, frames, fps, '1.0+0.12*on/$frames'),
+      StillEffect.zoomOut =>
+        _kenBurns(w, h, frames, fps, '1.12-0.12*on/$frames'),
+    };
+
+    final r = await Process.run(ffmpeg, [
+      '-y',
+      '-loop', '1',
+      '-i', image,
+      '-t', '$sec',
+      '-r', '$fps',
+      '-vf', vf,
+      '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+      '-an',
+      outPath,
+    ]);
+    if (r.exitCode != 0) {
+      final f = File(outPath);
+      if (await f.exists()) await f.delete();
+      throw Exception(
+          '스틸컷 실패: ${(r.stderr as String).trim().split('\n').last}');
+    }
+  }
+
+  /// 켄번스 필터 체인 — 큰 캔버스로 먼저 덮어(줌 시 화질·잔떨림 완화) zoompan으로 w×h 출력.
+  static String _kenBurns(
+          int w, int h, int frames, double fps, String zExpr) =>
+      'scale=${w * 2}:${h * 2}:force_original_aspect_ratio=increase,'
+      'crop=${w * 2}:${h * 2},'
+      "zoompan=z='$zExpr':d=$frames:"
+      "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+      's=${w}x$h:fps=$fps,setsar=1,format=yuv420p';
 
   /// [inputs]를 순서대로 이어붙여 [outPath]로 쓴다(씬 무비 내보내기).
   ///

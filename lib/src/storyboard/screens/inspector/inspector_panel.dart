@@ -30,6 +30,7 @@ part 'frame/frame_section.dart';
 part 'frame/link_start_toggle.dart';
 part 'video/video_tab.dart';
 part 'video/seconds_field.dart';
+part 'video/still_seconds_field.dart';
 part 'video/video_input_frames.dart';
 part 'video/gen_progress_banner.dart';
 part 'scene/scene_settings_tab.dart';

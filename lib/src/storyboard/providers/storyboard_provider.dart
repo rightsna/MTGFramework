@@ -115,6 +115,10 @@ class StoryboardProvider extends ChangeNotifier {
           VideoBackend.veo => 'Veo용 Gemini API 키가 없습니다 (설정)',
         };
 
+  /// 스틸컷은 서버·키가 필요 없다 — 로컬 ffmpeg만 있으면 된다.
+  bool get stillReady => VideoEdit.available;
+  String? get stillBlockReason => stillReady ? null : VideoEdit.missingHint;
+
   /// 배경음(ACE-Step)도 자체 서버 전용.
   bool get bgmReady => _apiStatus.reachable && _apiStatus.audioReady;
   String? get bgmBlockReason => bgmReady
@@ -335,7 +339,7 @@ class StoryboardProvider extends ChangeNotifier {
   double shotDisplaySeconds(Shot c) {
     final actual = videoActualSecondsOf(c);
     if (actual != null && actual > 0) return actual;
-    return c.videoSeconds.toDouble();
+    return c.orderedSeconds;
   }
 
   /// 이 비트 자리에 **들려 줄** 대사 음성 — 자기 것이 있으면 그것, 없으면 기준 트랙 것 상속.
@@ -1288,6 +1292,14 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
+  /// 스틸컷 길이(초, 0.1 단위, 0.1~15) 저장. 소수 초까지 자유롭게.
+  Future<void> setStillSeconds(Shot shot, double sec) async {
+    await _ensureEditable(shot);
+    // 0.1 단위로 반올림해 부동소수 오차를 남기지 않는다.
+    shot.stillSeconds = (sec.clamp(0.1, 15) * 10).round() / 10;
+    save();
+  }
+
   // ───────── 대사(샷 소유, 0/1) ─────────
   // 대사는 샷이 소유한다(샷 하나 = 대사 1개 또는 없음). 편집은 모달에서 값만 반영.
 
@@ -1507,13 +1519,18 @@ class StoryboardProvider extends ChangeNotifier {
           continue;
         }
         final missing = <String>[];
-        if (!_hasFile(startPathOf(shot))) missing.add('시작장면');
-        // I2V는 끝 프레임을 안 쓴다 — 없어도 뽑을 수 있다.
-        if (!shot.i2v && !_hasFile(shot.endImagePath)) missing.add('끝장면');
-        final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
-            shot.videoPrompt;
-        if (_composePrompt(shot, raw, GenMode.videoLow).isEmpty) {
-          missing.add('영상 프롬프트');
+        if (!_hasFile(startPathOf(shot))) missing.add('시작 프레임');
+        // 스틸컷은 시작 프레임 한 장이면 된다(끝 프레임·프롬프트 불필요). AI 방식만 아래를 본다.
+        if (!shot.isStill) {
+          // FE2V만 끝 프레임이 필요하다(I2V는 없어도 뽑는다).
+          if (shot.needsEndFrame && !_hasFile(shot.endImagePath)) {
+            missing.add('끝 프레임');
+          }
+          final raw = _promptCtrlFor(shot.id, GenMode.videoLow)?.text ??
+              shot.videoPrompt;
+          if (_composePrompt(shot, raw, GenMode.videoLow).isEmpty) {
+            missing.add('영상 프롬프트');
+          }
         }
         if (missing.isEmpty) {
           ready.add(shot);
@@ -1608,6 +1625,11 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call('트랙 1의 프레임을 함께 쓰는 샷입니다 — 이 트랙에서 수정한 뒤 만드세요');
       return;
     }
+    // 스틸컷: 프롬프트·백엔드 없이 시작 프레임을 로컬 ffmpeg로 영상화한다.
+    if (mode == GenMode.videoLow && shot.isStill) {
+      await _genStill(shot);
+      return;
+    }
     final raw = _promptCtrlFor(shot.id, mode)?.text.trim() ?? '';
     final prompt = _composePrompt(shot, raw, mode);
     if (prompt.isEmpty) {
@@ -1648,6 +1670,49 @@ class StoryboardProvider extends ChangeNotifier {
     } finally {
       _busy.remove(key);
       _progress.remove(key); // 고정 진행 표시 정리
+      notifyListeners();
+    }
+  }
+
+  /// 스틸컷 생성 — AI 없이 **시작 프레임 한 장**을 영상 길이만큼 채운다(로컬 ffmpeg).
+  /// 켄번스([Shot.stillEffect])로 줌 인/아웃도 준다. 결과는 FE2V와 같은 `<id>_vlow.mp4` 슬롯.
+  Future<void> _genStill(Shot shot) async {
+    if (!VideoEdit.available) {
+      messenger?.call(VideoEdit.missingHint);
+      return;
+    }
+    final img = startPathOf(shot); // 연동 포함 시작 프레임
+    if (!_hasFile(img)) {
+      messenger?.call('시작 프레임을 먼저 만들어 주세요');
+      return;
+    }
+    final key = busyKey(shot.id, GenMode.videoLow);
+    _busy.add(key);
+    _setProgress(key, '스틸컷 만드는 중…');
+    notifyListeners();
+    try {
+      final out = '$projectDirPath/${shot.id}_vlow.mp4';
+      final res = sceneOf(shot)?.videoRes ?? _settings.videoRes; // 씬 단위 해상도
+      await VideoEdit.stillClip(
+        image: img!,
+        outPath: out,
+        seconds: shot.stillSeconds,
+        effect: shot.stillEffect,
+        width: res.width,
+        height: res.height,
+      );
+      final f = File(out);
+      await FileImage(f).evict();
+      shot.videoPath = f.path;
+      shot.videoActualSeconds = await _measureSeconds(f);
+      _ver[key] = (_ver[key] ?? 0) + 1;
+      await save();
+    } catch (e, st) {
+      debugPrint('[still] $key 실패: $e\n$st');
+      messenger?.call('스틸컷 실패: $e');
+    } finally {
+      _busy.remove(key);
+      _progress.remove(key);
       notifyListeners();
     }
   }
@@ -1731,7 +1796,7 @@ class StoryboardProvider extends ChangeNotifier {
         // 끝 프레임은 **있으면 보낸다**. I2V로 잡아 뒀거나 아직 안 만들었으면 시작만으로 간다 —
         // Veo 쪽 끝 프레임 고정은 계정에 따라 막혀 있고(400 use case not supported),
         // 그때는 서비스가 알아서 시작 프레임만으로 다시 시도한다.
-        final end = shot.i2v ? null : await _endFrame(shot);
+        final end = shot.needsEndFrame ? await _endFrame(shot) : null;
         if (start == null) {
           throw Exception('시작장면을 먼저 만들어 주세요 (첫 프레임)');
         }
@@ -1752,13 +1817,13 @@ class StoryboardProvider extends ChangeNotifier {
       case VideoBackend.serviceApi:
         final img = await _startFrameBytes(shot);
         // I2V면 끝 프레임을 아예 안 쓴다(있어도 무시) — 끝은 모델이 자유롭게 만든다.
-        final endImg = shot.i2v ? null : await _endFrameBytes(shot);
+        final endImg = shot.needsEndFrame ? await _endFrameBytes(shot) : null;
         if (img == null) {
-          throw Exception('시작장면을 먼저 만들어 주세요 (첫 프레임)');
+          throw Exception('시작 프레임을 먼저 만들어 주세요');
         }
-        if (!shot.i2v && endImg == null) {
-          throw Exception('끝장면을 먼저 만들어 주세요 (FE2V 마지막 프레임) — '
-              '끝 없이 뽑으려면 장면 탭에서 I2V로 바꾸세요');
+        if (shot.needsEndFrame && endImg == null) {
+          throw Exception('끝 프레임을 먼저 만들어 주세요 (FE2V) — '
+              '끝 없이 뽑으려면 프레임 탭에서 I2V로 바꾸세요');
         }
         final sc = sceneOf(shot); // 해상도·LoRA는 씬 단위
         final res = sc?.videoRes ?? _settings.videoRes;
@@ -2208,12 +2273,21 @@ class StoryboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 영상 생성 방식 전환 — I2V(시작 한 장) ↔ FE2V(시작+끝).
-  /// 끝장면 파일은 지우지 않는다: I2V로 뽑아보고 되돌릴 수 있어야 한다.
-  Future<void> setI2v(Shot shot, bool on) async {
-    if (shot.i2v == on) return;
+  /// 영상 생성 방식 전환 — FE2V(시작+끝) / I2V(시작 한 장) / 스틸컷(AI 없이).
+  /// 끝장면 파일은 지우지 않는다: 방식을 바꿔 뽑아보고 되돌릴 수 있어야 한다.
+  Future<void> setVideoMode(Shot shot, VideoMode mode) async {
+    if (shot.videoMode == mode) return;
     await _ensureEditable(shot);
-    shot.i2v = on;
+    shot.videoMode = mode;
+    await save();
+    notifyListeners();
+  }
+
+  /// 스틸컷 켄번스 효과(없음/줌 인/줌 아웃) 전환.
+  Future<void> setStillEffect(Shot shot, StillEffect effect) async {
+    if (shot.stillEffect == effect) return;
+    await _ensureEditable(shot);
+    shot.stillEffect = effect;
     await save();
     notifyListeners();
   }

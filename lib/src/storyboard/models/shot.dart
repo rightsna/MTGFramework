@@ -1,3 +1,20 @@
+/// 영상 생성 방식 — 세 갈래(명시적 상태). 끝 프레임이 필요한 건 FE2V 하나뿐이다.
+///  - [fe2v]: 시작·끝 두 장을 고정하고 그 사이를 AI로 생성(기본). 끝 그림이 정해진다.
+///  - [i2v]: 시작 한 장만 고정하고 끝은 모델이 자유롭게 — 끝장면은 안 쓴다.
+///  - [still]: AI 없이 **시작 프레임 한 장을 그대로** 영상 길이만큼 채운다(로컬 ffmpeg).
+///    켄번스([StillEffect])로 줌 인/아웃도 준다.
+enum VideoMode { fe2v, i2v, still }
+
+/// 스틸컷의 켄번스 효과 — 사진첩 앨범 미리보기처럼 천천히 줌.
+enum StillEffect {
+  none('없음'),
+  zoomIn('줌 인'),
+  zoomOut('줌 아웃');
+
+  const StillEffect(this.label);
+  final String label;
+}
+
 /// 영상 한 조각(shot). 대사(DialogueBeat) 안에 여러 개가 순서대로 들어간다 — 1대사 = 여러 샷.
 /// 한 샷은 시작·끝 두 키프레임에서 FE2V(first-end-to-video)로 영상을 만든다 — 두 장 필수.
 /// 같은 대사의 샷들은 그 대사의 음성 길이를 나눠 덮는다(첫 샷 립싱크, 나머지 컷어웨이).
@@ -20,7 +37,11 @@ class Shot {
   /// 프롬프트 본문에 "no hand" 식으로 쓰면 오히려 그게 불려 나오므로(언급이 곧 소환),
   /// 부정은 전부 이 칸으로 보낸다. 비우면 서버 워크플로의 기본 네거티브를 그대로 쓴다.
   String videoNegativePrompt;
-  int videoSeconds; // 이 샷에 **주문할** 영상 길이(초, 1~15)
+  int videoSeconds; // 이 샷에 **주문할** 영상 길이(초, 1~15). AI 백엔드는 정수만 받는다.
+
+  /// 스틸컷 길이(초, **0.1 단위**). AI 방식은 정수 [videoSeconds]를 쓰지만, 스틸컷은
+  /// 로컬 ffmpeg라 소수 초까지 자유롭게 채운다(사진 한 장을 이 길이만큼).
+  double stillSeconds;
 
   /// 뽑힌 영상의 **실제 길이(초)**. 주문한 길이([videoSeconds])와 다를 수 있다 —
   /// 백엔드가 지원하는 길이로 내려가거나(Veo는 4·6·8초만), 트림으로 잘리거나,
@@ -42,10 +63,11 @@ class Shot {
   /// 씬의 첫 샷은 물려받을 앞이 없어 항상 꺼진 상태다.
   bool linkStart;
 
-  /// 영상 생성 방식. 같은 모델·같은 그래프고, 끝 프레임을 박느냐만 다르다.
-  ///  - false = **FE2V**(기본): 시작·끝 두 장을 고정하고 그 사이를 생성. 끝 그림이 정해진다.
-  ///  - true  = **I2V**: 시작 한 장만 고정하고 끝은 모델이 자유롭게 — 끝장면은 안 쓴다.
-  bool i2v;
+  /// 영상 생성 방식 — [VideoMode] 참고. 기본은 FE2V.
+  VideoMode videoMode;
+
+  /// 스틸컷일 때의 켄번스 효과(다른 방식에선 무시).
+  StillEffect stillEffect;
 
   /// 장면 탭 메모(특이사항) — 프레임 작업용 기록. 프롬프트와 무관, 생성에 안 쓰임.
   String note;
@@ -74,24 +96,35 @@ class Shot {
     this.videoPromptKo = '',
     this.videoNegativePrompt = '',
     this.videoSeconds = 5,
+    this.stillSeconds = 1.0,
     this.videoActualSeconds,
     this.startImagePath,
     this.endImagePath,
     this.videoPath,
     this.linkStart = false,
-    this.i2v = false,
+    this.videoMode = VideoMode.fe2v,
+    this.stillEffect = StillEffect.none,
     this.note = '',
     this.videoNote = '',
     this.baseId,
     this.detached = false,
   }) : refCharacterIds = refCharacterIds ?? [];
 
+  /// 주문한 길이(초) — AI 방식은 정수 [videoSeconds], 스틸컷은 [stillSeconds](0.1 단위).
+  double get orderedSeconds => isStill ? stillSeconds : videoSeconds.toDouble();
+
   /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이.
   /// 재생되는 건 파일이므로 화면·합계는 전부 이걸 봐야 한다.
   /// 실측이 0(측정 실패로 굳은 값)이면 주문값으로 떨어진다 — 0초로 표시되지 않게.
   double get playSeconds => (videoActualSeconds != null && videoActualSeconds! > 0)
       ? videoActualSeconds!
-      : videoSeconds.toDouble();
+      : orderedSeconds;
+
+  /// 끝 프레임이 필요한 방식인지 — FE2V 하나뿐(I2V·스틸컷은 시작 한 장이면 된다).
+  bool get needsEndFrame => videoMode == VideoMode.fe2v;
+
+  /// AI 없이 시작 프레임을 그대로 영상화하는 스틸컷인지.
+  bool get isStill => videoMode == VideoMode.still;
 
   /// 파생 트랙의 샷인지(기준 트랙이면 false).
   bool get isDerived => baseId != null;
@@ -112,18 +145,20 @@ class Shot {
     videoPromptKo = base.videoPromptKo;
     videoNegativePrompt = base.videoNegativePrompt;
     videoSeconds = base.videoSeconds;
+    stillSeconds = base.stillSeconds;
     startImagePath = base.startImagePath;
     endImagePath = base.endImagePath;
     linkStart = base.linkStart;
-    i2v = base.i2v;
+    videoMode = base.videoMode;
+    stillEffect = base.stillEffect;
     note = base.note;
     videoNote = base.videoNote;
   }
 
-  /// 이 샷이 영상을 뽑을 준비가 됐는지 — I2V는 시작만, FE2V는 시작·끝 둘 다 필요.
+  /// 이 샷이 영상을 뽑을 준비가 됐는지 — 끝 프레임은 FE2V만 필요, 나머지는 시작 한 장이면 된다.
   bool get videoInputsReady =>
       (startImagePath?.isNotEmpty ?? false) &&
-      (i2v || (endImagePath?.isNotEmpty ?? false));
+      (!needsEndFrame || (endImagePath?.isNotEmpty ?? false));
 
   Map<String, dynamic> toJson() {
     // 따라가는 샷은 **자기 것만** 적는다 — 내용은 기준 샷 한 곳에만 있어야 둘이 어긋나지 않는다.
@@ -160,9 +195,11 @@ class Shot {
         'promptKo': videoPromptKo,
         'negativePrompt': videoNegativePrompt,
         'seconds': videoSeconds,
+        'stillSeconds': stillSeconds,
         'actualSeconds': videoActualSeconds, // 실제로 뽑힌 길이(주문값과 다를 수 있다)
         'file': mediaName(videoPath),
-        'i2v': i2v,
+        'mode': videoMode.name,
+        'stillEffect': stillEffect.name,
         'note': videoNote,
       },
       'note': note,
@@ -187,6 +224,7 @@ class Shot {
       // 'negativePrompt'가 없는 옛 데이터는 빈 값 — 서버 기본 네거티브가 그대로 쓰인다.
       videoNegativePrompt: (video?['negativePrompt'] as String?) ?? '',
       videoSeconds: (video?['seconds'] as int?) ?? 5,
+      stillSeconds: (video?['stillSeconds'] as num?)?.toDouble() ?? 1.0,
       videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),
@@ -194,8 +232,12 @@ class Shot {
       // 'inherit'가 없는 옛 데이터는 꺼진 걸로 읽는다 — 켠 걸로 보면 이미 만들어 둔
       // 시작 프레임을 앞 샷 것으로 말없이 갈아치우게 된다.
       linkStart: (start?['inherit'] as bool?) ?? false,
-      // 'i2v'가 없는 옛 데이터는 FE2V(끝 프레임 사용)로 읽는다 — 지금까지 만든 게 전부 그거다.
-      i2v: (video?['i2v'] as bool?) ?? false,
+      // 'mode'가 새 키. 없는 옛 데이터는 'i2v'(bool)로 읽어 매핑한다 — 그것도 없으면 FE2V.
+      videoMode: _readVideoMode(video),
+      stillEffect: StillEffect.values.firstWhere(
+        (e) => e.name == video?['stillEffect'],
+        orElse: () => StillEffect.none,
+      ),
       note: (j['note'] as String?) ?? '',
       videoNote: (video?['note'] as String?) ?? '',
       // 'base'가 있으면 파생 트랙의 샷 — 따라가는 중이면 위 내용은 전부 비어 있고,
@@ -204,6 +246,17 @@ class Shot {
       detached: (j['detached'] as bool?) ?? false,
     );
   }
+}
+
+/// 영상 방식 읽기 — 새 키 'mode' 우선, 없으면 옛 'i2v'(bool)을 FE2V/I2V로 매핑.
+VideoMode _readVideoMode(Map<String, dynamic>? video) {
+  final m = video?['mode'] as String?;
+  if (m != null) {
+    for (final v in VideoMode.values) {
+      if (v.name == m) return v;
+    }
+  }
+  return (video?['i2v'] as bool?) ?? false ? VideoMode.i2v : VideoMode.fe2v;
 }
 
 /// 미디어 절대경로 → JSON 저장용 파일명(상대). 미디어는 전부 프로젝트 폴더 안에 있다.

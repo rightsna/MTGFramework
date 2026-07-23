@@ -63,6 +63,17 @@ void main() {
     expect(plan.skipped, isEmpty);
   });
 
+  test('스틸컷은 시작 프레임 한 장이면 ready — 끝 프레임·프롬프트 없어도 된다', () async {
+    final beat = p.dialogues.single;
+    // 끝 프레임도 프롬프트도 없지만 스틸컷이면 시작 한 장으로 충분하다.
+    final s = await makeShot(beat, end: false, prompt: '');
+    s.videoMode = VideoMode.still;
+
+    final plan = p.sceneVideoPlan(skipExisting: false);
+    expect(plan.ready.single, same(s));
+    expect(plan.blocked, isEmpty);
+  });
+
   test('프레임·프롬프트가 빠지면 blocked로 빠지고 이유가 붙는다', () async {
     final beat = p.dialogues.single;
     await makeShot(beat); // 정상
@@ -72,8 +83,8 @@ void main() {
     final plan = p.sceneVideoPlan(skipExisting: false);
     expect(plan.ready.length, 1);
     expect(plan.blocked.length, 2);
-    expect(plan.blocked[0].missing, ['끝장면']);
-    expect(plan.blocked[1].missing, ['시작장면', '영상 프롬프트']);
+    expect(plan.blocked[0].missing, ['끝 프레임']);
+    expect(plan.blocked[1].missing, ['시작 프레임', '영상 프롬프트']);
     // 이유는 사람이 보는 경고에 그대로 나가므로 라벨도 붙어 있어야 한다.
     expect(plan.blocked[0].label, isNotEmpty);
   });
@@ -85,7 +96,7 @@ void main() {
 
     final plan = p.sceneVideoPlan(skipExisting: false);
     expect(plan.ready, isEmpty);
-    expect(plan.blocked.single.missing, ['끝장면']);
+    expect(plan.blocked.single.missing, ['끝 프레임']);
   });
 
   test('건너뛰기를 켜면 영상 있는 샷은 skipped, 끄면 덮어쓸 대상', () async {

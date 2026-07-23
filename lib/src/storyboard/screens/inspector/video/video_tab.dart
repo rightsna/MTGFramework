@@ -61,24 +61,31 @@ class _VideoTab extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _PromptPair(
-                        label: '프롬프트',
-                        controller: p.videoCtrl(c.id),
-                        koController: p.videoKoCtrl(c.id),
-                        hint: '움직임/카메라 등 영상 묘사',
-                      ),
-                      const SizedBox(height: 10),
-                      _SectionLabel('네거티브 프롬프트'),
+                      // 스틸컷은 AI 프롬프트를 안 쓴다 — 사진 한 장을 그대로 채우므로.
+                      if (!c.isStill) ...[
+                        _PromptPair(
+                          label: '프롬프트',
+                          controller: p.videoCtrl(c.id),
+                          koController: p.videoKoCtrl(c.id),
+                          hint: '움직임/카메라 등 영상 묘사',
+                        ),
+                        const SizedBox(height: 10),
+                        _SectionLabel('네거티브 프롬프트'),
+                        const SizedBox(height: 6),
+                        _PromptField(
+                          controller: p.videoNegCtrl(c.id),
+                          hint: '빼고 싶은 것만 (예: hand, text, watermark) — '
+                              '위 프롬프트에 "no hand"처럼 쓰면 오히려 나온다',
+                        ),
+                        const SizedBox(height: 14),
+                      ],
+                      // 스틸컷은 0.1초 단위, AI 방식은 정수 초.
+                      _SectionLabel(c.isStill ? '길이 (초 · 0.1 단위)' : '길이 (초 · 이 샷)'),
                       const SizedBox(height: 6),
-                      _PromptField(
-                        controller: p.videoNegCtrl(c.id),
-                        hint: '빼고 싶은 것만 (예: hand, text, watermark) — '
-                            '위 프롬프트에 "no hand"처럼 쓰면 오히려 나온다',
-                      ),
-                      const SizedBox(height: 14),
-                      _SectionLabel('길이 (초 · 이 샷)'),
-                      const SizedBox(height: 6),
-                      _SecondsField(key: ValueKey('sec_${c.id}')),
+                      if (c.isStill)
+                        _StillSecondsField(key: ValueKey('still_sec_${c.id}'))
+                      else
+                        _SecondsField(key: ValueKey('sec_${c.id}')),
                     ],
                   ),
                 ),
@@ -88,6 +95,16 @@ class _VideoTab extends StatelessWidget {
                   _GenProgressBanner(
                     text: p.progressOf(p.busyKey(c.id, GenMode.videoLow)) ??
                         '생성 중…',
+                  )
+                else if (c.isStill)
+                  // 스틸컷은 AI가 아니라 로컬 ffmpeg — 백엔드 선택 없이 버튼 하나.
+                  _GenButton(
+                    label: '스틸컷 생성',
+                    icon: Icons.photo_outlined,
+                    busyKey: p.busyKey(c.id, GenMode.videoLow),
+                    onGen: () => p.gen(c, GenMode.videoLow),
+                    enabled: p.stillReady,
+                    disabledHint: p.stillBlockReason,
                   )
                 else
                   // 백엔드는 **누를 때 고른다** — 자체 서버 · Veo 버튼을 한 줄에 나란히.
