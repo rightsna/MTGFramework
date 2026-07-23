@@ -13,6 +13,7 @@ typedef PlaylistItem = ({
   String title,
   String beatId,
   String? voicePath,
+  String? sfxPath,
 });
 
 /// 영상을 크게 재생하는 팝업 — **씬의 영상들을 순서대로 이어서** 보며, 대사 음성·씬 배경음도
@@ -51,8 +52,10 @@ class _VideoPlayDialog extends StatefulWidget {
 class _VideoPlayDialogState extends State<_VideoPlayDialog> {
   VideoPlayerController? _ctrl; // 영상
   VideoPlayerController? _voice; // 현재 비트의 대사 음성(mp3)
+  VideoPlayerController? _sfx; // 현재 비트의 효과음(mp3)
   VideoPlayerController? _bgm; // 씬 배경음(mp3, 루프)
   String? _voiceBeatId; // 지금 음성이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
+  String? _sfxBeatId; // 지금 효과음이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
   Object? _error;
   late int _index;
   bool _playing = true;
@@ -98,6 +101,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     if (_items.isEmpty) return;
 
     await _syncVoice(); // 비트가 바뀌면 이 지점에서 음성을 새로 튼다
+    await _syncSfx(); // 효과음도 비트 경계에서 새로 튼다
 
     final c = VideoPlayerController.file(File(_items[_index].path));
     try {
@@ -139,6 +143,31 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
       }
       c.addListener(_onTick); // 대사 종료를 잡는다(영상이 멈춰 있어도) — 대사가 더 길면 그 끝에서 넘어간다
       _voice = c;
+      if (_playing) await c.play();
+    } catch (_) {
+      await c.dispose();
+    }
+  }
+
+  /// 현재 비트의 효과음을 맞춘다 — 비트가 바뀔 때만 새로 튼다(같은 비트 이어지면 유지).
+  /// 대사와 달리 **타임라인을 좌우하지 않는다**(진행 판단에 안 낀다) — 영상 위에 얹혀 재생만 된다.
+  Future<void> _syncSfx() async {
+    final it = _items[_index];
+    if (it.beatId == _sfxBeatId) return; // 같은 비트 — 효과음 유지
+    _sfxBeatId = it.beatId;
+    final old = _sfx;
+    _sfx = null;
+    await old?.dispose();
+    final sp = it.sfxPath;
+    if (sp == null || !File(sp).existsSync()) return;
+    final c = VideoPlayerController.file(File(sp));
+    try {
+      await c.initialize();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      _sfx = c;
       if (_playing) await c.play();
     } catch (_) {
       await c.dispose();
@@ -227,6 +256,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
   void _stopAtEnd() {
     _playing = false;
     _voice?.pause();
+    _sfx?.pause();
     _bgm?.pause();
     if (mounted) setState(() {});
   }
@@ -239,12 +269,14 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
         _playing = false;
         c.pause();
         _voice?.pause();
+        _sfx?.pause();
         _bgm?.pause();
       } else {
         _playing = true;
         if (c.value.position >= c.value.duration) c.seekTo(Duration.zero);
         c.play();
         _voice?.play();
+        _sfx?.play();
         _bgm?.play();
       }
     });
@@ -266,6 +298,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     _ctrl?.removeListener(_onTick);
     _ctrl?.dispose();
     _voice?.dispose();
+    _sfx?.dispose();
     _bgm?.dispose();
     super.dispose();
   }

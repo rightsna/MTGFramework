@@ -1,5 +1,6 @@
 import 'shot.dart';
 import 'dialogue.dart';
+import 'sfx.dart';
 
 /// 대사(DialogueBeat) = 씬 타임라인의 한 단위. **대사 내용 1개(선택) + 샷 여러 개**를 담는다.
 /// 계층: 씬 > **대사** > 샷.
@@ -21,6 +22,10 @@ class DialogueBeat {
   String note; // 사용자 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
   String direction; // 연출 노트 — 이 비트에서 무엇을 표현할지(대사는 그중 하나). 자동 생성엔 안 물림
   Dialogue? dialogue; // 이 대사의 내용(0 또는 1). null = 무음 대사
+
+  /// 이 비트의 효과음(0 또는 1). null = 효과음 없음. **트랙끼리 공유**(기준 비트에만 둔다) —
+  /// 효과음은 영상 백엔드와 무관해서 대사 음성처럼 트랙별로 나눌 이유가 없다.
+  Sfx? sfx;
   List<Shot> shots; // 이 대사를 화면으로 덮는 샷들(순서대로) — 각 샷 = FE2V 1회
 
   /// 파생 트랙(트랙2…)에서 이 비트가 비추고 있는 **기준 트랙 비트의 id**. null = 기준 트랙 자신.
@@ -34,6 +39,7 @@ class DialogueBeat {
     this.note = '',
     this.direction = '',
     this.dialogue,
+    this.sfx,
     List<Shot>? shots,
     this.baseId,
   }) : shots = shots ?? [];
@@ -86,6 +92,7 @@ class DialogueBeat {
           'note': note,
           'direction': direction,
           'dialogue': dialogue?.toJson(), // null = 무음 대사
+          'sfx': sfx?.toJson(), // null = 효과음 없음 (트랙 공유라 기준 비트에만 적는다)
         }
         // 파생 비트: 대본은 기준에 있으니 **음성만** 적는다(트랙별 소유).
         else
@@ -100,9 +107,12 @@ class DialogueBeat {
   factory DialogueBeat.fromJson(Map<String, dynamic> j, String dir) {
     final baseId = j['base'] as String?;
     Dialogue? dialogue;
+    Sfx? sfx; // 효과음은 기준 비트에만 저장된다(트랙 공유).
     if (baseId == null) {
       final dlg = (j['dialogue'] as Map?)?.cast<String, dynamic>();
       dialogue = dlg == null ? null : Dialogue.fromJson(dlg, dir);
+      final sx = (j['sfx'] as Map?)?.cast<String, dynamic>();
+      sfx = sx == null ? null : Sfx.fromJson(sx, dir);
     } else {
       // 파생 비트: 저장된 건 음성뿐. 대본·화자는 불러온 뒤 기준에서 채워진다(트랙 동기화).
       final voice = (j['voice'] as Map?)?.cast<String, dynamic>();
@@ -120,6 +130,7 @@ class DialogueBeat {
       note: (j['note'] as String?) ?? '',
       direction: (j['direction'] as String?) ?? '',
       dialogue: dialogue,
+      sfx: sfx,
       shots: ((j['shots'] as List?) ?? const [])
           .map((e) => Shot.fromJson((e as Map).cast<String, dynamic>(), dir))
           .toList(),

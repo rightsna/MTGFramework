@@ -11,6 +11,7 @@ import '../models/character.dart';
 import '../models/shot.dart';
 import '../models/dialogue.dart';
 import '../models/dialogue_beat.dart';
+import '../models/sfx.dart';
 import '../models/story_scene.dart';
 import '../models/video_track.dart';
 import '../services/api_service.dart';
@@ -360,6 +361,20 @@ class StoryboardProvider extends ChangeNotifier {
   /// 이 비트가 자리에 들려 줄 음성이 있는지(자기 것이든 상속이든).
   bool hasAnyVoice(DialogueBeat b) => voicePathOf(b) != null;
 
+  // ───────── 효과음(SFX) — 대사와 달리 화자가 없고, **트랙끼리 공유**한다(기준 비트에 둔다) ─────────
+
+  /// 이 비트의 효과음(트랙 공유라 어느 트랙에서 보든 기준 비트의 것). 없으면 null.
+  Sfx? sfxOf(DialogueBeat b) => _scriptBeat(b).sfx;
+
+  /// 이 비트 자리에 **들려 줄** 효과음 경로. 없으면 null.
+  String? sfxPathOf(DialogueBeat b) => sfxOf(b)?.path;
+
+  /// 이 비트에 생성된 효과음이 있는지.
+  bool hasSfx(DialogueBeat b) => sfxOf(b)?.hasSound ?? false;
+
+  /// 효과음 진행/캐시 키 — 트랙 공유라 **기준 비트 id** 기준.
+  String sfxBusyKey(String beatId) => '${_scriptBeatId(beatId)}:sfx';
+
   /// 이 비트가 속한 씬.
   StoryScene? sceneOf2(DialogueBeat beat) {
     for (final sc in _scenes) {
@@ -481,13 +496,25 @@ class StoryboardProvider extends ChangeNotifier {
   /// 선택 씬의 재생 목록 — 영상이 있는 샷만 순서대로 (경로 + 라벨). 영상 팝업 연속 재생용.
   /// 각 항목에 그 샷이 속한 **비트의 음성 경로·비트 id**도 실어, 팝업이 영상과 음성을 함께
   /// 재생하게 한다. 비트가 바뀔 때만 음성을 새로 트도록(1 대사 = 여러 샷) beatId로 구분한다.
-  List<({String path, String title, String beatId, String? voicePath})>
-      scenePlaylist() {
-    final out =
-        <({String path, String title, String beatId, String? voicePath})>[];
+  List<
+      ({
+        String path,
+        String title,
+        String beatId,
+        String? voicePath,
+        String? sfxPath,
+      })> scenePlaylist() {
+    final out = <({
+      String path,
+      String title,
+      String beatId,
+      String? voicePath,
+      String? sfxPath,
+    })>[];
     var n = 0;
     for (final beat in dialogues) {
       final voice = voicePathOf(beat); // 상속 포함(자기 것 없으면 기준 트랙 음성)
+      final sfx = sfxPathOf(beat); // 효과음(트랙 공유)
       for (final shot in beat.shots) {
         n++;
         final path = videoPathOf(shot); // 상속 포함(자기 것 없으면 기준 트랙 영상)
@@ -498,6 +525,7 @@ class StoryboardProvider extends ChangeNotifier {
           title: t.isEmpty ? '샷 $n' : '샷 $n · $t',
           beatId: beat.id,
           voicePath: voice,
+          sfxPath: sfx,
         ));
       }
     }
@@ -573,6 +601,7 @@ class StoryboardProvider extends ChangeNotifier {
       for (final t in sc.tracks) {
         for (final b in t.beats) {
           keep(b.dialogue?.voicePath);
+          keep(b.sfx?.path); // 효과음(기준 비트에만 있다)
           for (final s in b.shots) {
             keep(s.startImagePath);
             keep(s.endImagePath);
@@ -1045,6 +1074,10 @@ class StoryboardProvider extends ChangeNotifier {
           beat.dialogue!.voicePath =
               await _copyMedia(voice, '${newBeatId}_voice');
         }
+        final sfx = beat.sfx?.path; // 효과음(기준 비트에만)
+        if (sfx != null) {
+          beat.sfx!.path = await _copyMedia(sfx, '${newBeatId}_sfx');
+        }
         for (final shot in beat.shots) {
           final newShotId = _newId('clip');
           idMap[shot.id] = newShotId;
@@ -1323,6 +1356,41 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
+  // ── 효과음 설정(전부 기준 비트에 쓴다 — 트랙 공유) ──
+  void setSfxPrompt(DialogueBeat beat, String text) {
+    (_scriptBeat(beat).sfx ??= Sfx()).prompt = text;
+    notifyListeners();
+    save();
+  }
+
+  void setSfxDuration(DialogueBeat beat, double sec) {
+    // 0.1초 단위로 반올림(0.5~22초).
+    (_scriptBeat(beat).sfx ??= Sfx()).durationSeconds =
+        (sec.clamp(0.5, 22) * 10).round() / 10;
+    notifyListeners();
+    save();
+  }
+
+  void setSfxInfluence(DialogueBeat beat, double v) {
+    (_scriptBeat(beat).sfx ??= Sfx()).promptInfluence =
+        (v.clamp(0.0, 1.0) * 100).round() / 100;
+    notifyListeners();
+    save();
+  }
+
+  /// 생성된 효과음만 지운다(묘사·설정은 남겨 다시 뽑을 수 있게). 파일은 고아 정리가 치운다.
+  void clearSfxSound(DialogueBeat beat) {
+    final s = _scriptBeat(beat).sfx;
+    if (s == null) return;
+    s.path = null;
+    s.soundSeconds = 0;
+    final k = sfxBusyKey(beat.id);
+    _ver[k] = (_ver[k] ?? 0) + 1;
+    notifyListeners();
+    save();
+    _sweepAfterDelete();
+  }
+
   /// 대사 음성 진행 상태 키(샷 단위). 음성은 트랙끼리 공유하므로 **기준 비트 기준**으로 잡는다 —
   /// 어느 트랙에서 보고 있든 같은 진행 표시·같은 미리보기 캐시를 쓴다.
   // 음성은 **트랙별**이라 진행 표시·캐시도 그 트랙의 비트 id 기준(대본과 달리 공유 아님).
@@ -1452,6 +1520,79 @@ class StoryboardProvider extends ChangeNotifier {
     } catch (e, st) {
       debugPrint('[voice] $key 실패: $e\n$st');
       messenger?.call('음성 생성 실패: $e');
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
+  }
+
+  /// 효과음을 기존 오디오 파일에서 불러온다. 효과음은 트랙 공유라 **기준 비트**에 붙인다.
+  Future<void> loadSfx(DialogueBeat beat) async {
+    const typeGroup = fs.XTypeGroup(
+      label: 'audio',
+      extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'],
+    );
+    final picked = await fs.openFile(acceptedTypeGroups: [typeGroup]);
+    if (picked == null) return;
+    final base = _scriptBeat(beat);
+    final key = sfxBusyKey(beat.id);
+    _busy.add(key);
+    notifyListeners();
+    try {
+      final ext = picked.name.split('.').last.toLowerCase();
+      final f = File('$projectDirPath/${base.id}_sfx.$ext');
+      await f.writeAsBytes(await picked.readAsBytes());
+      // 확장자가 바뀌면 옛 파일이 남으므로 정리.
+      for (final e in Directory(projectDirPath).listSync().whereType<File>()) {
+        final n = e.uri.pathSegments.last;
+        if (n.startsWith('${base.id}_sfx.') && e.path != f.path) {
+          await e.delete();
+        }
+      }
+      final s = base.sfx ??= Sfx();
+      s.path = f.path;
+      s.soundSeconds = await _audioSeconds(f);
+      _ver[key] = (_ver[key] ?? 0) + 1;
+      await save();
+    } catch (e, st) {
+      debugPrint('[loadSfx] $key 실패: $e\n$st');
+      messenger?.call('효과음 불러오기 실패: $e');
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
+  }
+
+  /// 효과음(일레븐랩스 sound-generation) 생성 → mp3 저장 + 길이 실측. 기준 비트에 붙인다.
+  Future<void> genSfx(DialogueBeat beat) async {
+    final base = _scriptBeat(beat);
+    final s = base.sfx;
+    if (s == null || s.prompt.trim().isEmpty) {
+      messenger?.call('효과음 묘사를 먼저 입력하세요');
+      return;
+    }
+    if (!voiceReady) {
+      messenger?.call(voiceBlockReason!);
+      return;
+    }
+    final key = sfxBusyKey(beat.id);
+    _busy.add(key);
+    notifyListeners();
+    try {
+      final bytes = await ElevenLabsService(_settings.elevenKey).generateSound(
+        text: s.prompt.trim(),
+        durationSeconds: s.durationSeconds,
+        promptInfluence: s.promptInfluence,
+      );
+      final f = File('$projectDirPath/${base.id}_sfx.mp3');
+      await f.writeAsBytes(bytes);
+      s.path = f.path;
+      s.soundSeconds = await _measureSeconds(f) ?? s.durationSeconds;
+      _ver[key] = (_ver[key] ?? 0) + 1;
+      await save();
+    } catch (e, st) {
+      debugPrint('[sfx] $key 실패: $e\n$st');
+      messenger?.call('효과음 생성 실패: $e');
     } finally {
       _busy.remove(key);
       notifyListeners();
@@ -2161,6 +2302,43 @@ class StoryboardProvider extends ChangeNotifier {
     await save();
   }
 
+  /// 파생 트랙(트랙2…)의 이 샷 영상을 **기준 트랙(트랙1)으로 복사**한다 — 비교하다 마음에 든
+  /// take를 기본으로 승격. 기준 샷의 기존 영상은 덮어쓴다. 파일을 복사해 각자 소유로 둔다
+  /// (파생 트랙 것을 지워도 기준 트랙이 안 깨진다).
+  Future<void> copyVideoToBase(Shot shot) async {
+    if (!shot.isDerived) return; // 기준 트랙 샷은 복사할 곳이 없다
+    final base = baseShotOf(shot);
+    if (base == null) {
+      messenger?.call('기준 트랙 샷을 찾을 수 없습니다');
+      return;
+    }
+    final src = shot.videoPath;
+    if (src == null || !File(src).existsSync()) {
+      messenger?.call('복사할 영상이 없습니다');
+      return;
+    }
+    final key = busyKey(base.id, GenMode.videoLow);
+    _busy.add(key);
+    notifyListeners();
+    try {
+      base.videoPath = await _copyMedia(src, '${base.id}_vlow');
+      // 실제 길이는 원본 것을 그대로(같은 파일) — 없으면 복사본에서 다시 잰다.
+      base.videoActualSeconds = shot.videoActualSeconds ??
+          (base.videoPath != null
+              ? await _measureSeconds(File(base.videoPath!))
+              : null);
+      _ver[key] = (_ver[key] ?? 0) + 1;
+      await save();
+      messenger?.call('${trackLabel(tracks.first)}(으)로 영상을 복사했습니다');
+    } catch (e, st) {
+      debugPrint('[copyToBase] 실패: $e\n$st');
+      messenger?.call('복사 실패: $e');
+    } finally {
+      _busy.remove(key);
+      notifyListeners();
+    }
+  }
+
   /// 선택 씬의 **생성물 전부**(모든 샷의 시작·끝 프레임 + 영상, 씬 배경음, 대사 음성)를 지운다.
   /// 프롬프트·제목·구조는 그대로 두고 미디어만 비운다 — 다시 뽑기 전 초기화용.
   /// 지운 개수를 돌려준다.
@@ -2206,6 +2384,15 @@ class StoryboardProvider extends ChangeNotifier {
           d.voiceSeconds = 0;
           final k = voiceBusyKey(beat.id);
           _ver[k] = (_ver[k] ?? 0) + 1;
+        }
+        // 효과음은 트랙 공유(기준 비트에만) — 있으면 지운다.
+        final sx = beat.sfx;
+        if (sx != null && sx.path != null) {
+          await kill(sx.path);
+          sx.path = null;
+          sx.soundSeconds = 0;
+          final sk = sfxBusyKey(beat.id);
+          _ver[sk] = (_ver[sk] ?? 0) + 1;
         }
       }
     }

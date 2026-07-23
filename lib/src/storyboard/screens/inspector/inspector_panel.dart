@@ -22,6 +22,7 @@ import '../ui.dart';
 part 'beat/beat_tab.dart';
 part 'beat/coverage_badge.dart';
 part 'beat/dialogue_editor.dart';
+part 'beat/sfx_editor.dart';
 part 'beat/direction_note.dart';
 part 'frame/frame_tab.dart';
 part 'frame/frame_gen_settings.dart';

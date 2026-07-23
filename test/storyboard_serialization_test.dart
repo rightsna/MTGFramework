@@ -2,6 +2,7 @@ import 'package:framework/src/storyboard/models/character.dart';
 import 'package:framework/src/storyboard/models/shot.dart';
 import 'package:framework/src/storyboard/models/dialogue.dart';
 import 'package:framework/src/storyboard/models/dialogue_beat.dart';
+import 'package:framework/src/storyboard/models/sfx.dart';
 import 'package:framework/src/storyboard/models/story_scene.dart';
 import 'package:framework/src/storyboard/models/video_track.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -243,6 +244,37 @@ void main() {
     final beat = DialogueBeat.fromJson({'id': 'b_min'}, dir);
     expect(beat.shots, isEmpty);
     expect(beat.dialogue, isNull);
+    expect(beat.sfx, isNull);
+  });
+
+  test('효과음(SFX)은 기준 비트에 저장되고 왕복 보존, 파생 비트엔 안 적힌다', () {
+    final base = DialogueBeat(
+      id: 'b1',
+      sfx: Sfx(
+        prompt: 'deep cinematic impact boom',
+        durationSeconds: 1.6,
+        promptInfluence: 0.6,
+        path: '$dir/b1_sfx.mp3',
+        soundSeconds: 1.55,
+      ),
+    );
+    final j = base.toJson();
+    final sfxJson = j['sfx'] as Map;
+    expect(sfxJson['prompt'], 'deep cinematic impact boom');
+    expect(sfxJson['durationSeconds'], 1.6);
+    expect(sfxJson['promptInfluence'], 0.6);
+    expect((sfxJson['sound'] as Map)['file'], 'b1_sfx.mp3'); // 파일명(상대)만
+
+    final back = DialogueBeat.fromJson(j, dir);
+    expect(back.sfx!.prompt, 'deep cinematic impact boom');
+    expect(back.sfx!.durationSeconds, 1.6);
+    expect(back.sfx!.promptInfluence, 0.6);
+    expect(back.sfx!.path, '$dir/b1_sfx.mp3'); // 절대경로로 복원
+    expect(back.sfx!.hasSound, isTrue);
+
+    // 파생 비트(base 있음)는 효과음을 적지 않는다(트랙 공유 — 기준 비트에만).
+    final derived = DialogueBeat(id: 'b1_t2', baseId: 'b1', sfx: Sfx(prompt: 'x'));
+    expect(derived.toJson().containsKey('sfx'), isFalse);
   });
 
   test('새 대사 기본값 + 끝장면(샷) 왕복', () {

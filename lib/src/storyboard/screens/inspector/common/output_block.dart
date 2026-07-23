@@ -8,6 +8,7 @@ class _OutputBlock extends StatelessWidget {
     this.isVideo = false,
     this.deleteTarget,
     this.trimTarget,
+    this.copyToBaseTarget,
   });
 
   final String title;
@@ -20,6 +21,9 @@ class _OutputBlock extends StatelessWidget {
 
   /// 지정하면 '트림' 버튼이 붙는다(영상 전용) — 프레임 단위로 보며 앞뒤를 잘라낸다.
   final Shot? trimTarget;
+
+  /// 지정하면 '트랙1로 복사' 버튼이 붙는다(파생 트랙 영상 전용) — 이 take를 기준 트랙으로 승격.
+  final Shot? copyToBaseTarget;
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +58,40 @@ class _OutputBlock extends StatelessWidget {
                     if (seconds != null) {
                       await p.applyTrim(trimTarget!, seconds);
                     }
+                  },
+                ),
+              if (copyToBaseTarget != null)
+                _MediaAction(
+                  icon: Icons.file_upload_outlined,
+                  label: '${p.trackLabel(p.tracks.first)}로 복사',
+                  onTap: () async {
+                    final base = p.baseShotOf(copyToBaseTarget!);
+                    // 기준 트랙에 이미 영상이 있으면 덮어쓰기라 한 번 확인한다.
+                    final overwrite = base?.videoPath != null;
+                    final ok = !overwrite ||
+                        await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: Text(
+                                    '${p.trackLabel(p.tracks.first)}에 복사'),
+                                content: Text(
+                                  '${p.trackLabel(p.tracks.first)}에 이미 영상이 있습니다.\n'
+                                  '이 영상으로 덮어씁니다. 되돌릴 수 없습니다.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(ctx, false),
+                                    child: const Text('취소'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () => Navigator.pop(ctx, true),
+                                    child: const Text('덮어쓰기'),
+                                  ),
+                                ],
+                              ),
+                            ) ==
+                            true;
+                    if (ok) await p.copyVideoToBase(copyToBaseTarget!);
                   },
                 ),
               if (deleteTarget != null)

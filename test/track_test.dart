@@ -215,6 +215,26 @@ void main() {
     p2.dispose();
   });
 
+  test('파생 트랙 영상을 트랙1로 복사 — 기준 트랙이 그 파일을 자기 것으로 갖는다', () async {
+    final beat = p.dialogues.single;
+    final base = beat.shots.first;
+    base.videoPath = null; // 트랙1은 아직 영상 없음
+    await p.addTrack();
+    final derived = p.dialogues.single.shots.first;
+    derived.videoPath = (await file('${derived.id}_vlow.mp4')).path;
+    derived.videoActualSeconds = 4.0;
+    await p.save();
+
+    await p.copyVideoToBase(derived);
+
+    // 기준 트랙 샷이 자기 파일(<baseId>_vlow.*)을 갖는다 — 파생 것과 다른 파일.
+    expect(base.videoPath, isNotNull);
+    expect(base.videoPath, isNot(derived.videoPath));
+    expect(base.videoPath!.contains('${base.id}_vlow'), isTrue);
+    expect(File(base.videoPath!).existsSync(), isTrue);
+    expect(base.videoActualSeconds, 4.0, reason: '원본 실측 길이를 그대로 가져온다');
+  });
+
   test('해상도는 씬별 — 한 씬을 바꿔도 다른 씬은 그대로', () async {
     // setUp이 씬 하나(scene1) 만들어 둠. 두 번째 씬 추가.
     p.addScene();

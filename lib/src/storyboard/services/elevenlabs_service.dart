@@ -48,6 +48,29 @@ class ElevenLabsService {
   double _estimate(String text) =>
       (text.trim().length * 0.09).clamp(1.0, 60.0);
 
+  /// 효과음 생성(sound-generation). 소리 묘사([text]) → 음향(mp3, 바이너리).
+  /// [durationSeconds]는 0.5~22초(null이면 서버가 알아서 정함), [promptInfluence]는 0~1.
+  /// 대사(TTS)와 달리 정렬/길이 정보가 없다 — 길이는 저장 후 파일에서 실측한다.
+  Future<Uint8List> generateSound({
+    required String text,
+    double? durationSeconds,
+    double promptInfluence = 0.3,
+  }) async {
+    final r = await http.post(
+      Uri.parse('$_base/sound-generation'),
+      headers: {..._headers, 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'text': text,
+        'duration_seconds': ?durationSeconds, // null이면 항목째 빠진다(서버가 길이 자동)
+        'prompt_influence': promptInfluence,
+      }),
+    );
+    if (r.statusCode != 200) {
+      throw Exception('일레븐랩스 ${r.statusCode}: ${utf8.decode(r.bodyBytes)}');
+    }
+    return r.bodyBytes;
+  }
+
   /// 사용 가능한 보이스 목록(인물별·기본 보이스 지정용).
   Future<List<ElevenVoice>> listVoices() async {
     final r = await http

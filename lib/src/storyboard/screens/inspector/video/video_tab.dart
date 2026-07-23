@@ -45,6 +45,9 @@ class _VideoTab extends StatelessWidget {
                         ? (shot: c, mode: GenMode.videoLow)
                         : null,
                     trimTarget: p.hasOwnVideo(c) ? c : null,
+                    // 파생 트랙(트랙2…)에서 뽑은 영상만 트랙1로 복사할 수 있다.
+                    copyToBaseTarget:
+                        (c.isDerived && p.hasOwnVideo(c)) ? c : null,
                   )
                 else
                   _VideoInputFrames(shot: c),
