@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 /// Where videos are generated. (스크린샷=시작·끝 프레임은 자체 서버 전용 — 외부 키 생성은 걷어냄.)
 /// 선언 순서 = 화면에 늘어놓는 순서(생성 버튼·트랙 메뉴). 자체 서버가 기본이라 위에 온다.
 enum VideoBackend {
-  serviceApi('자체 서버 (service-api)', '자체서버'),
+  serviceApi('자체 서버', '자체서버'),
   veo('Veo', 'Veo');
 
   const VideoBackend(this.label, this.shortLabel);
@@ -97,15 +97,13 @@ class MovieSettings {
   final VideoResolution videoResolution;
   final VideoRes videoRes; // 자체 서버 FE2V 생성 해상도(비율 포함, 4종)
   final int videoSeconds; // 자체 서버 FE2V 영상 길이(초, 1~15)
-  final int inspectorTab; // 인스펙터 마지막 선택 탭(0=장면, 1=영상, 2=공통)
+  final int inspectorTab; // 인스펙터 마지막 선택 탭(0=비트,1=장면,2=영상,3=씬,4=배경음)
   final bool promptShowKo; // 프롬프트 칸을 번역(한국어)으로 보고 있는지 — 토글 상태 유지용
   final String videoNegativePrompt; // 영상 네거티브 프롬프트
   final String geminiKey; // Veo 전용
   final String
   civitaiToken; // civitai LoRA 다운로드용 API 토큰(있으면 civitai URL에 자동 부착)
   final String elevenKey; // 일레븐랩스 TTS(대사 음성) API 키
-  final String elevenVoiceId; // 기본(내레이션·보이스 없는 화자) 보이스 id
-  final String elevenVoiceName; // 기본 보이스 이름(라벨)
   final String serviceApiUrl; // 사용자 오버라이드(비우면 kServerDomain 사용)
 
   /// 실제 연결 주소: 오버라이드가 있으면 그것, 없으면 고정 도메인.
@@ -126,8 +124,6 @@ class MovieSettings {
     this.geminiKey = '',
     this.civitaiToken = '',
     this.elevenKey = '',
-    this.elevenVoiceId = '',
-    this.elevenVoiceName = '',
     this.serviceApiUrl = '', // 비우면 kServerDomain
   });
 
@@ -145,8 +141,6 @@ class MovieSettings {
     String? geminiKey,
     String? civitaiToken,
     String? elevenKey,
-    String? elevenVoiceId,
-    String? elevenVoiceName,
     String? serviceApiUrl,
   }) => MovieSettings(
     imageRes: imageRes ?? this.imageRes,
@@ -162,8 +156,6 @@ class MovieSettings {
     geminiKey: geminiKey ?? this.geminiKey,
     civitaiToken: civitaiToken ?? this.civitaiToken,
     elevenKey: elevenKey ?? this.elevenKey,
-    elevenVoiceId: elevenVoiceId ?? this.elevenVoiceId,
-    elevenVoiceName: elevenVoiceName ?? this.elevenVoiceName,
     serviceApiUrl: serviceApiUrl ?? this.serviceApiUrl,
   );
 
@@ -181,8 +173,6 @@ class MovieSettings {
     'geminiKey': geminiKey,
     'civitaiToken': civitaiToken,
     'elevenKey': elevenKey,
-    'elevenVoiceId': elevenVoiceId,
-    'elevenVoiceName': elevenVoiceName,
     'serverUrl': serviceApiUrl, // 새 키 — 옛 'serviceApiUrl'(localhost 저장분)은 무시
   };
 
@@ -212,8 +202,6 @@ class MovieSettings {
     geminiKey: (j['geminiKey'] as String?) ?? '',
     civitaiToken: (j['civitaiToken'] as String?) ?? '',
     elevenKey: (j['elevenKey'] as String?) ?? '',
-    elevenVoiceId: (j['elevenVoiceId'] as String?) ?? '',
-    elevenVoiceName: (j['elevenVoiceName'] as String?) ?? '',
     // 새 키만 읽는다(옛 'serviceApiUrl'은 무시 → 기존 설치도 도메인 디폴트로 시작).
     serviceApiUrl: (j['serverUrl'] as String?) ?? '',
   );

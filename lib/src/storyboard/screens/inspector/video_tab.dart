@@ -166,19 +166,27 @@ class _VideoTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 영상이 있으면 영상을, 없으면 **생성에 쓸 장면**을 대신 보여준다
-                // (FE2V면 시작·끝 두 장, I2V면 시작 한 장) — 무엇으로 뽑는지 바로 보이게.
-                if (c.videoPath != null)
+                // 영상이 있으면(자기 것이든 상속이든) 영상을, 아무 데도 없으면 **생성에 쓸 프레임**을
+                // 대신 보여준다. 트림·삭제는 **자기 트랙에서 뽑은 영상**에만(상속 중인 건 기준 것).
+                if (p.videoPathOf(c) != null)
                   _OutputBlock(
                     title: '영상',
-                    path: c.videoPath,
+                    path: p.videoPathOf(c),
                     busyKey: p.busyKey(c.id, GenMode.videoLow),
                     isVideo: true,
-                    deleteTarget: (shot: c, mode: GenMode.videoLow),
-                    trimTarget: c,
+                    deleteTarget: p.hasOwnVideo(c)
+                        ? (shot: c, mode: GenMode.videoLow)
+                        : null,
+                    trimTarget: p.hasOwnVideo(c) ? c : null,
                   )
                 else
                   _VideoInputFrames(shot: c),
+                if (!p.hasOwnVideo(c) && p.videoPathOf(c) != null) ...[
+                  const SizedBox(height: 6),
+                  Text('${p.trackLabel(p.tracks.first)}의 영상입니다 — 여기서 뽑으면 이 트랙 것이 됩니다',
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0x88FFFFFF))),
+                ],
                 const SizedBox(height: 14),
                 // 내용(프롬프트·길이)은 따라가는 동안 잠긴다. 생성 버튼은 그 아래에 열려 있다.
                 _LockIfInherited(
@@ -215,21 +223,27 @@ class _VideoTab extends StatelessWidget {
                         '생성 중…',
                   )
                 else
-                  // 백엔드는 **누를 때 고른다** — 트랙은 결과가 들어가는 자리일 뿐이라
-                  // 어느 줄에서든 아무 백엔드로나 뽑을 수 있다(자체 서버로 두 줄을 견줘도 된다).
-                  for (final b in VideoBackend.values) ...[
-                    _GenButton(
-                      label: '${b.label}로 생성',
-                      icon: b == VideoBackend.veo
-                          ? Icons.auto_awesome_outlined
-                          : Icons.movie_outlined,
-                      busyKey: p.busyKey(c.id, GenMode.videoLow),
-                      onGen: () => p.gen(c, GenMode.videoLow, backend: b),
-                      enabled: p.videoReadyOf(b),
-                      disabledHint: p.videoBlockReasonOf(b),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
+                  // 백엔드는 **누를 때 고른다** — 자체 서버 · Veo 버튼을 한 줄에 나란히.
+                  Row(
+                    children: [
+                      for (final b in VideoBackend.values) ...[
+                        if (b != VideoBackend.values.first)
+                          const SizedBox(width: 8),
+                        Expanded(
+                          child: _GenButton(
+                            label: '${b.label}로 생성',
+                            icon: b == VideoBackend.veo
+                                ? Icons.auto_awesome_outlined
+                                : Icons.movie_outlined,
+                            busyKey: p.busyKey(c.id, GenMode.videoLow),
+                            onGen: () => p.gen(c, GenMode.videoLow, backend: b),
+                            enabled: p.videoReadyOf(b),
+                            disabledHint: p.videoBlockReasonOf(b),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
               ],
             ),
           ),
@@ -286,7 +300,7 @@ class _VideoInputFrames extends StatelessWidget {
           children: [
             const _SectionLabel('영상'),
             const SizedBox(width: 8),
-            const Text('아직 없음 — 생성에 쓸 장면',
+            const Text('아직 없음 — 생성에 쓸 프레임',
                 style: TextStyle(fontSize: 11, color: Color(0x66FFFFFF))),
           ],
         ),

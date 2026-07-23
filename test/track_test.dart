@@ -273,6 +273,44 @@ void main() {
     expect(File(sp).existsSync(), isFalse, reason: '지운 샷의 프레임도 삭제');
   });
 
+  test('대사 음성은 트랙별 — 한 트랙에서 재생성해도 다른 트랙은 그대로', () async {
+    // 트랙 1의 비트에 대사·음성을 넣는다.
+    final baseBeat = p.tracks.first.beats.single;
+    p.setShotDialogueText(baseBeat, '그 밤에 무슨 일이 있었죠?');
+    baseBeat.dialogue!.voicePath = (await file('${baseBeat.id}_voice.mp3')).path;
+    baseBeat.dialogue!.voiceSeconds = 3.0;
+    await p.addTrack(); // 트랙 2 — 대본은 따라오고 음성은 비어 있어야 한다
+    await p.save();
+
+    final derivedBeat = p.tracks[1].beats.single;
+    expect(derivedBeat.dialogue?.text, '그 밤에 무슨 일이 있었죠?', reason: '대본은 공유');
+    expect(derivedBeat.dialogue?.voicePath, isNull, reason: '음성은 트랙별 — 새 트랙은 비어 있음');
+
+    // 트랙 2에서 음성을 만든다(gen이 하는 일 흉내).
+    derivedBeat.dialogue!.voicePath = (await file('${derivedBeat.id}_voice.mp3')).path;
+    derivedBeat.dialogue!.voiceSeconds = 4.0;
+    await p.save();
+
+    expect(baseBeat.dialogue!.voicePath, contains(baseBeat.id),
+        reason: '트랙 1 음성은 그대로');
+    expect(derivedBeat.dialogue!.voicePath, contains(derivedBeat.id));
+    expect(p.voiceBusyKey(baseBeat.id), isNot(p.voiceBusyKey(derivedBeat.id)),
+        reason: '진행 표시도 트랙별');
+
+    // 저장·재로딩해도 트랙별 음성이 남는다.
+    final p2 = StoryboardProvider(projectDirPath: dir.path);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final sc = p2.scenes.single;
+    expect(sc.tracks[1].beats.single.dialogue?.text, '그 밤에 무슨 일이 있었죠?',
+        reason: '대본은 불러올 때 기준에서 채워진다');
+    expect(sc.tracks[1].beats.single.dialogue?.voicePath,
+        contains(sc.tracks[1].beats.single.id),
+        reason: '트랙별 음성은 그 트랙 것으로 복원');
+    expect(sc.tracks.first.beats.single.dialogue?.voicePath,
+        contains(sc.tracks.first.beats.single.id));
+    p2.dispose();
+  });
+
   test('트랙을 지워도 트랙 1은 남는다', () async {
     await p.addTrack();
     expect(p.tracks.length, 2);

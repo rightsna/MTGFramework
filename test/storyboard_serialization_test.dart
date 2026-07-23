@@ -20,6 +20,8 @@ void main() {
         bgmPrompt: 'cinematic, ambient, calm, piano',
         bgmSeconds: 45,
         bgmPath: '$dir/scene_1_bgm.mp3',
+        defaultVoiceId: 'voice_narrator',
+        defaultVoiceName: '내레이터',
         tracks: [
           VideoTrack(id: 'track_1', name: '트랙 1', beats: [
           // 대사 있는 대사 — 샷 2개(첫 샷 립싱크 + 컷어웨이).
@@ -128,6 +130,8 @@ void main() {
     expect(after.commonPrompt, '세로 9:16, 애니풍');
     expect(after.loraUrl, 'https://civitai.com/x');
     expect(after.bgmPath, '$dir/scene_1_bgm.mp3');
+    expect(after.defaultVoiceId, 'voice_narrator');
+    expect(after.defaultVoiceName, '내레이터');
     expect(after.beats.length, 2);
 
     final s1 = after.beats.first;

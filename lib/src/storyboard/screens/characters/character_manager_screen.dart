@@ -278,7 +278,7 @@ class _CharacterManagerScreenState extends State<CharacterManagerScreen> {
         else
           _voiceDropdown(c),
         const SizedBox(height: 4),
-        const Text('이 인물의 대사는 여기서 고른 목소리로 생성됩니다 · 미지정 시 설정의 기본 보이스',
+        const Text('이 인물의 대사는 여기서 고른 목소리로 생성됩니다 · 목소리 없으면 음성 생성 불가',
             style: TextStyle(fontSize: 11, color: Colors.white38)),
       ],
     );
@@ -295,7 +295,7 @@ class _CharacterManagerScreenState extends State<CharacterManagerScreen> {
           isDense: true, border: OutlineInputBorder()),
       items: [
         const DropdownMenuItem<String?>(
-            value: null, child: Text('목소리 없음 (기본 보이스 사용)')),
+            value: null, child: Text('목소리 없음 (음성 생성 불가)')),
         if (missingCurrent)
           DropdownMenuItem<String?>(
             value: c.voiceId,

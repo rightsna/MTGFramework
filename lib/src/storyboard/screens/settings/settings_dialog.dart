@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:framework/framework.dart';
 
 import '../../services/api_service.dart';
-import '../../services/elevenlabs_service.dart';
 import '../../services/movie_settings.dart';
 import 'lora_manager.dart';
 
@@ -46,45 +45,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   bool _checking = false;
 
   // 일레븐랩스 보이스(기본/내레이션 보이스 선택용).
-  List<ElevenVoice> _voices = [];
-  bool _loadingVoices = false;
-  String? _voicesError;
 
   @override
   void initState() {
     super.initState();
     _check();
-    if (_elevenCtrl.text.trim().isNotEmpty) _loadVoices();
-  }
-
-  /// 현재 입력된 일레븐랩스 키로 보이스 목록을 받아온다.
-  Future<void> _loadVoices() async {
-    final key = _elevenCtrl.text.trim();
-    if (key.isEmpty) {
-      setState(() {
-        _voices = [];
-        _voicesError = '키를 먼저 입력하세요';
-      });
-      return;
-    }
-    setState(() {
-      _loadingVoices = true;
-      _voicesError = null;
-    });
-    try {
-      final voices = await ElevenLabsService(key).listVoices();
-      if (!mounted) return;
-      setState(() {
-        _voices = voices;
-        _loadingVoices = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _voicesError = '$e';
-        _loadingVoices = false;
-      });
-    }
   }
 
   /// 입력칸이 비면 고정 도메인, 아니면 입력값. (실제 연결 대상)
@@ -123,76 +88,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       ),
     );
     Navigator.of(context).pop();
-  }
-
-  /// 일레븐랩스 기본(내레이션) 보이스 선택 — 키로 목록을 받은 뒤 드롭다운.
-  Widget _elevenVoicePicker() {
-    if (_loadingVoices) {
-      return const Row(
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 8),
-          Text(
-            '보이스 목록 불러오는 중…',
-            style: TextStyle(fontSize: 12, color: Colors.white54),
-          ),
-        ],
-      );
-    }
-    if (_voicesError != null) {
-      return Row(
-        children: [
-          const Icon(Icons.error_outline, size: 15, color: Colors.orangeAccent),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '보이스 목록 실패: $_voicesError',
-              style: const TextStyle(fontSize: 11, color: Colors.orangeAccent),
-            ),
-          ),
-          TextButton(onPressed: _loadVoices, child: const Text('다시')),
-        ],
-      );
-    }
-    if (_voices.isEmpty) {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: OutlinedButton.icon(
-          onPressed: _elevenCtrl.text.trim().isEmpty ? null : _loadVoices,
-          icon: const Icon(Icons.download_outlined, size: 16),
-          label: const Text('보이스 목록 불러오기'),
-        ),
-      );
-    }
-    final has = _voices.any((v) => v.id == _s.elevenVoiceId);
-    return DropdownButtonFormField<String?>(
-      initialValue: has ? _s.elevenVoiceId : null,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: '기본(내레이션) 보이스',
-        isDense: true,
-        border: OutlineInputBorder(),
-      ),
-      items: [
-        const DropdownMenuItem<String?>(value: null, child: Text('없음')),
-        for (final v in _voices)
-          DropdownMenuItem<String?>(
-            value: v.id,
-            child: Text(v.name, overflow: TextOverflow.ellipsis),
-          ),
-      ],
-      onChanged: (v) => setState(() {
-        final match = _voices.where((e) => e.id == v);
-        _s = _s.copyWith(
-          elevenVoiceId: v ?? '',
-          elevenVoiceName: v == null || match.isEmpty ? '' : match.first.name,
-        );
-      }),
-    );
   }
 
   /// 접속 상태 카드(초록=연결, 빨강=끊김) + 영상 워크플로 설치 여부.
@@ -249,7 +144,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     (
       icon: Icons.record_voice_over_outlined,
       label: '대사 음성',
-      desc: '일레븐랩스 TTS 키와 기본 보이스',
+      desc: '일레븐랩스 TTS 키 (대사 음성)',
     ),
   ];
 
@@ -567,17 +462,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         TextField(
           controller: _elevenCtrl,
           obscureText: true,
-          onSubmitted: (_) => _loadVoices(),
           decoration: const InputDecoration(
             isDense: true,
             hintText: 'sk_... (일레븐랩스 API 키)',
             border: OutlineInputBorder(),
           ),
         ),
-        const SizedBox(height: 12),
-        const _Label('기본 보이스 (내레이션 · 보이스 없는 화자)'),
-        const SizedBox(height: 6),
-        _elevenVoicePicker(),
       ],
     );
   }

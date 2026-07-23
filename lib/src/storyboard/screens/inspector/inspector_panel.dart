@@ -5,6 +5,7 @@ import '../../models/shot.dart';
 import '../../models/dialogue_beat.dart';
 import '../../providers/storyboard_provider.dart';
 import '../../services/api_service.dart';
+import '../../services/elevenlabs_service.dart'; // 씬 기본 성우 목록/선택
 import '../../services/movie_settings.dart';
 import '../canvas/bgm_section.dart';
 import '../canvas/canvas_view.dart' show fmtSeconds;
@@ -19,7 +20,7 @@ import '../ui.dart';
 // 인스펙터는 탭별로 파일을 나눠 둔다. private 위젯을 탭들끼리 그대로 쓰려고
 // 라이브러리 하나(part)로 묶는다 — 파일이 갈려도 이름은 전부 이 라이브러리 안이다.
 part 'beat_tab.dart';
-part 'scene_tab.dart';
+part 'frame_tab.dart';
 part 'video_tab.dart';
 part 'scene_settings_tab.dart';
 part 'common_widgets.dart';
@@ -46,9 +47,9 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
     super.initState();
     final p = StoryboardScope.read(context);
     _tab = TabController(
-      length: 4,
+      length: 5,
       vsync: this,
-      initialIndex: p.settings.inspectorTab.clamp(0, 3),
+      initialIndex: p.settings.inspectorTab.clamp(0, 4),
     );
     _tab.addListener(() {
       if (!_tab.indexIsChanging) {
@@ -71,7 +72,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
       _restoredTab = true;
       _lastDialogueId = p.selectedDialogueId;
       _lastShotId = p.selectedShotId;
-      final saved = p.settings.inspectorTab.clamp(0, 3);
+      final saved = p.settings.inspectorTab.clamp(0, 4);
       if (saved != _tab.index) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _tab.index = saved;
@@ -97,7 +98,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
       _seenTabReqSeq = p.inspectorTabReqSeq;
       _lastDialogueId = p.selectedDialogueId;
       _lastShotId = p.selectedShotId;
-      final want = p.inspectorTabReq.clamp(0, 3);
+      final want = p.inspectorTabReq.clamp(0, 4);
       if (_tab.index != want) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _tab.animateTo(want);
@@ -116,9 +117,10 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
             indicatorColor: accent2,
             tabs: const [
               Tab(text: '비트'),
-              Tab(text: '장면'),
+              Tab(text: '프레임'),
               Tab(text: '영상'),
               Tab(text: '씬'),
+              Tab(text: '배경음'),
             ],
           ),
           Expanded(
@@ -127,10 +129,11 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
               builder: (context, _) => IndexedStack(
                 index: _tab.index,
                 children: [
-                  const _ShotInfoTab(),
-                  shot == null ? const _NoShot() : _SceneTab(shot: shot),
+                  const _BeatTab(),
+                  shot == null ? const _NoShot() : _FrameTab(shot: shot),
                   shot == null ? const _NoShot() : _VideoTab(shot: shot),
                   const _SceneSettingsTab(),
+                  const _BgmTab(),
                 ],
               ),
             ),

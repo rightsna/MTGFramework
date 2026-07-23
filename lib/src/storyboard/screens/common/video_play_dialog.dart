@@ -5,38 +5,58 @@ import 'package:video_player/video_player.dart';
 
 import '../ui.dart' show accent2;
 
-/// 재생 목록의 한 항목 — 영상 경로 + 라벨.
-typedef PlaylistItem = ({String path, String title});
+/// 재생 목록의 한 항목 — 영상 + 그 샷이 속한 비트의 음성(있으면).
+/// [beatId]로 비트 경계를 안다: 1 대사 = 여러 샷이라, 같은 비트가 이어지는 동안엔 음성을 새로
+/// 틀지 않고 이어서 재생한다(샷마다 처음부터 다시 틀면 대사가 뚝뚝 끊긴다).
+typedef PlaylistItem = ({
+  String path,
+  String title,
+  String beatId,
+  String? voicePath,
+});
 
-/// 영상을 크게 재생하는 팝업 — **씬의 영상들을 순서대로 이어서** 본다(옛 미리보기 플레이어 통합).
-/// [startPath]에서 시작한다. 기본은 그 샷을 반복하고, "다음 영상 자동 재생"을 켜면 씬을 이어서 본다.
-/// 여백이나 닫기를 누르면 닫힌다.
+/// 영상을 크게 재생하는 팝업 — **씬의 영상들을 순서대로 이어서** 보며, 대사 음성·씬 배경음도
+/// 함께 튼다(완성본 미리보기). [startPath]에서 시작한다. 기본은 그 샷을 반복하고,
+/// "다음 영상 자동 재생"을 켜면 씬을 이어서 본다.
 Future<void> showVideoPlayDialog(
   BuildContext context, {
   required List<PlaylistItem> playlist,
   required String startPath,
+  String? bgmPath,
 }) =>
     showDialog<void>(
       context: context,
       barrierColor: const Color(0xE6000000),
-      builder: (_) => _VideoPlayDialog(playlist: playlist, startPath: startPath),
+      builder: (_) => _VideoPlayDialog(
+        playlist: playlist,
+        startPath: startPath,
+        bgmPath: bgmPath,
+      ),
     );
 
 class _VideoPlayDialog extends StatefulWidget {
-  const _VideoPlayDialog({required this.playlist, required this.startPath});
+  const _VideoPlayDialog({
+    required this.playlist,
+    required this.startPath,
+    this.bgmPath,
+  });
   final List<PlaylistItem> playlist;
   final String startPath;
+  final String? bgmPath;
 
   @override
   State<_VideoPlayDialog> createState() => _VideoPlayDialogState();
 }
 
 class _VideoPlayDialogState extends State<_VideoPlayDialog> {
-  VideoPlayerController? _ctrl;
+  VideoPlayerController? _ctrl; // 영상
+  VideoPlayerController? _voice; // 현재 비트의 대사 음성(mp3)
+  VideoPlayerController? _bgm; // 씬 배경음(mp3, 루프)
+  String? _voiceBeatId; // 지금 음성이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
   Object? _error;
   late int _index;
-  bool _playing = true; // 연속 재생 중인지 — 자동 이어붙이기 판단용
-  bool _autoNext = true; // 다음 영상 자동 재생 — **기본 켜짐**(끄면 현재 샷을 반복)
+  bool _playing = true;
+  bool _autoNext = true; // 다음 영상 자동 재생 — 켜짐(끄면 현재 샷 반복)
 
   List<PlaylistItem> get _items => widget.playlist;
 
@@ -45,18 +65,39 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     super.initState();
     final i = _items.indexWhere((e) => e.path == widget.startPath);
     _index = i < 0 ? 0 : i;
+    _openBgm();
     _open();
+  }
+
+  Future<void> _openBgm() async {
+    final path = widget.bgmPath;
+    if (path == null || !File(path).existsSync()) return;
+    final c = VideoPlayerController.file(File(path));
+    try {
+      await c.initialize();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      await c.setLooping(true);
+      _bgm = c;
+      if (_playing) await c.play();
+    } catch (_) {
+      await c.dispose();
+    }
   }
 
   Future<void> _open() async {
     final old = _ctrl;
     _ctrl = null;
     _error = null;
-    old?.removeListener(_tick);
+    old?.removeListener(_onTick);
     await old?.dispose();
     if (!mounted) return;
     setState(() {});
     if (_items.isEmpty) return;
+
+    await _syncVoice(); // 비트가 바뀌면 이 지점에서 음성을 새로 튼다
 
     final c = VideoPlayerController.file(File(_items[_index].path));
     try {
@@ -70,32 +111,120 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
       await c.dispose();
       return;
     }
-    c.addListener(_tick);
-    await c.setLooping(!_autoNext); // 자동 재생이 꺼져 있으면 현재 샷을 영상 자체가 반복
+    c.addListener(_onTick);
+    await c.setLooping(!_autoNext);
     _ctrl = c;
     if (_playing) c.play();
     setState(() {});
   }
 
-  void _tick() {
-    final c = _ctrl;
-    if (c == null) return;
-    final v = c.value;
-    // 자동 재생이 켜져 있으면 한 편이 끝나고 다음으로. 꺼져 있으면 영상이 알아서 반복해 안 넘어간다.
-    if (_playing &&
-        _autoNext &&
+  /// 현재 항목의 비트에 맞춰 음성을 맞춘다. 같은 비트가 이어지면 그대로 두고,
+  /// 비트가 바뀌면 음성을 새로 로드해 처음부터 재생한다.
+  Future<void> _syncVoice() async {
+    final it = _items[_index];
+    if (it.beatId == _voiceBeatId) return; // 같은 대사가 이어지는 중 — 음성 유지
+    _voiceBeatId = it.beatId;
+    final old = _voice;
+    _voice = null;
+    old?.removeListener(_onTick);
+    await old?.dispose();
+    final vp = it.voicePath;
+    if (vp == null || !File(vp).existsSync()) return;
+    final c = VideoPlayerController.file(File(vp));
+    try {
+      await c.initialize();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      c.addListener(_onTick); // 대사가 끝나는 순간을 잡아 다음 비트로 넘긴다(영상이 멈춰 있어도)
+      _voice = c;
+      if (_playing) await c.play();
+    } catch (_) {
+      await c.dispose();
+    }
+  }
+
+  bool get _ended {
+    final v = _ctrl?.value;
+    return v != null &&
         v.duration > Duration.zero &&
         v.position >= v.duration &&
-        !v.isPlaying) {
-      if (_index < _items.length - 1) {
-        _index++;
-        _open();
-      } else {
-        setState(() => _playing = false);
-      }
-      return;
+        !v.isPlaying;
+  }
+
+  bool get _voiceEnded {
+    final v = _voice?.value;
+    return v != null &&
+        v.isInitialized &&
+        v.duration > Duration.zero &&
+        v.position >= v.duration;
+  }
+
+  bool get _hasVoiceNow {
+    final v = _voice?.value;
+    return v != null && v.isInitialized && v.duration > Duration.zero;
+  }
+
+  /// 다음 항목이 **같은 비트**인지(같은 대사가 여러 샷으로 이어지는 중).
+  bool get _sameBeatNext =>
+      _index + 1 < _items.length &&
+      _items[_index + 1].beatId == _items[_index].beatId;
+
+  /// 지금 비트 다음의 **다른 비트** 첫 항목 인덱스. 없으면 null(끝).
+  int? get _nextBeatIndex {
+    final bid = _items[_index].beatId;
+    for (var j = _index + 1; j < _items.length; j++) {
+      if (_items[j].beatId != bid) return j;
     }
-    if (mounted) setState(() {}); // 재생/정지 아이콘·진행바 갱신
+    return null;
+  }
+
+  bool _advancing = false; // 한 프레임에 두 리스너가 겹쳐 두 번 넘기는 것 방지
+
+  /// 영상·음성 컨트롤러가 진행할 때마다 호출 — UI 갱신 + 자동 진행 판단.
+  void _onTick() {
+    if (!mounted) return;
+    setState(() {}); // 재생 아이콘·진행바 갱신
+    if (!_playing || !_autoNext || _advancing) return;
+
+    void go(int i) {
+      _advancing = true;
+      _index = i;
+      _open().whenComplete(() => _advancing = false);
+    }
+
+    if (_hasVoiceNow) {
+      // 대사 우선: 대사가 끝나면 다음 비트로 넘어가며 남은 영상을 잘라낸다.
+      if (_voiceEnded) {
+        final ni = _nextBeatIndex;
+        if (ni != null) {
+          go(ni);
+        } else {
+          _stopAtEnd();
+        }
+        return;
+      }
+      // 대사가 아직인데 영상이 먼저 끝나면: 같은 비트의 다음 샷으로. 마지막 샷이면 대사가
+      // 끝날 때까지 **마지막 프레임을 유지**(여기서 아무것도 안 함 → 다음 tick에서 대사 종료를 잡음).
+      if (_ended && _sameBeatNext) go(_index + 1);
+    } else {
+      // 대사 없는 비트: 영상이 끝나면 다음으로.
+      if (_ended) {
+        if (_index < _items.length - 1) {
+          go(_index + 1);
+        } else {
+          _stopAtEnd();
+        }
+      }
+    }
+  }
+
+  void _stopAtEnd() {
+    _playing = false;
+    _voice?.pause();
+    _bgm?.pause();
+    if (mounted) setState(() {});
   }
 
   void _toggle() {
@@ -105,10 +234,14 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
       if (c.value.isPlaying) {
         _playing = false;
         c.pause();
+        _voice?.pause();
+        _bgm?.pause();
       } else {
         _playing = true;
         if (c.value.position >= c.value.duration) c.seekTo(Duration.zero);
         c.play();
+        _voice?.play();
+        _bgm?.play();
       }
     });
   }
@@ -126,8 +259,10 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
 
   @override
   void dispose() {
-    _ctrl?.removeListener(_tick);
+    _ctrl?.removeListener(_onTick);
     _ctrl?.dispose();
+    _voice?.dispose();
+    _bgm?.dispose();
     super.dispose();
   }
 
@@ -140,7 +275,6 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
       insetPadding: const EdgeInsets.all(24),
       child: Stack(
         children: [
-          // 영상 바깥(여백)을 눌러도 닫힌다.
           Positioned.fill(
             child: GestureDetector(
               onTap: () => Navigator.pop(context),
@@ -148,7 +282,6 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
             ),
           ),
           Center(child: _body()),
-          // 상단: 제목 · 순번 · 닫기
           Positioned(
             top: 0,
             left: 0,
@@ -167,6 +300,18 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
                     ),
                   ),
                 ),
+                if (_voice != null)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: Icon(Icons.record_voice_over,
+                        size: 15, color: Color(0x99FFFFFF)),
+                  ),
+                if (_bgm != null)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 6),
+                    child: Icon(Icons.music_note,
+                        size: 15, color: Color(0x99FFFFFF)),
+                  ),
                 if (counter.isNotEmpty) ...[
                   Text(counter,
                       style: const TextStyle(
@@ -209,11 +354,9 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
     final ratio = c.value.aspectRatio == 0 ? 16 / 9 : c.value.aspectRatio;
     final hasPrev = _index > 0;
     final hasNext = _index < _items.length - 1;
-    // 창(팝업 여백 제외) 안에 세로·가로 모두 들어가도록 실제 여유 크기를 재서 맞춘다.
-    // 진행바 + 컨트롤 높이만큼은 영상 높이에서 뺀다.
     return LayoutBuilder(
       builder: (context, box) {
-        const chromeH = 76.0; // 진행바 + 재생 컨트롤 + 간격
+        const chromeH = 76.0;
         final maxW = box.maxWidth;
         final maxH = box.maxHeight - chromeH;
         var w = maxW;
@@ -225,7 +368,6 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 여백 탭(닫기)과 영상 탭(재생/정지)이 안 섞이게 영상 자체는 따로 잡는다.
             GestureDetector(
               onTap: _toggle,
               child: SizedBox(
@@ -250,7 +392,6 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog> {
               child: VideoProgressIndicator(c, allowScrubbing: true),
             ),
             const SizedBox(height: 2),
-            // 처음으로 · 이전 · 재생/정지 · 다음 · 다음 영상 자동 재생
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [

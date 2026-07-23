@@ -22,6 +22,8 @@ class StoryScene {
   String note; // 씬 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
   ImageRes imageRes; // 이 씬의 프레임(시작·끝) 생성 해상도 — **씬별**
   VideoRes videoRes; // 이 씬의 영상 생성 해상도 — **씬별**
+  String defaultVoiceId; // 이 씬의 기본 성우(내레이션·화자 미지정 대사용). 비면 미지정
+  String defaultVoiceName; // 사람이 읽는 기본 성우 이름(라벨)
 
   StoryScene({
     required this.id,
@@ -36,6 +38,8 @@ class StoryScene {
     this.note = '',
     this.imageRes = ImageRes.p704x1280,
     this.videoRes = VideoRes.p352x640,
+    this.defaultVoiceId = '',
+    this.defaultVoiceName = '',
   }) : tracks = (tracks == null || tracks.isEmpty)
             ? [VideoTrack(id: '${id}_track1', name: '트랙 1')]
             : tracks;
@@ -70,6 +74,10 @@ class StoryScene {
           'image': imageRes.name,
           'video': videoRes.name,
         },
+        'voice': {
+          'id': defaultVoiceId,
+          'name': defaultVoiceName,
+        },
         'note': note,
       };
 
@@ -78,6 +86,7 @@ class StoryScene {
     final bgm = (j['bgm'] as Map?)?.cast<String, dynamic>();
     final lora = (j['lora'] as Map?)?.cast<String, dynamic>();
     final res = (j['res'] as Map?)?.cast<String, dynamic>();
+    final voice = (j['voice'] as Map?)?.cast<String, dynamic>();
     return StoryScene(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
@@ -98,6 +107,8 @@ class StoryScene {
         (e) => e.name == res?['video'],
         orElse: () => VideoRes.p352x640,
       ),
+      defaultVoiceId: (voice?['id'] as String?) ?? '',
+      defaultVoiceName: (voice?['name'] as String?) ?? '',
     );
   }
 

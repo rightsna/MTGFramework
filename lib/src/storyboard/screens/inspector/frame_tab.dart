@@ -1,14 +1,14 @@
 part of 'inspector_panel.dart';
 
-/// 장면 탭 — 샷의 시작/끝 프레임과 그 부속(생성 방식 토글·인물참조·프레임 섹션).
+/// 프레임 탭 — 샷의 시작/끝 프레임과 그 부속(생성 방식 토글·인물참조·프레임 섹션).
 
-/// 이 샷의 **장면 생성 설정** — 영상 방식(FE2V/I2V)과 인물 참조를 한 카드에 묶는다.
+/// 이 샷의 **프레임 생성 설정** — 영상 방식(FE2V/I2V)과 인물 참조를 한 카드에 묶는다.
 /// 둘 다 "프레임을 어떻게 뽑을지"의 입력이라 한자리에 있는 게 읽기 쉽다.
 ///  - FE2V/I2V: 같은 모델·같은 그래프고 끝 프레임을 박느냐만 다르다. FE2V는 끝 그림이 정해지는
 ///    대신 양끝이 멀면 중간이 깨지고, I2V는 끝이 자유로운 대신 어디로 갈지 통제가 안 된다.
 ///  - 인물 참조: 선택 인물(최대 3)의 대표사진을 레퍼런스로 정체성 유지 생성(FireRed 멀티).
-class _SceneGenSettings extends StatelessWidget {
-  const _SceneGenSettings({required this.shot});
+class _FrameGenSettings extends StatelessWidget {
+  const _FrameGenSettings({required this.shot});
 
   final Shot shot;
 
@@ -20,7 +20,7 @@ class _SceneGenSettings extends StatelessWidget {
     final atCap = sel.length >= 3;
     return _GroupCard(
       icon: Icons.tune,
-      title: '장면 설정',
+      title: '프레임 설정',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -161,9 +161,9 @@ class _VideoModeCard extends StatelessWidget {
   }
 }
 
-/// 장면 탭(샷): 대사 메모 + 인물참조 + 시작/끝장면 프레임.
-class _SceneTab extends StatelessWidget {
-  const _SceneTab({required this.shot});
+/// 프레임 탭(샷): 프레임 메모 + 생성 설정 + 시작/끝 프레임.
+class _FrameTab extends StatelessWidget {
+  const _FrameTab({required this.shot});
 
   final Shot shot;
 
@@ -176,19 +176,19 @@ class _SceneTab extends StatelessWidget {
     final body = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 장면 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
+          // 프레임 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
           _ShotNote(controller: p.shotNoteCtrl(shot.id)),
           const SizedBox(height: 14),
-          // 이 샷의 장면 생성 설정 — 영상 방식(FE2V/I2V) + 인물 참조를 한 카드에.
-          _SceneGenSettings(shot: shot),
+          // 이 샷의 프레임 생성 설정 — 영상 방식(FE2V/I2V) + 인물 참조를 한 카드에.
+          _FrameGenSettings(shot: shot),
           const SizedBox(height: 14),
           // 결과(프레임)가 위, 그 생성에 쓰이는 설정(인물참조)은 아래.
           _FrameSection(
-            title: '시작장면',
+            title: '시작 프레임',
             controller: p.startCtrl(shot.id),
             koController: p.startKoCtrl(shot.id),
-            hint: '샷의 첫 프레임(시작 장면)을 묘사',
-            genLabel: '시작장면 생성',
+            hint: '샷의 첫 프레임(시작)을 묘사',
+            genLabel: '시작 프레임 생성',
             genIcon: Icons.first_page,
             path: p.startPathOf(shot),
             busyKey: p.busyKey(shot.id, GenMode.imageStart),
@@ -201,11 +201,11 @@ class _SceneTab extends StatelessWidget {
           if (!shot.i2v) ...[
             const SizedBox(height: 16),
             _FrameSection(
-              title: '끝장면',
+              title: '끝 프레임',
               controller: p.endCtrl(shot.id),
               koController: p.endKoCtrl(shot.id),
-              hint: '샷의 마지막 프레임(끝 장면)을 묘사',
-              genLabel: '끝장면 생성',
+              hint: '샷의 마지막 프레임(끝)을 묘사',
+              genLabel: '끝 프레임 생성',
               genIcon: Icons.last_page,
               path: shot.endImagePath,
               busyKey: p.busyKey(shot.id, GenMode.imageEnd),
@@ -215,7 +215,7 @@ class _SceneTab extends StatelessWidget {
               mode: GenMode.imageEnd,
             ),
           ],
-          // 인물 참조는 위 '장면 설정' 카드로 합쳤다.
+          // 인물 참조는 위 '프레임 설정' 카드로 합쳤다.
           // 해상도(프레임·영상)는 씬 탭의 '생성 설정'에 모아 뒀다 — 여기선 이 샷의 것만 다룬다.
           const SizedBox(height: 16),
           _GroupCard(
@@ -285,7 +285,7 @@ class _FrameSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final busy = p.isBusy(busyKey);
-    // 연동은 시작장면에만 있다 — 끝장면은 물려받을 대상이 아니라 만드는 것이다.
+    // 연동은 시작 프레임에만 있다 — 끝 프레임은 물려받을 대상이 아니라 만드는 것이다.
     final canLink = mode == GenMode.imageStart && p.prevShotOf(shot) != null;
     final linked = mode == GenMode.imageStart && shot.linkStart;
     return _GroupCard(
@@ -304,8 +304,8 @@ class _FrameSection extends StatelessWidget {
             title: title,
             path: path,
             busyKey: busyKey,
-            // 연동 중인 시작장면은 앞 샷의 끝장면 파일 그 자체다 — 여기서 지우면 앞 샷이 날아간다.
-            // 지우려면 연동을 먼저 끄거나, 앞 샷의 끝장면에서 지워야 한다.
+            // 연동 중인 시작 프레임은 앞 샷의 끝 프레임 파일 그 자체다 — 여기서 지우면 앞 샷이 날아간다.
+            // 지우려면 연동을 먼저 끄거나, 앞 샷의 끝 프레임에서 지워야 한다.
             deleteTarget: linked ? null : (shot: shot, mode: mode),
           ),
           const SizedBox(height: 14),
@@ -313,7 +313,7 @@ class _FrameSection extends StatelessWidget {
             label: '프롬프트',
             controller: controller,
             koController: koController,
-            hint: linked ? '앞 샷의 끝장면 프롬프트가 들어옵니다' : hint,
+            hint: linked ? '앞 샷의 끝 프레임 프롬프트가 들어옵니다' : hint,
             readOnly: linked,
             trailing: IconButton(
               tooltip: '프롬프트 복사 (씬 공통 포함)',
@@ -361,7 +361,7 @@ class _FrameSection extends StatelessWidget {
   }
 }
 
-/// 시작장면 연동 토글 — 켜면 앞 샷의 끝장면(이미지·프롬프트)이 따라 들어오고 편집이 잠긴다.
+/// 시작 프레임 연동 토글 — 켜면 앞 샷의 끝 프레임(이미지·프롬프트)이 따라 들어오고 편집이 잠긴다.
 class _LinkStartToggle extends StatelessWidget {
   const _LinkStartToggle({required this.shot});
 
@@ -398,15 +398,15 @@ class _LinkStartToggle extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  '앞 샷 끝장면 이어받기',
+                  '앞 샷 끝 프레임 이어받기',
                   style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                 ),
                 Text(
                   on
                       ? (prevHasEnd
-                          ? '$prevName의 끝장면 · 바뀌면 같이 바뀝니다'
-                          : '$prevName에 끝장면이 아직 없습니다 — 만들면 들어옵니다')
-                      : '이 샷의 시작장면을 직접 만듭니다',
+                          ? '$prevName의 끝 프레임 · 바뀌면 같이 바뀝니다'
+                          : '$prevName에 끝 프레임이 아직 없습니다 — 만들면 들어옵니다')
+                      : '이 샷의 시작 프레임을 직접 만듭니다',
                   style: TextStyle(
                     fontSize: 11,
                     color: on && !prevHasEnd

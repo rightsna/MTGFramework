@@ -24,8 +24,8 @@ class DialogueBeat {
   List<Shot> shots; // 이 대사를 화면으로 덮는 샷들(순서대로) — 각 샷 = FE2V 1회
 
   /// 파생 트랙(트랙2…)에서 이 비트가 비추고 있는 **기준 트랙 비트의 id**. null = 기준 트랙 자신.
-  /// 비트 내용(대본·연출·음성)은 트랙이 갈라도 같은 것이라 **항상 기준을 따라간다** —
-  /// 트랙마다 달라지는 건 샷의 영상뿐이다([Shot.detached]).
+  /// 대본(대사 텍스트·화자)·연출은 트랙이 갈라도 같은 것이라 **기준을 따라간다**. 트랙마다
+  /// 달라지는 건 샷의 영상과 **대사 음성(TTS mp3)**이다 — 음성은 트랙별로 따로 뽑아 비교한다.
   String? baseId;
 
   DialogueBeat({
@@ -43,13 +43,22 @@ class DialogueBeat {
   /// 파생 트랙의 비트인지(기준 트랙이면 false).
   bool get isDerived => baseId != null;
 
-  /// 기준 비트 [base]의 내용을 따라간다(샷 목록은 트랙별로 따로 관리하므로 건드리지 않는다).
-  /// 대사는 같은 객체를 공유한다 — 대본도 음성도 트랙 사이에서 하나여야 한다.
+  /// 기준 비트 [base]의 대본을 따라간다(샷 목록은 트랙별로 따로 관리하므로 건드리지 않는다).
+  /// **대사 텍스트·화자는 기준을 복사**해 오지만, **음성(voicePath/voiceSeconds)은 이 트랙 소유**라
+  /// 건드리지 않는다 — 트랙마다 다른 take를 뽑아 비교할 수 있게.
   void adoptContentFrom(DialogueBeat base) {
     title = base.title;
     note = base.note;
     direction = base.direction;
-    dialogue = base.dialogue;
+    final baseD = base.dialogue;
+    if (baseD == null) {
+      dialogue = null; // 기준이 무음이면 이 트랙도 무음(음성도 버린다)
+    } else {
+      final d = dialogue ??= Dialogue();
+      d.speakerId = baseD.speakerId;
+      d.text = baseD.text;
+      // voicePath/voiceSeconds는 이 트랙 것 — 그대로 둔다.
+    }
   }
 
   /// 이 대사에 **주문한** 샷 길이 합(초).
@@ -71,29 +80,50 @@ class DialogueBeat {
   Map<String, dynamic> toJson() => {
         'id': id,
         if (baseId != null) 'base': baseId,
-        // 파생 트랙의 비트는 내용을 안 적는다 — 기준 비트 한 곳에만 둔다(샷은 트랙별로 다르다).
+        // 기준 비트: 대본 전체(제목·연출·대사)를 적는다.
         if (baseId == null) ...{
           'title': title,
           'note': note,
           'direction': direction,
           'dialogue': dialogue?.toJson(), // null = 무음 대사
-        },
+        }
+        // 파생 비트: 대본은 기준에 있으니 **음성만** 적는다(트랙별 소유).
+        else
+          'voice': {
+            'file': mediaName(dialogue?.voicePath),
+            'seconds': dialogue?.voiceSeconds ?? 0,
+          },
         'shots': shots.map((c) => c.toJson()).toList(),
       };
 
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
   factory DialogueBeat.fromJson(Map<String, dynamic> j, String dir) {
-    final dlg = (j['dialogue'] as Map?)?.cast<String, dynamic>();
+    final baseId = j['base'] as String?;
+    Dialogue? dialogue;
+    if (baseId == null) {
+      final dlg = (j['dialogue'] as Map?)?.cast<String, dynamic>();
+      dialogue = dlg == null ? null : Dialogue.fromJson(dlg, dir);
+    } else {
+      // 파생 비트: 저장된 건 음성뿐. 대본·화자는 불러온 뒤 기준에서 채워진다(트랙 동기화).
+      final voice = (j['voice'] as Map?)?.cast<String, dynamic>();
+      final vp = mediaPath(dir, voice?['file']);
+      dialogue = vp == null
+          ? null
+          : Dialogue(
+              voicePath: vp,
+              voiceSeconds: (voice?['seconds'] as num?)?.toDouble() ?? 0,
+            );
+    }
     return DialogueBeat(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
       note: (j['note'] as String?) ?? '',
       direction: (j['direction'] as String?) ?? '',
-      dialogue: dlg == null ? null : Dialogue.fromJson(dlg, dir),
+      dialogue: dialogue,
       shots: ((j['shots'] as List?) ?? const [])
           .map((e) => Shot.fromJson((e as Map).cast<String, dynamic>(), dir))
           .toList(),
-      baseId: j['base'] as String?,
+      baseId: baseId,
     );
   }
 }

@@ -639,10 +639,13 @@ class _OutputBlock extends StatelessWidget {
                       version: p.verOf(busyKey),
                       title: title,
                     ),
-            // 영상은 그 자리서 재생하지 말고 팝업으로 크게 — 씬의 영상들을 이어서 재생한다.
+            // 영상은 그 자리서 재생하지 말고 팝업으로 크게 — 씬의 영상들을 이어서 재생하며
+            // 대사 음성·씬 배경음도 함께 튼다.
             onVideoTap: (isVideo && path != null)
                 ? () => showVideoPlayDialog(context,
-                    playlist: p.scenePlaylist(), startPath: path!)
+                    playlist: p.scenePlaylist(),
+                    startPath: path!,
+                    bgmPath: p.scenePlayBgmPath)
                 : null,
           ),
         ),

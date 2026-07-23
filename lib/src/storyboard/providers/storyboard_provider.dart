@@ -313,6 +313,40 @@ class StoryboardProvider extends ChangeNotifier {
     return null;
   }
 
+  // ───────── 파생 트랙 상속(borrow) ─────────
+  // 파생 트랙은 track1을 **전 필드 상속**한다: 자기 것이 있으면 그것, 없으면 기준 트랙 것을
+  // 그대로 해석해 보여 준다. 손대(생성/편집)면 그 필드만 자기 것으로 채워진다.
+
+  /// 이 샷 자리에 **보여 줄** 영상 — 자기 트랙에서 뽑았으면 그것, 없으면 기준 트랙 것 상속.
+  String? videoPathOf(Shot c) =>
+      c.videoPath ?? (c.isDerived ? baseShotOf(c)?.videoPath : null);
+
+  /// 이 샷이 **자기 트랙에서 실제로 뽑은** 영상을 가졌는지(상속만 하는 중이 아닌지).
+  bool hasOwnVideo(Shot c) => c.videoPath != null;
+
+  /// 보여 줄 영상의 실제 길이 — 자기 것이면 자기 실측, 상속 중이면 기준 것.
+  double? videoActualSecondsOf(Shot c) => c.videoPath != null
+      ? c.videoActualSeconds
+      : (c.isDerived ? baseShotOf(c)?.videoActualSeconds : null);
+
+  /// 이 비트 자리에 **들려 줄** 대사 음성 — 자기 것이 있으면 그것, 없으면 기준 트랙 것 상속.
+  String? voicePathOf(DialogueBeat b) =>
+      b.dialogue?.voicePath ??
+      (b.isDerived ? baseBeatOf(b)?.dialogue?.voicePath : null);
+
+  /// 들려 줄 음성의 길이(초) — 자기 것 우선, 없으면 기준 것.
+  double voiceSecondsOf(DialogueBeat b) {
+    final own = b.dialogue?.voiceSeconds ?? 0;
+    if (own > 0) return own;
+    return b.isDerived ? (baseBeatOf(b)?.dialogue?.voiceSeconds ?? 0) : 0;
+  }
+
+  /// 이 비트가 **자기 트랙에서 만든** 음성을 가졌는지(상속만 하는 중이 아닌지).
+  bool hasOwnVoice(DialogueBeat b) => b.dialogue?.hasVoice ?? false;
+
+  /// 이 비트가 자리에 들려 줄 음성이 있는지(자기 것이든 상속이든).
+  bool hasAnyVoice(DialogueBeat b) => voicePathOf(b) != null;
+
   /// 이 비트가 속한 씬.
   StoryScene? sceneOf2(DialogueBeat beat) {
     for (final sc in _scenes) {
@@ -432,17 +466,33 @@ class StoryboardProvider extends ChangeNotifier {
   List<Shot> get sceneShots => [for (final sh in dialogues) ...sh.shots];
 
   /// 선택 씬의 재생 목록 — 영상이 있는 샷만 순서대로 (경로 + 라벨). 영상 팝업 연속 재생용.
-  List<({String path, String title})> scenePlaylist() {
-    final out = <({String path, String title})>[];
-    final all = sceneShots;
-    for (var i = 0; i < all.length; i++) {
-      final path = all[i].videoPath;
-      if (path == null) continue;
-      final t = all[i].title.trim();
-      out.add((path: path, title: t.isEmpty ? '샷 ${i + 1}' : '샷 ${i + 1} · $t'));
+  /// 각 항목에 그 샷이 속한 **비트의 음성 경로·비트 id**도 실어, 팝업이 영상과 음성을 함께
+  /// 재생하게 한다. 비트가 바뀔 때만 음성을 새로 트도록(1 대사 = 여러 샷) beatId로 구분한다.
+  List<({String path, String title, String beatId, String? voicePath})>
+      scenePlaylist() {
+    final out =
+        <({String path, String title, String beatId, String? voicePath})>[];
+    var n = 0;
+    for (final beat in dialogues) {
+      final voice = voicePathOf(beat); // 상속 포함(자기 것 없으면 기준 트랙 음성)
+      for (final shot in beat.shots) {
+        n++;
+        final path = videoPathOf(shot); // 상속 포함(자기 것 없으면 기준 트랙 영상)
+        if (path == null) continue;
+        final t = shot.title.trim();
+        out.add((
+          path: path,
+          title: t.isEmpty ? '샷 $n' : '샷 $n · $t',
+          beatId: beat.id,
+          voicePath: voice,
+        ));
+      }
     }
     return out;
   }
+
+  /// 지금 보고 있는 씬의 배경음(mp3) 경로 — 팝업 재생에 함께 깔 용도. 없으면 null.
+  String? get scenePlayBgmPath => selectedScene?.bgmPath;
 
   Shot? get selectedShot {
     for (final c in shots) {
@@ -1258,7 +1308,8 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 대사 음성 진행 상태 키(샷 단위). 음성은 트랙끼리 공유하므로 **기준 비트 기준**으로 잡는다 —
   /// 어느 트랙에서 보고 있든 같은 진행 표시·같은 미리보기 캐시를 쓴다.
-  String voiceBusyKey(String dialogueId) => '${_scriptBeatId(dialogueId)}:voice';
+  // 음성은 **트랙별**이라 진행 표시·캐시도 그 트랙의 비트 id 기준(대본과 달리 공유 아님).
+  String voiceBusyKey(String dialogueId) => '$dialogueId:voice';
 
   String _scriptBeatId(String beatId) {
     for (final sc in _scenes) {
@@ -1271,12 +1322,23 @@ class StoryboardProvider extends ChangeNotifier {
     return beatId;
   }
 
-  /// 이 대사에 쓸 보이스: 화자에 보이스가 있으면 그것, 없으면 설정 기본(내레이션) 보이스.
-  String? _voiceIdFor(Dialogue d) {
+  /// 이 대사에 쓸 보이스 — 화자에 보이스가 있으면 그것, 없으면(내레이션·화자 미지정)
+  /// **씬 기본 성우**로 떨어진다. 둘 다 없으면 null → 음성 생성 불가.
+  String? _voiceIdFor(Dialogue d, StoryScene? scene) {
     final speaker = characterById(d.speakerId);
     if (speaker != null && speaker.hasVoice) return speaker.voiceId.trim();
-    final def = _settings.elevenVoiceId.trim();
-    return def.isEmpty ? null : def;
+    final fallback = scene?.defaultVoiceId.trim() ?? '';
+    return fallback.isEmpty ? null : fallback;
+  }
+
+  /// 이 씬의 기본 성우(내레이션·화자 미지정 대사에 쓰는 보이스) 지정. 비우면 미지정.
+  void setSceneDefaultVoice(String voiceId, String voiceName) {
+    final sc = selectedScene;
+    if (sc == null) return;
+    sc.defaultVoiceId = voiceId.trim();
+    sc.defaultVoiceName = voiceName.trim();
+    notifyListeners();
+    save();
   }
 
   /// 미디어 파일 길이(초) 실측 — 음성이든 영상이든. 길이가 타임라인을 정하므로
@@ -1302,8 +1364,8 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 대사 음성을 기존 오디오 파일에서 불러온다(기본 동선 — 생성은 부가).
-  Future<void> loadVoice(DialogueBeat displayed) async {
-    final beat = _scriptBeat(displayed); // 음성은 트랙 공유 — 기준 비트에 붙인다
+  Future<void> loadVoice(DialogueBeat beat) async {
+    // 음성은 **이 트랙의 비트**에 붙인다(대본은 공유지만 음성은 트랙별 소유).
     const typeGroup = fs.XTypeGroup(
       label: 'audio',
       extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'],
@@ -1339,8 +1401,8 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   /// 이 샷의 대사 음성(일레븐랩스 TTS) 생성 → mp3 저장 + 길이(voiceSeconds) 실측.
-  Future<void> genVoice(DialogueBeat displayed) async {
-    final beat = _scriptBeat(displayed); // 음성은 트랙 공유 — 기준 비트에 붙인다
+  Future<void> genVoice(DialogueBeat beat) async {
+    // 음성은 **이 트랙의 비트**에 붙인다(대본은 공유지만 음성은 트랙별 소유).
     final d = beat.dialogue;
     if (d == null || d.text.trim().isEmpty) {
       messenger?.call('대사를 먼저 입력하세요');
@@ -1350,9 +1412,9 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(voiceBlockReason!);
       return;
     }
-    final voiceId = _voiceIdFor(d);
+    final voiceId = _voiceIdFor(d, sceneOf2(beat));
     if (voiceId == null) {
-      messenger?.call('보이스가 없습니다 — 화자에 보이스를 지정하거나 설정에서 기본 보이스를 정하세요');
+      messenger?.call('보이스가 없습니다 — 화자에 목소리를 지정하거나 씬 탭에서 기본 성우를 정하세요');
       return;
     }
     final key = voiceBusyKey(beat.id);
@@ -1385,8 +1447,9 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(voiceBlockReason!);
       return;
     }
-    // 음성은 트랙 공유 — 기준 트랙의 비트만 한 번씩 돌면 된다.
-    for (final beat in List<DialogueBeat>.from(scene.baseTrack.beats)) {
+    // 음성은 트랙별 — **보고 있는 트랙**의 비트들을 돈다(그 트랙의 take를 채운다).
+    final track = selectedTrack ?? scene.baseTrack;
+    for (final beat in List<DialogueBeat>.from(track.beats)) {
       if ((beat.dialogue?.text.trim().isNotEmpty) ?? false) {
         await genVoice(beat);
       }
@@ -1915,7 +1978,7 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 인스펙터 마지막 선택 탭(0=비트, 1=장면, 2=영상, 3=씬) 저장.
+  /// 인스펙터 마지막 선택 탭(0=비트, 1=장면, 2=영상, 3=씬, 4=배경음) 저장.
   void setInspectorTab(int i) {
     if (_settings.inspectorTab == i) return;
     _settings = _settings.copyWith(inspectorTab: i);
@@ -1939,7 +2002,7 @@ class StoryboardProvider extends ChangeNotifier {
   int get inspectorTabReq => _inspectorTabReq;
   int get inspectorTabReqSeq => _inspectorTabReqSeq;
 
-  /// 캔버스 등 바깥에서 인스펙터의 특정 탭을 연다(0=비트, 1=장면, 2=영상, 3=씬).
+  /// 캔버스 등 바깥에서 인스펙터의 특정 탭을 연다(0=비트, 1=장면, 2=영상, 3=씬, 4=배경음).
   void openInspectorTab(int i) {
     _inspectorTabReq = i;
     _inspectorTabReqSeq++;
@@ -2063,8 +2126,9 @@ class StoryboardProvider extends ChangeNotifier {
             _ver[k] = (_ver[k] ?? 0) + 1;
           }
         }
+        // 음성은 트랙별 소유 — 모든 트랙 비트의 음성을 지운다.
         final d = beat.dialogue;
-        if (d != null && !beat.isDerived) {
+        if (d != null) {
           await kill(d.voicePath);
           d.voicePath = null;
           d.voiceSeconds = 0;

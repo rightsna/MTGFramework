@@ -121,7 +121,7 @@ class _ShotCard extends StatelessWidget {
         final sn = p.shotNoteCtrl(shot.id).text.trim();
         if (sn.isNotEmpty) {
           notes.add(_NoteBox(
-            label: '$t · 장면',
+            label: '$t · 프레임',
             text: sn,
             onTap: () {
               p.selectShot(beat.id, shot.id);
@@ -241,16 +241,21 @@ class _DialogueBox extends StatelessWidget {
                       width: 11,
                       height: 11,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                else if (d.hasVoice)
+                else if (p.voicePathOf(beat) case final vp?)
+                  // 음성은 자기 것이 있으면 그것, 없으면 기준 트랙 것 상속.
                   Row(mainAxisSize: MainAxisSize.min, children: [
                     VoicePlayButton(
-                      key: ValueKey('${d.voicePath}:${d.voiceSeconds}'),
-                      path: d.voicePath!,
+                      key: ValueKey('$vp:${p.voiceSecondsOf(beat)}'),
+                      path: vp,
                       size: 16,
                     ),
                     const SizedBox(width: 3),
-                    Text(fmtSeconds(d.voiceSeconds),
-                        style: const TextStyle(fontSize: 10, color: accent2)),
+                    Text(fmtSeconds(p.voiceSecondsOf(beat)),
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: p.hasOwnVoice(beat)
+                                ? accent2
+                                : Colors.white54)),
                   ])
                 else
                   const Icon(Icons.mic_none_outlined,
@@ -365,7 +370,8 @@ class _ShotThumbState extends State<_ShotThumb>
     final index = widget.index;
     final selected =
         shot.id == p.selectedShotId && beat.id == p.selectedDialogueId;
-    final hasVideo = shot.videoPath != null;
+    final ownVideo = p.hasOwnVideo(shot);
+    final borrowedVideo = !ownVideo && p.videoPathOf(shot) != null;
     // 이 샷에서 뭐든 생성 중인지(시작·끝 프레임 · 영상) — 테두리를 깜빡여 알린다.
     final busy = p.isBusy(p.busyKey(shot.id, GenMode.imageStart)) ||
         p.isBusy(p.busyKey(shot.id, GenMode.imageEnd)) ||
@@ -489,8 +495,19 @@ class _ShotThumbState extends State<_ShotThumb>
                 color: const Color(0x99000000),
                 child: Row(
                   children: [
-                    Icon(hasVideo ? Icons.check_circle : Icons.movie_outlined,
-                        size: 9, color: hasVideo ? accent2 : Colors.white38),
+                    // ✓=이 트랙에서 뽑음 · 🔗=기준 트랙 영상 상속 중 · 없으면 미생성.
+                    Icon(
+                        ownVideo
+                            ? Icons.check_circle
+                            : borrowedVideo
+                                ? Icons.link
+                                : Icons.movie_outlined,
+                        size: 9,
+                        color: ownVideo
+                            ? accent2
+                            : borrowedVideo
+                                ? Colors.white54
+                                : Colors.white38),
                     const SizedBox(width: 3),
                     // 뽑힌 게 있으면 그 실제 길이, 없으면 주문한 길이([Shot.playSeconds]).
                     Text(fmtSeconds(shot.playSeconds),

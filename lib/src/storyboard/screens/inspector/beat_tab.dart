@@ -3,8 +3,8 @@ part of 'inspector_panel.dart';
 /// 비트 탭 — 비트 정보(메모·제목·연출 노트·대사)와 그 부속.
 
 /// 비트 탭 — 선택 비트 정보(제목·비트 연출 노트·메모·대사).
-class _ShotInfoTab extends StatelessWidget {
-  const _ShotInfoTab();
+class _BeatTab extends StatelessWidget {
+  const _BeatTab();
 
   @override
   Widget build(BuildContext context) {
@@ -147,12 +147,17 @@ class _DialogueEditorState extends State<_DialogueEditor> {
     final d = beat.dialogue;
     final speaker = d?.speakerId;
     final speakerChar = p.characterById(speaker);
+    // 보이스가 지정된 화자면 그 보이스, 아니면(내레이션·화자 미지정) **씬 기본 성우**.
+    final sceneVoice = p.selectedScene?.defaultVoiceName.trim() ?? '';
+    final hasSceneVoice =
+        (p.selectedScene?.defaultVoiceId.trim() ?? '').isNotEmpty;
     final target = (speakerChar != null && speakerChar.hasVoice)
         ? '${speakerChar.name.trim().isEmpty ? '화자' : speakerChar.name.trim()} 보이스'
-        : (p.settings.elevenVoiceId.trim().isNotEmpty
-            ? '기본 보이스${p.settings.elevenVoiceName.trim().isEmpty ? '' : '(${p.settings.elevenVoiceName.trim()})'}'
-            : null);
-    final has = d?.hasVoice ?? false;
+        : hasSceneVoice
+            ? '씬 기본 성우${sceneVoice.isEmpty ? '' : '($sceneVoice)'}'
+            : null;
+    final ownVoice = p.hasOwnVoice(beat);
+    final has = p.hasAnyVoice(beat); // 자기 것이든 기준 트랙 상속이든
     final canGen = p.voiceReady && _text.text.trim().isNotEmpty && target != null;
 
     return _GroupCard(
@@ -219,8 +224,13 @@ class _DialogueEditorState extends State<_DialogueEditor> {
           const SizedBox(height: 6),
           // 지금 설정된 음성이 먼저 — 결과가 위, 그걸 바꾸는 수단(불러오기/생성)이 아래.
           // 배경음과 **같은 AudioBox**를 쓴다(같은 오디오인데 UI가 다를 이유가 없다).
+          if (!ownVoice && has) ...[
+            Text('${p.trackLabel(p.tracks.first)}의 음성입니다 — 여기서 생성하면 이 트랙 것이 됩니다',
+                style: const TextStyle(fontSize: 11, color: Color(0x88FFFFFF))),
+            const SizedBox(height: 6),
+          ],
           AudioBox(
-            path: d?.voicePath,
+            path: p.voicePathOf(beat), // 상속 포함(자기 것 없으면 기준 트랙 음성)
             emptyText: '음성 없음 — 불러오거나 생성하세요',
             busy: _genning || p.isBusy(p.voiceBusyKey(beat.id)),
             version: p.verOf(p.voiceBusyKey(beat.id)),
@@ -269,7 +279,7 @@ class _DialogueEditorState extends State<_DialogueEditor> {
             !p.voiceReady
                 ? '설정에서 일레븐랩스 키를 넣어야 음성을 만들 수 있어요'
                 : target == null
-                    ? '보이스 없음 — 화자에 보이스를 지정하거나 설정에서 기본 보이스를 정하세요'
+                    ? '보이스 없음 — 화자에 목소리를 지정하거나, 씬 탭에서 기본 성우를 정하세요'
                     : '$target 으로 위 대사를 읽습니다',
             style: const TextStyle(fontSize: 11, color: Colors.white54),
           ),
