@@ -57,6 +57,32 @@ void main() {
     // 임시 자막 폴더는 정리된다(경로에 특수문자 없는 systemTemp에 만들었다).
   }, skip: has ? null : 'ffmpeg 없음');
 
+  test('자막 + 2배속 — 길이가 절반이고 자막도 함께 빨라진다(굽고 나서 배속)', () async {
+    final clip = await makeClip(2.0);
+    final out = '${tmp.path}/fast_cap.mp4';
+    await VideoEdit.exportScene(
+      beats: [
+        ExportBeat(
+          clips: [clip],
+          caption: const ExportCaption(
+            cues: [
+              (seconds: 1.0, text: '앞 자막'),
+              (seconds: 1.0, text: '뒤 자막'),
+            ],
+            position: 'bottom',
+          ),
+        ),
+      ],
+      width: 128,
+      height: 128,
+      outPath: out,
+      speed: 2.0,
+    );
+    expect(await File(out).exists(), isTrue);
+    final info = await VideoEdit.probe(out);
+    expect(info!.duration, closeTo(1.0, 0.2), reason: '2초 → 2배속이면 1초');
+  }, skip: has ? null : 'ffmpeg 없음');
+
   test('자막이 전부 공백이면 그냥 통과(자막 없이 산출)', () async {
     final clip = await makeClip(1.0);
     final out = '${tmp.path}/out2.mp4';

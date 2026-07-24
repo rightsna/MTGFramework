@@ -594,6 +594,9 @@ class StoryboardProvider extends ChangeNotifier {
   /// 지금 보고 있는 씬의 배경음(mp3) 경로 — 팝업 재생에 함께 깔 용도. 없으면 null.
   String? get scenePlayBgmPath => selectedScene?.bgmPath;
 
+  /// 미리보기 재생 배속 — **보고 있는 트랙**의 배속(내보내기와 같은 값).
+  double get scenePlaySpeed => selectedTrack?.speed ?? 1.0;
+
   Shot? get selectedShot {
     for (final c in shots) {
       if (c.id == _selectedShotId) return c;
@@ -2176,6 +2179,13 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
+  /// **이 트랙**의 재생 배속(1.0~2.0) 저장 — 미리보기·내보내기에 똑같이 걸린다.
+  void setTrackSpeed(VideoTrack track, double v) {
+    track.speed = ((v * 10).round() / 10).clamp(1.0, 2.0); // 0.1 단위
+    notifyListeners();
+    save();
+  }
+
   /// **이 트랙**의 LoRA 강도(0~1.5) 저장.
   void setTrackLoraStrength(VideoTrack track, double v) {
     track.loraStrength = v.clamp(0.0, 1.5);
@@ -2850,6 +2860,7 @@ class StoryboardProvider extends ChangeNotifier {
         width: sc.videoRes.width,
         height: sc.videoRes.height,
         outPath: loc.path,
+        speed: track.speed, // 트랙 배속(미리보기와 동일)
       );
       messenger?.call('${trackLabel(track)} 무비 저장: ${loc.path}');
     } catch (e, st) {

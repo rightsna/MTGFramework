@@ -101,6 +101,17 @@ class _TrackCard extends StatelessWidget {
           const SizedBox(height: 14),
           const Divider(height: 1, color: Color(0x14FFFFFF)),
           const SizedBox(height: 12),
+          _SectionLabel('재생 배속'),
+          const SizedBox(height: 2),
+          const Text(
+            '미리보기와 내보내기에 똑같이 걸립니다. 영상·대사·효과음이 함께 빨라지고 '
+            '길이는 1/배속이 됩니다(배경음은 그대로 전체에 깔립니다).',
+            style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+          ),
+          const SizedBox(height: 6),
+          _TrackSpeedField(
+              key: ValueKey('track_speed_${track.id}'), track: track),
+          const SizedBox(height: 16),
           _SectionLabel('기본 성우 (내레이션)'),
           const SizedBox(height: 2),
           const Text(

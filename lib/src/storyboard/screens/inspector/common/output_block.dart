@@ -167,7 +167,8 @@ class _OutputBlock extends StatelessWidget {
                 ? () => showVideoPlayDialog(context,
                     playlist: p.scenePlaylist(),
                     startPath: path!,
-                    bgmPath: p.scenePlayBgmPath)
+                    bgmPath: p.scenePlayBgmPath,
+                    speed: p.scenePlaySpeed)
                 : null,
           ),
         ),

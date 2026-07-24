@@ -83,4 +83,37 @@ void main() {
     expect(await bandDb(out, 1.15, 0.7, 500), greaterThan(-45),
         reason: '★ 효과음 비트 다음 대사(500Hz)가 살아 있어야 한다');
   }, skip: has ? null : 'ffmpeg 없음');
+
+  test('2배속 — 길이가 절반이 되고 대사·효과음은 그대로 들린다', () async {
+    final clip1 = await colorClip('c1', 1.0);
+    final clip2 = await colorClip('c2', 1.0);
+    final voice1 = await tone('v1', 300, 1.0, 1);
+    final sfx1 = await tone('s1', 900, 1.0, 2);
+    final voice2 = await tone('v2', 500, 1.0, 1);
+
+    final out = '${tmp.path}/fast.mp4';
+    await VideoEdit.exportScene(
+      beats: [
+        ExportBeat(clips: [clip1], voice: voice1, sfx: sfx1),
+        ExportBeat(clips: [clip2], voice: voice2),
+      ],
+      width: 128,
+      height: 128,
+      outPath: out,
+      speed: 2.0,
+    );
+
+    final info = await VideoEdit.probe(out);
+    expect(info, isNotNull);
+    // 원본 2초 → 2배속이면 1초.
+    expect(info!.duration, closeTo(1.0, 0.2), reason: '★ 2배속이면 길이가 절반');
+
+    // atempo는 음정을 유지하므로 주파수는 그대로 — 각 구간에 소리가 남아 있어야 한다.
+    expect(await bandDb(out, 0.05, 0.35, 300), greaterThan(-45),
+        reason: '2배속에서도 비트1 대사가 들린다');
+    expect(await bandDb(out, 0.05, 0.35, 900), greaterThan(-45),
+        reason: '2배속에서도 효과음이 섞여 있다');
+    expect(await bandDb(out, 0.6, 0.35, 500), greaterThan(-45),
+        reason: '2배속에서도 비트2 대사가 들린다');
+  }, skip: has ? null : 'ffmpeg 없음');
 }

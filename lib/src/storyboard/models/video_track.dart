@@ -24,6 +24,10 @@ class VideoTrack {
   String defaultVoiceId; // 이 트랙의 기본 성우(내레이션·화자 미지정 대사용). 비면 미지정
   String defaultVoiceName; // 사람이 읽는 기본 성우 이름(라벨)
 
+  /// 이 트랙의 재생 배속(1.0~2.0). 미리보기와 내보내기에 똑같이 걸린다 —
+  /// 영상·대사·효과음이 함께 빨라지고(배경음은 그대로 전체에 깔린다), 길이는 1/배속이 된다.
+  double speed;
+
   VideoTrack({
     required this.id,
     this.name = '',
@@ -33,6 +37,7 @@ class VideoTrack {
     this.loraStrength = 0.8,
     this.defaultVoiceId = '',
     this.defaultVoiceName = '',
+    this.speed = 1.0,
   }) : beats = beats ?? [];
 
   /// 이 트랙의 샷 총 개수(트랙끼리 같다).
@@ -48,6 +53,7 @@ class VideoTrack {
         'backend': backend.name,
         'lora': {'url': loraUrl, 'strength': loraStrength},
         'voice': {'id': defaultVoiceId, 'name': defaultVoiceName},
+        'speed': speed,
         'beats': beats.map((b) => b.toJson()).toList(),
       };
 
@@ -66,6 +72,8 @@ class VideoTrack {
       loraStrength: (lora?['strength'] as num?)?.toDouble() ?? 0.8,
       defaultVoiceId: (voice?['id'] as String?) ?? '',
       defaultVoiceName: (voice?['name'] as String?) ?? '',
+      // 배속 없던 옛 데이터는 1배속.
+      speed: ((j['speed'] as num?)?.toDouble() ?? 1.0).clamp(1.0, 2.0),
       beats: ((j['beats'] as List?) ?? const [])
           .map((e) =>
               DialogueBeat.fromJson((e as Map).cast<String, dynamic>(), dir))

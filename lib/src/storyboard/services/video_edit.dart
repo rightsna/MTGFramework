@@ -274,6 +274,7 @@ class VideoEdit {
     required String outPath,
     double fps = 24,
     double bgmVolume = 0.4,
+    double speed = 1.0, // 재생 배속(1.0~2.0) — 영상·대사·효과음이 함께 빨라진다
   }) async {
     final ffmpeg = toolPath('ffmpeg');
     if (ffmpeg == null) throw Exception(missingHint);
@@ -293,7 +294,8 @@ class VideoEdit {
         // 자막이 있으면 이 비트의 ASS를 굽고(시간은 비트 시작=0 기준) 경로를 넘긴다.
         final assPath = _writeBeatAss(
             beats[i].caption, width, height, '${capDir.path}/beat_$i.ass');
-        await _renderBeat(ffmpeg, beats[i], width, height, fps, seg, assPath);
+        await _renderBeat(
+            ffmpeg, beats[i], width, height, fps, seg, assPath, speed);
         segs.add(seg);
       }
       // 2) 세그먼트들을 이어붙인다 — **영상은 무손실 복사 + 오디오는 stereo aac로 재인코딩**.
@@ -402,14 +404,20 @@ class VideoEdit {
     double fps,
     String outPath,
     String? assPath, // 자막 ASS 경로(없으면 null)
+    double speed, // 재생 배속(1.0=등속)
   ) async {
     var dv = 0.0; // 영상 길이 합
     for (final c in b.clips) {
       dv += await _mediaDuration(c);
     }
     final voiceDur = b.voice == null ? 0.0 : await _mediaDuration(b.voice!);
-    final beatDur = math.max(dv, voiceDur); // 긴 쪽 기준
+    final beatDur = math.max(dv, voiceDur); // 긴 쪽 기준(원본 속도 기준)
     final durStr = beatDur.toStringAsFixed(3);
+    // 배속을 걸면 결과 길이는 1/배속. 자르기(atrim/tpad)는 **원본 시간축**에서 하고,
+    // 마지막에 영상 setpts·오디오 atempo로 함께 줄인다(자막도 원본 시간축에 굽고 같이 빨라진다).
+    final sp = speed.clamp(1.0, 2.0).toDouble();
+    final outDur = beatDur / sp;
+    final outDurStr = outDur.toStringAsFixed(3);
 
     final args = <String>['-y'];
     for (final c in b.clips) {
@@ -438,10 +446,12 @@ class VideoEdit {
       fc.write('[vc]null[vp];');
     }
     // 자막을 영상 위에 구워 넣는다(있으면). 경로는 특수문자 없는 임시폴더라 그대로 태운다.
-    if (assPath != null) {
-      fc.write('[vp]subtitles=$assPath[v];');
+    // 배속보다 **먼저** 구워야 자막이 원본 시간축(ASS)과 맞고, 그 뒤 프레임과 함께 빨라진다.
+    fc.write(assPath != null ? '[vp]subtitles=$assPath[vs];' : '[vp]null[vs];');
+    if (sp != 1.0) {
+      fc.write('[vs]setpts=PTS/$sp[v];');
     } else {
-      fc.write('[vp]null[v];');
+      fc.write('[vs]null[v];');
     }
     // 오디오: 대사·효과음을 비트 시작부터 얹고 비트 길이에 맞춘다(짧으면 무음 패딩, 길면 컷).
     // ⚠️ 모든 비트의 오디오를 **stereo·48kHz로 통일**한다 — 안 그러면 mono 음성 비트와
@@ -460,18 +470,24 @@ class VideoEdit {
       aparts.add('[as]');
     }
     if (aparts.isEmpty) {
-      fc.write('anullsrc=r=48000:cl=stereo,atrim=0:$durStr[a];');
+      fc.write('anullsrc=r=48000:cl=stereo,atrim=0:$durStr[am];');
     } else if (aparts.length == 1) {
-      fc.write('${aparts.first}$aFmt[a];');
+      fc.write('${aparts.first}$aFmt[am];');
     } else {
       fc.write('${aparts.join()}amix=inputs=${aparts.length}:normalize=0,'
-          '$aFmt[a];');
+          '$aFmt[am];');
+    }
+    // 오디오도 같은 배속으로(atempo는 0.5~2.0 지원 — 1.0~2.0은 그대로 한 번에 된다).
+    if (sp != 1.0) {
+      fc.write('[am]atempo=$sp,$aFmt[a];');
+    } else {
+      fc.write('[am]anull[a];');
     }
 
     args.addAll([
       '-filter_complex', fc.toString(),
       '-map', '[v]', '-map', '[a]',
-      '-t', durStr,
+      '-t', outDurStr,
       '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
       '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
       outPath,

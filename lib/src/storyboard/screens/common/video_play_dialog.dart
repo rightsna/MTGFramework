@@ -27,6 +27,7 @@ Future<void> showVideoPlayDialog(
   required List<PlaylistItem> playlist,
   required String startPath,
   String? bgmPath,
+  double speed = 1.0, // 트랙 배속 — 영상·대사·효과음이 함께 빨라진다(배경음은 등속)
 }) =>
     showDialog<void>(
       context: context,
@@ -35,6 +36,7 @@ Future<void> showVideoPlayDialog(
         playlist: playlist,
         startPath: startPath,
         bgmPath: bgmPath,
+        speed: speed,
       ),
     );
 
@@ -43,10 +45,12 @@ class _VideoPlayDialog extends StatefulWidget {
     required this.playlist,
     required this.startPath,
     this.bgmPath,
+    this.speed = 1.0,
   });
   final List<PlaylistItem> playlist;
   final String startPath;
   final String? bgmPath;
+  final double speed;
 
   @override
   State<_VideoPlayDialog> createState() => _VideoPlayDialogState();
@@ -75,6 +79,9 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
 
   List<PlaylistItem> get _items => widget.playlist;
 
+  /// 트랙 배속(1.0~2.0). 영상·대사·효과음에 걸고, 배경음은 등속으로 둔다(내보내기와 같은 규칙).
+  double get _speed => widget.speed.clamp(1.0, 2.0).toDouble();
+
   @override
   void initState() {
     super.initState();
@@ -92,7 +99,8 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     _tickerLast = elapsed;
     if (!_playing) return;
     final before = _activeCaption();
-    _beatElapsed += delta;
+    // 자막 구간은 **원본 시간축** 기준이라, 배속으로 빨라진 만큼 시계도 빨리 흘려야 맞는다.
+    _beatElapsed += delta * _speed;
     if (_activeCaption() != before) setState(() {});
   }
 
@@ -193,6 +201,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     }
     c.addListener(_onTick);
     await c.setLooping(!_autoNext);
+    await c.setPlaybackSpeed(_speed); // 트랙 배속
     _ctrl = c;
     if (_playing) c.play();
     setState(() {});
@@ -218,6 +227,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
         return;
       }
       c.addListener(_onTick); // 대사 종료를 잡는다(영상이 멈춰 있어도) — 대사가 더 길면 그 끝에서 넘어간다
+      await c.setPlaybackSpeed(_speed); // 대사도 같은 배속
       _voice = c;
       if (_playing) await c.play();
     } catch (_) {
@@ -243,6 +253,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
         await c.dispose();
         return;
       }
+      await c.setPlaybackSpeed(_speed); // 효과음도 같은 배속
       _sfx = c;
       if (_playing) await c.play();
     } catch (_) {
