@@ -941,8 +941,16 @@ class StoryboardProvider extends ChangeNotifier {
     await save();
   }
 
+  int _statusFails = 0;
   Future<void> checkConnection() async {
     final s = await ApiService(_settings.effectiveServiceUrl).checkStatus();
+    // 무료 ngrok 단일 터널이 결과 다운로드 등으로 순간 포화되면 /health 가 잠깐 늦는다 —
+    // 그 한 번으로 앱 전체를 '연결 안 됨'으로 뒤집으면 생성 UI가 다 꺼진 것처럼 보인다.
+    // 직전이 정상이었다면 연속 3회(≈45초) 실패하기 전까진 마지막 정상 상태를 유지한다.
+    if (!s.reachable && _apiStatus.reachable && ++_statusFails < 3) {
+      return;
+    }
+    _statusFails = s.reachable ? 0 : _statusFails;
     _apiStatus = s;
     notifyListeners();
   }
@@ -2119,19 +2127,52 @@ class StoryboardProvider extends ChangeNotifier {
         // 네거티브는 샷 칸이 먼저고, 비어 있으면 설정의 전역 값으로 떨어진다.
         // 둘 다 비면 서버 워크플로에 박힌 기본 네거티브가 쓰인다.
         final neg = (_vnegs[shot.id]?.text ?? shotVideoNeg(shot)).trim();
-        return ApiService(_settings.effectiveServiceUrl).generateVideo(
-          image: img,
-          endImage: endImg,
-          prompt: prompt,
-          negativePrompt:
-              neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
-          width: res.width,
-          height: res.height,
-          seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
-          loraUrl: _effectiveLoraUrl(track),
-          loraStrength: track?.loraStrength ?? 0.8,
-          onProgress: (st) => _setProgress(progressKey, st),
+        // 동시 생성 수 제한. ComfyUI는 GPU에서 잡을 직렬 처리하므로 10개를 한꺼번에 걸어도
+        // 실제론 하나씩 돈다. 그런데 클라가 10개를 동시에 폴링하면(각 2초 간격) 무료 ngrok
+        // 단일 터널이 동시 연결 폭주를 못 버텨 일부 요청을 떨군다 → '재시도 중' 후 '끊김'.
+        // 그래서 클라도 소수만 실제로 제출·폴링하고 나머지는 대기시킨다(서버 직렬성과 일치).
+        return _withVideoSlot(
+          () => ApiService(_settings.effectiveServiceUrl).generateVideo(
+            image: img,
+            endImage: endImg,
+            prompt: prompt,
+            negativePrompt:
+                neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
+            width: res.width,
+            height: res.height,
+            seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
+            loraUrl: _effectiveLoraUrl(track),
+            loraStrength: track?.loraStrength ?? 0.8,
+            onProgress: (st) => _setProgress(progressKey, st),
+          ),
+          onWait: () => _setProgress(progressKey, '생성 대기 중… (앞 영상 완료 후 시작)'),
         );
+    }
+  }
+
+  // ── 자체 서버 영상 생성 동시 실행 제한 ──
+  // 무료 ngrok 단일 터널이 동시 폴링 폭주를 못 버티므로, 실제로 제출·폴링하는 영상 생성을
+  // 소수로 묶는다. ComfyUI가 GPU에서 직렬 처리하니 처리량 손해도 없다.
+  static const int _maxConcurrentVideo = 3;
+  int _activeVideo = 0;
+  final List<Completer<void>> _videoQueue = [];
+
+  Future<T> _withVideoSlot<T>(
+    Future<T> Function() body, {
+    void Function()? onWait,
+  }) async {
+    if (_activeVideo >= _maxConcurrentVideo) {
+      onWait?.call();
+      final waiter = Completer<void>();
+      _videoQueue.add(waiter);
+      await waiter.future; // 앞 영상이 끝나 슬롯이 날 때까지 대기
+    }
+    _activeVideo++;
+    try {
+      return await body();
+    } finally {
+      _activeVideo--;
+      if (_videoQueue.isNotEmpty) _videoQueue.removeAt(0).complete();
     }
   }
 
