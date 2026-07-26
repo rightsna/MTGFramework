@@ -944,6 +944,7 @@ class StoryboardProvider extends ChangeNotifier {
 
   int _statusFails = 0;
   Future<void> checkConnection() async {
+    final wasReachable = _apiStatus.reachable;
     final s = await ApiService(_settings.effectiveServiceUrl).checkStatus();
     // 무료 ngrok 단일 터널이 결과 다운로드 등으로 순간 포화되면 /health 가 잠깐 늦는다 —
     // 그 한 번으로 앱 전체를 '연결 안 됨'으로 뒤집으면 생성 UI가 다 꺼진 것처럼 보인다.
@@ -954,6 +955,9 @@ class StoryboardProvider extends ChangeNotifier {
     _statusFails = s.reachable ? 0 : _statusFails;
     _apiStatus = s;
     notifyListeners();
+    // 연결 안 됨 → 됨으로 막 바뀌었으면 즉시 리컨실 — 서버가 돌아온 순간 찌꺼기 job을
+    // 바로 정리·이어받는다(다음 5초 스윕을 기다리지 않아 스피너 깜빡임 최소화).
+    if (!wasReachable && s.reachable) _reconcile();
   }
 
   Future<void> reloadSettings() async {
@@ -2206,20 +2210,15 @@ class StoryboardProvider extends ChangeNotifier {
 
   Timer? _reconcileTimer;
   bool _reconciling = false;
+  final Map<String, int> _jobPollFails = {}; // job_id → 연속 폴 실패 수(오프라인 판정용)
 
-  /// 앱 시작 시: 저장돼 있던 진행 중 job들을 화면에 '생성 중'으로 복원하고, 주기적 리컨실을 건다.
+  /// 앱 시작 시 주기적 리컨실을 걸고 즉시 한 번 돈다. '생성 중' 표시는 여기서 미리 켜지 않는다 —
+  /// 리컨실러가 서버에 확인해서 **실제로 running일 때만** 켠다(오프라인이면 스피너가 안 뜬다).
   /// [_load] 끝에서 한 번 호출된다.
   void _startReconciler() {
-    for (final shot in _allShots()) {
-      if (shot.videoJobId != null) {
-        final key = busyKey(shot.id, GenMode.videoLow);
-        _busy.add(key);
-        _setProgress(key, '생성 중… (이어받는 중)');
-      }
-    }
-    notifyListeners();
     _reconcileTimer ??=
         Timer.periodic(const Duration(seconds: 5), (_) => _reconcile());
+    _reconcile(); // 시작 즉시 한 번
   }
 
   /// 진행 중 job들을 **순차로** 확인해 완료분을 받아 저장한다(무료 ngrok에 부드럽게).
@@ -2235,17 +2234,22 @@ class StoryboardProvider extends ChangeNotifier {
         final jobId = shot.videoJobId;
         if (jobId == null) continue; // 스윕 중 바뀌었을 수 있음
         final key = busyKey(shot.id, GenMode.videoLow);
-        ({String state, String? error}) st;
+        ({String state, String? error, bool lost}) st;
         try {
           st = await api.pollVideoStatus(jobId);
+          _jobPollFails.remove(jobId); // 성공 → 실패 카운터 리셋
         } catch (_) {
-          // 서버 응답 없음(박스 꺼짐/네트워크 끊김). job_id는 **버리지 않고 보존**한 채 계속
-          // 재시도한다 — 서버가 돌아오면 그때 매듭짓는다: 그 job이 아직 살아있으면 결과를 회수하고,
-          // ComfyUI가 재시작돼 유실됐으면 서버가 error(job lost)로 답해 아래에서 정리된다.
-          // 이때는 '생성 중'이 아니라 '서버 응답 없음'으로 정직하게 표시(진행 중인 척하지 않음).
-          if (!_busy.contains(key)) _busy.add(key);
-          _setProgress(key, '서버 응답 없음 — 재연결 대기 중…');
-          notifyListeners();
+          // 서버 응답 없음(박스 꺼짐/네트워크 끊김). job_id는 **보존**하되, 2회 연속 실패면
+          // 이 job의 '생성 중' 표시(busy)를 내린다 — 그래야 캔버스 카드·아웃풋 등 모든 곳의
+          // 스피너가 사라진다(무한 로딩 방지). 한 번 blip엔 안 깜빡이고, 서버 살아나면
+          // running 자가복원으로 다시 켜지거나 lost면 정리된다.
+          final n = (_jobPollFails[jobId] ?? 0) + 1;
+          _jobPollFails[jobId] = n;
+          if (n >= 2 && _busy.contains(key)) {
+            _busy.remove(key);
+            _progress.remove(key);
+            notifyListeners();
+          }
           continue;
         }
         if (st.state == 'running') {
@@ -2259,9 +2263,14 @@ class StoryboardProvider extends ChangeNotifier {
         }
         if (st.state == 'error') {
           shot.videoJobId = null;
+          _jobPollFails.remove(jobId);
           _busy.remove(key);
           _progress.remove(key);
-          messenger?.call('영상 생성 실패: ${st.error ?? '알 수 없음'}');
+          // lost = 서버가 그 job을 모름(재기동/새 박스로 유실) → '실패'가 아니라 조용한 자동 정리.
+          // 진짜 생성 에러만 실패로 알린다.
+          messenger?.call(st.lost
+              ? '이전 생성 작업을 정리했습니다 (서버에서 사라진 작업)'
+              : '영상 생성 실패: ${st.error ?? '알 수 없음'}');
           await save();
           notifyListeners();
           continue;
@@ -2275,6 +2284,7 @@ class StoryboardProvider extends ChangeNotifier {
           shot.videoPath = f.path;
           shot.videoActualSeconds = await _measureSeconds(f);
           shot.videoJobId = null;
+          _jobPollFails.remove(jobId);
           _ver[key] = (_ver[key] ?? 0) + 1;
           _busy.remove(key);
           _progress.remove(key);

@@ -14,6 +14,10 @@ class _VideoTab extends StatelessWidget {
     final c = shot;
     // 파생 샷도 영상은 늘 자기 것이고, 프롬프트·길이는 고치면 그것만 이 트랙 것으로 오버라이드된다.
     final isStill = p.shotVideoMode(c) == VideoMode.still;
+    final vBusyKey = p.busyKey(c.id, GenMode.videoLow);
+    // busy(생성 중) 여부는 프로바이더가 중앙 관리한다 — 자체 서버 job이 오프라인이면 리컨실러가
+    // busy를 내려서 여기 포함 모든 곳의 스피너가 사라진다. 그래서 여기선 그냥 isBusy만 본다.
+    final showVideoBusy = p.isBusy(vBusyKey);
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -86,14 +90,13 @@ class _VideoTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 // 생성 중이면 버튼을 숨기고 '생성중 + 인디케이터'만 — 중복 생성 여지를 없앤다.
-                if (p.isBusy(p.busyKey(c.id, GenMode.videoLow)))
+                // (서버 연결 끊긴 자체 서버 job이면 showVideoBusy=false → 스피너 대신 아래 버튼)
+                if (showVideoBusy)
                   Row(
                     children: [
                       Expanded(
                         child: _GenProgressBanner(
-                          text: p.progressOf(
-                                  p.busyKey(c.id, GenMode.videoLow)) ??
-                              '생성 중…',
+                          text: p.progressOf(vBusyKey) ?? '생성 중…',
                         ),
                       ),
                       // 자체 서버 비동기 생성(job_id 있음)만 취소 가능 — Veo/스틸컷엔 없다.

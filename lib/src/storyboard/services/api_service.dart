@@ -195,13 +195,20 @@ class ApiService {
 
   /// 영상 job 상태 한 번 조회: state = running|done|error. 네트워크/타임아웃이면 던진다
   /// (호출부=리컨실러가 잡아 다음 스윕에 다시 시도 — 한 번 실패로 생성을 죽이지 않는다).
-  Future<({String state, String? error})> pollVideoStatus(String jobId) async {
+  /// lost=true 면 서버가 그 job을 모름(재기동/새 박스로 유실) — 클라가 '실패'가 아니라
+  /// '자동 정리'로 조용히 처리하라는 신호.
+  Future<({String state, String? error, bool lost})> pollVideoStatus(
+      String jobId) async {
     final s = await http
         .get(Uri.parse('$_base/video/$jobId'), headers: _ngrok)
         .timeout(const Duration(seconds: 10));
     _check(s.statusCode, s.bodyBytes);
     final j = jsonDecode(utf8.decode(s.bodyBytes)) as Map<String, dynamic>;
-    return (state: (j['state'] as String?) ?? 'running', error: j['error'] as String?);
+    return (
+      state: (j['state'] as String?) ?? 'running',
+      error: j['error'] as String?,
+      lost: (j['lost'] as bool?) ?? false,
+    );
   }
 
   /// 완료된 job의 mp4 바이트. 다운로드가 무료 ngrok 터널 포화로 한 번 끊겨도 몇 번 재시도한다.
