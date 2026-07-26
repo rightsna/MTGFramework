@@ -122,6 +122,7 @@ void main() {
       'seconds': 3.0, // 길이는 double 하나로 통일(스틸컷 0.1초·AI 정수 초 공용)
       'actualSeconds': null, // 아직 안 재본 것(뽑고 나면 실제 길이가 들어간다)
       'file': 'clip_1_vlow.mp4',
+      'jobId': null, // 비동기 생성 중인 서버 job_id(없으면 null)
       'mode': 'fe2v',
       'stillEffect': 'none',
       'note': '', // 영상 탭 메모(장면 메모와 별개)
@@ -207,6 +208,25 @@ void main() {
       'video': {'prompt': 'x', 'seconds': 3, 'i2v': true},
     }, dir);
     expect(oldI2v.videoMode, VideoMode.i2v);
+  });
+
+  test('진행 중 영상 job_id는 왕복 보존된다 — 앱 재시작 후 매칭·이어받기의 근거', () {
+    // 기준 샷: 제출됐지만 아직 결과 없음(videoJobId 있고 videoPath 없음).
+    final base = Shot(id: 'clip_job', videoJobId: 'job-abc-123');
+    final back = Shot.fromJson(base.toJson(), dir);
+    expect(back.videoJobId, 'job-abc-123'); // 재시작해도 어떤 job이었는지 그대로
+    expect(back.videoPath, isNull);
+
+    // 파생 샷(트랙2)도 자기 job_id를 따로 소유·보존한다.
+    final derived = Shot(id: 'clip_job_d', baseId: 'clip_job', videoJobId: 'job-def-456');
+    final backD = Shot.fromJson(derived.toJson(), dir);
+    expect(backD.videoJobId, 'job-def-456');
+
+    // 완료 후엔 job_id가 없고 파일만 남는 상태도 정상 왕복.
+    final done = Shot(id: 'clip_done', videoPath: '$dir/clip_done_vlow.mp4');
+    final backDone = Shot.fromJson(done.toJson(), dir);
+    expect(backDone.videoJobId, isNull);
+    expect(backDone.videoPath, '$dir/clip_done_vlow.mp4');
   });
 
   test('폴더가 이동해도 미디어 경로가 새 dir 기준으로 복원된다', () {

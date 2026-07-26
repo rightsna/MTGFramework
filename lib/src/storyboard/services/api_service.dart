@@ -139,7 +139,13 @@ class ApiService {
   /// 영상은 수 분(8초면 2~7분) 걸린다. 한 요청을 끝까지 열어두면 프록시(ngrok)가 60초쯤에
   /// 끊어버리므로(ERR_NGROK_3004), **제출 → 폴링 → 결과 수신** 3단계로 나눠 부른다.
   /// 각 요청이 1초 미만이라 프록시 타임아웃에 안 걸린다.
-  Future<Uint8List> generateVideo({
+  /// **제출만** 하고 job_id를 즉시 돌려준다(비동기 생성). 라이브 폴링은 하지 않는다 —
+  /// 호출부가 job_id를 저장해두고, 리컨실러가 [pollVideoStatus]/[fetchVideoResult]로 나중에 받는다.
+  /// 이렇게 하면 앱을 껐다 켜도 진행 중 생성이 살아남고, 동시에 여러 개를 걸어도 폴링 폭주가 없다.
+  ///
+  /// 서버가 큐 백프레셔로 503(Retry-After)을 주면 잠깐 뒤 다시 제출한다(최대 10분).
+  /// MultipartRequest는 한 번 보내면 스트림이 소진돼 재사용이 안 되므로 시도마다 새로 만든다.
+  Future<String> submitVideoJob({
     required Uint8List image,
     Uint8List? endImage, // null = I2V (끝 프레임 없이 생성)
     required String prompt,
@@ -151,11 +157,6 @@ class ApiService {
     double loraStrength = 0.8,
     void Function(String status)? onProgress,
   }) async {
-    // 1) 제출 → job_id.
-    // ComfyUI는 GPU에서 잡을 직렬로 돌린다. 여러 샷을 한꺼번에 걸면 서버가 큐 백프레셔로
-    // 503(Retry-After)을 준다 — 실패로 보지 말고 잠깐 뒤 다시 제출해 자연스럽게 순차로
-    // 밀어넣는다. MultipartRequest는 한 번 보내면 스트림이 소진돼 재사용이 안 되므로
-    // 시도마다 새로 만든다.
     http.MultipartRequest buildReq() {
       final r = http.MultipartRequest('POST', Uri.parse('$_base/video'))
         ..headers.addAll(_ngrok)
@@ -176,12 +177,10 @@ class ApiService {
       return r;
     }
 
-    String? jobId;
     final queueStarted = DateTime.now();
-    while (jobId == null) {
+    while (true) {
       final sub = await http.Response.fromStream(await buildReq().send());
       if (sub.statusCode == 503) {
-        // 큐 혼잡 — 최대 10분까지 기다리며 재시도(그 뒤엔 포기).
         if (DateTime.now().difference(queueStarted).inMinutes >= 10) {
           throw Exception('영상 큐가 계속 가득 차 있습니다 — 잠시 후 다시 시도해 주세요');
         }
@@ -190,54 +189,23 @@ class ApiService {
         continue;
       }
       _check(sub.statusCode, sub.bodyBytes);
-      jobId = (jsonDecode(utf8.decode(sub.bodyBytes)) as Map)['job_id'] as String;
+      return (jsonDecode(utf8.decode(sub.bodyBytes)) as Map)['job_id'] as String;
     }
+  }
 
-    // 2) 완료까지 폴링(2초 간격). 서버가 큐/실행 상태를 그대로 알려준다.
-    // ComfyUI가 죽어 잡이 유실되면 서버가 state='error'로 알려주므로 무한 대기는 없지만,
-    // 서버 자체가 응답을 못 주는 경우까지 대비해 상한(20분)을 둔다.
-    onProgress?.call('생성 대기열에 올렸습니다…');
-    final started = DateTime.now();
-    // 폴링 요청 한 번이 실패했다고 생성을 죽이지 않는다. 서버는 계속 만들고 있는데도,
-    // 무료 ngrok 단일 터널이 결과 다운로드 등으로 순간 포화되면 상태 폴링이 일시적으로
-    // 끊길 수 있다 — 예전엔 그 한 번의 실패가 예외로 튀어 gen()이 생성을 실패 처리했고,
-    // 화면에선 '생성 로딩만 사라지는' 증상으로 보였다. 이제 연속 실패가 누적될 때만 포기한다.
-    var pollFails = 0;
-    while (true) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (DateTime.now().difference(started).inMinutes >= 20) {
-        throw Exception('영상 생성이 20분 넘게 끝나지 않았습니다 — 서버 상태를 확인해 주세요');
-      }
-      String? state;
-      String? errMsg;
-      try {
-        final s = await http
-            .get(Uri.parse('$_base/video/$jobId'), headers: _ngrok)
-            .timeout(const Duration(seconds: 10));
-        _check(s.statusCode, s.bodyBytes);
-        final j = jsonDecode(utf8.decode(s.bodyBytes)) as Map<String, dynamic>;
-        state = j['state'] as String?;
-        errMsg = j['error'] as String?;
-        pollFails = 0; // 한 번이라도 성공하면 실패 카운터 리셋
-      } catch (e) {
-        // 네트워크/타임아웃/일시적 5xx — 약 30초(15회×2초) 연속 실패해야 포기.
-        if (++pollFails >= 15) {
-          throw Exception('서버 상태 확인이 계속 실패합니다($pollFails회) — 네트워크나 서버를 확인해 주세요: $e');
-        }
-        onProgress?.call('연결이 잠시 불안정합니다 — 재시도 중… ($pollFails)');
-        continue;
-      }
-      if (state == 'done') break;
-      if (state == 'error') {
-        throw Exception('영상 생성 실패: $errMsg');
-      }
-      final mins = DateTime.now().difference(started).inSeconds / 60;
-      onProgress?.call('생성 중… ${mins.toStringAsFixed(1)}분 경과');
-    }
+  /// 영상 job 상태 한 번 조회: state = running|done|error. 네트워크/타임아웃이면 던진다
+  /// (호출부=리컨실러가 잡아 다음 스윕에 다시 시도 — 한 번 실패로 생성을 죽이지 않는다).
+  Future<({String state, String? error})> pollVideoStatus(String jobId) async {
+    final s = await http
+        .get(Uri.parse('$_base/video/$jobId'), headers: _ngrok)
+        .timeout(const Duration(seconds: 10));
+    _check(s.statusCode, s.bodyBytes);
+    final j = jsonDecode(utf8.decode(s.bodyBytes)) as Map<String, dynamic>;
+    return (state: (j['state'] as String?) ?? 'running', error: j['error'] as String?);
+  }
 
-    // 3) 결과 mp4 수신. 여기까지 왔으면 서버엔 결과가 확실히 있다(state=done). 다운로드가
-    // 무료 ngrok 터널 포화로 한 번 끊겨도 생성을 실패로 버리지 않고 몇 번 재시도한다.
-    onProgress?.call('영상 내려받는 중…');
+  /// 완료된 job의 mp4 바이트. 다운로드가 무료 ngrok 터널 포화로 한 번 끊겨도 몇 번 재시도한다.
+  Future<Uint8List> fetchVideoResult(String jobId) async {
     Object? lastErr;
     for (var attempt = 1; attempt <= 4; attempt++) {
       try {
@@ -247,13 +215,19 @@ class ApiService {
         return r.bodyBytes;
       } catch (e) {
         lastErr = e;
-        if (attempt < 4) {
-          onProgress?.call('내려받기 재시도 중… ($attempt)');
-          await Future<void>.delayed(const Duration(seconds: 3));
-        }
+        if (attempt < 4) await Future<void>.delayed(const Duration(seconds: 3));
       }
     }
     throw Exception('영상 다운로드 실패(4회 재시도) — 네트워크를 확인해 주세요: $lastErr');
+  }
+
+  /// 진행 중인 영상 job 취소(best-effort) — 서버가 대기 중이면 큐에서 빼고, 실행 중이면 멈춘다.
+  /// 이미 끝났거나 유실됐어도 서버는 조용히 성공한다. 짧은 타임아웃 — 취소는 빨라야 하니까.
+  Future<void> cancelVideoJob(String jobId) async {
+    final r = await http
+        .delete(Uri.parse('$_base/video/$jobId'), headers: _ngrok)
+        .timeout(const Duration(seconds: 10));
+    _check(r.statusCode, r.bodyBytes);
   }
 
   // ───────── LoRA 관리 (서버 custom/ 폴더) ─────────

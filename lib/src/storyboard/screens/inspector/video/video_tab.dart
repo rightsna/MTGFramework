@@ -87,9 +87,25 @@ class _VideoTab extends StatelessWidget {
                 const SizedBox(height: 10),
                 // 생성 중이면 버튼을 숨기고 '생성중 + 인디케이터'만 — 중복 생성 여지를 없앤다.
                 if (p.isBusy(p.busyKey(c.id, GenMode.videoLow)))
-                  _GenProgressBanner(
-                    text: p.progressOf(p.busyKey(c.id, GenMode.videoLow)) ??
-                        '생성 중…',
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _GenProgressBanner(
+                          text: p.progressOf(
+                                  p.busyKey(c.id, GenMode.videoLow)) ??
+                              '생성 중…',
+                        ),
+                      ),
+                      // 자체 서버 비동기 생성(job_id 있음)만 취소 가능 — Veo/스틸컷엔 없다.
+                      if (c.videoJobId != null) ...[
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => p.cancelVideo(c),
+                          icon: const Icon(Icons.close, size: 16),
+                          label: const Text('취소'),
+                        ),
+                      ],
+                    ],
                   )
                 else if (isStill)
                   // 스틸컷은 AI가 아니라 로컬 ffmpeg — 백엔드 선택 없이 버튼 하나.

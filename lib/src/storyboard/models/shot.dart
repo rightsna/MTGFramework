@@ -75,6 +75,9 @@ class Shot {
   // ── 언제나 이 샷(트랙) 소유 — 오버라이드/상속 대상이 아니다 ──
   double? videoActualSeconds; // 뽑힌 영상의 실제 길이(초). 없으면 아직 안 뽑음
   String? videoPath; // 생성된 영상 파일 경로
+  // 비동기 생성 진행 중인 서버 job_id. 있으면 '아직 생성 중'(결과 대기) — 앱을 껐다 켜도
+  // 이 값이 저장돼 있어 리컨실러가 다시 주워서 완성분을 받아온다. 완료되면 videoPath로 바뀌고 null.
+  String? videoJobId;
 
   /// 파생 트랙(트랙2…)에서 이 샷이 비추고 있는 **기준 트랙 샷의 id**. null = 기준 트랙 자신.
   String? baseId;
@@ -98,6 +101,7 @@ class Shot {
     this.startImagePath,
     this.endImagePath,
     this.videoPath,
+    this.videoJobId,
     this.linkStart = false,
     this.videoMode = VideoMode.fe2v,
     this.stillEffect = StillEffect.none,
@@ -179,6 +183,7 @@ class Shot {
         'video': {
           'file': mediaName(videoPath),
           'actualSeconds': videoActualSeconds,
+          'jobId': videoJobId,
         },
       };
     }
@@ -204,6 +209,7 @@ class Shot {
         'seconds': videoSeconds,
         'actualSeconds': videoActualSeconds,
         'file': mediaName(videoPath),
+        'jobId': videoJobId,
         'mode': videoMode.name,
         'stillEffect': stillEffect.name,
         'note': videoNote,
@@ -249,6 +255,7 @@ class Shot {
         overrides: overrides,
         videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
         videoPath: mediaPath(dir, video?['file']),
+        videoJobId: video?['jobId'] as String?,
       );
     }
     final start = (j['startScene'] as Map?)?.cast<String, dynamic>();
@@ -270,6 +277,7 @@ class Shot {
       startImagePath: mediaPath(dir, start?['image']),
       endImagePath: mediaPath(dir, end?['image']),
       videoPath: mediaPath(dir, video?['file']),
+      videoJobId: video?['jobId'] as String?,
       linkStart: (start?['inherit'] as bool?) ?? false,
       videoMode: _readVideoMode(video),
       stillEffect: StillEffect.values.firstWhere(

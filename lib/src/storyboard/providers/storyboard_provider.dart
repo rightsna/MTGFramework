@@ -767,6 +767,7 @@ class StoryboardProvider extends ChangeNotifier {
       const Duration(seconds: 15),
       (_) => checkConnection(),
     );
+    _startReconciler(); // 저장돼 있던 진행 중 영상 job을 이어받는다
   }
 
   /// 디스크에서 씬·인물을 다시 읽어 화면을 갈아끼운다 — **다른 곳(에디터·다른 세션)에서 파일이
@@ -1934,6 +1935,28 @@ class StoryboardProvider extends ChangeNotifier {
       return;
     }
     final key = busyKey(shot.id, mode);
+
+    // 자체 서버 영상 = 비동기 잡: **제출만** 하고 job_id를 샷에 저장(즉시 디스크 반영) → 결과는
+    // 리컨실러가 받아온다. busy·progress는 잡이 끝날 때까지 유지(화면엔 '생성 중'). 앱을 껐다
+    // 켜도 job_id가 샷에 남아 있어 [_startReconciler]가 다시 주워서 이어받는다.
+    if (mode == GenMode.videoLow &&
+        (backend ?? backendOf(shot)) == VideoBackend.serviceApi) {
+      _busy.add(key);
+      _setProgress(key, '생성 요청 중…');
+      notifyListeners();
+      try {
+        await _submitVideoJob(shot, prompt); // shot.videoJobId 설정 + 즉시 save
+        _setProgress(key, '생성 중… (백그라운드)');
+      } catch (e, st) {
+        debugPrint('[video-submit] $key 실패: $e\n$st');
+        _busy.remove(key);
+        _progress.remove(key);
+        messenger?.call('생성 요청 실패: $e');
+      }
+      notifyListeners();
+      return;
+    }
+
     _busy.add(key);
     notifyListeners();
     try {
@@ -2111,68 +2134,159 @@ class StoryboardProvider extends ChangeNotifier {
           onProgress: (st) => _setProgress(progressKey, st),
         );
       case VideoBackend.serviceApi:
-        final img = await _startFrameBytes(shot);
-        // I2V면 끝 프레임을 아예 안 쓴다(있어도 무시) — 끝은 모델이 자유롭게 만든다.
-        final endImg = shotNeedsEndFrame(shot) ? await _endFrameBytes(shot) : null;
-        if (img == null) {
-          throw Exception('시작 프레임을 먼저 만들어 주세요');
-        }
-        if (shotNeedsEndFrame(shot) && endImg == null) {
-          throw Exception('끝 프레임을 먼저 만들어 주세요 (FE2V) — '
-              '끝 없이 뽑으려면 프레임 탭에서 I2V로 바꾸세요');
-        }
-        final sc = sceneOf(shot); // 해상도는 씬 단위
-        final track = trackOf(shot); // LoRA는 트랙 단위
-        final res = sc?.videoRes ?? _settings.videoRes;
-        // 네거티브는 샷 칸이 먼저고, 비어 있으면 설정의 전역 값으로 떨어진다.
-        // 둘 다 비면 서버 워크플로에 박힌 기본 네거티브가 쓰인다.
-        final neg = (_vnegs[shot.id]?.text ?? shotVideoNeg(shot)).trim();
-        // 동시 생성 수 제한. ComfyUI는 GPU에서 잡을 직렬 처리하므로 10개를 한꺼번에 걸어도
-        // 실제론 하나씩 돈다. 그런데 클라가 10개를 동시에 폴링하면(각 2초 간격) 무료 ngrok
-        // 단일 터널이 동시 연결 폭주를 못 버텨 일부 요청을 떨군다 → '재시도 중' 후 '끊김'.
-        // 그래서 클라도 소수만 실제로 제출·폴링하고 나머지는 대기시킨다(서버 직렬성과 일치).
-        return _withVideoSlot(
-          () => ApiService(_settings.effectiveServiceUrl).generateVideo(
-            image: img,
-            endImage: endImg,
-            prompt: prompt,
-            negativePrompt:
-                neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
-            width: res.width,
-            height: res.height,
-            seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
-            loraUrl: _effectiveLoraUrl(track),
-            loraStrength: track?.loraStrength ?? 0.8,
-            onProgress: (st) => _setProgress(progressKey, st),
-          ),
-          onWait: () => _setProgress(progressKey, '생성 대기 중… (앞 영상 완료 후 시작)'),
-        );
+        // 자체 서버 영상은 gen()에서 비동기 경로(_submitVideoJob + 리컨실러)로 가로채므로
+        // 여기까지 오지 않는다. 방어적으로만 둔다.
+        throw StateError('serviceApi 영상은 비동기(job) 경로로 처리됩니다');
     }
   }
 
-  // ── 자체 서버 영상 생성 동시 실행 제한 ──
-  // 무료 ngrok 단일 터널이 동시 폴링 폭주를 못 버티므로, 실제로 제출·폴링하는 영상 생성을
-  // 소수로 묶는다. ComfyUI가 GPU에서 직렬 처리하니 처리량 손해도 없다.
-  static const int _maxConcurrentVideo = 3;
-  int _activeVideo = 0;
-  final List<Completer<void>> _videoQueue = [];
+  // ───────── 자체 서버 영상: 비동기 제출 + 리컨실러 ─────────
 
-  Future<T> _withVideoSlot<T>(
-    Future<T> Function() body, {
-    void Function()? onWait,
-  }) async {
-    if (_activeVideo >= _maxConcurrentVideo) {
-      onWait?.call();
-      final waiter = Completer<void>();
-      _videoQueue.add(waiter);
-      await waiter.future; // 앞 영상이 끝나 슬롯이 날 때까지 대기
+  /// 프로젝트의 모든 샷(씬×트랙×비트) 평탄 순회. 리컨실러가 진행 중 job을 찾을 때 쓴다.
+  Iterable<Shot> _allShots() sync* {
+    for (final sc in _scenes) {
+      for (final t in sc.tracks) {
+        for (final b in t.beats) {
+          yield* b.shots;
+        }
+      }
     }
-    _activeVideo++;
+  }
+
+  /// 자체 서버 영상 **제출만** 하고 job_id를 샷에 저장한다(즉시 save = 영속화). 결과는
+  /// [_reconcile]이 받아온다. 여기서 save 하는 게 핵심 — 제출 직후 앱이 죽어도 job_id가 남아
+  /// 다음 실행에서 매칭·이어받기가 된다.
+  Future<void> _submitVideoJob(Shot shot, String prompt) async {
+    final img = await _startFrameBytes(shot);
+    // I2V면 끝 프레임을 안 쓴다(있어도 무시) — 끝은 모델이 자유롭게 만든다.
+    final endImg = shotNeedsEndFrame(shot) ? await _endFrameBytes(shot) : null;
+    if (img == null) throw Exception('시작 프레임을 먼저 만들어 주세요');
+    if (shotNeedsEndFrame(shot) && endImg == null) {
+      throw Exception('끝 프레임을 먼저 만들어 주세요 (FE2V) — '
+          '끝 없이 뽑으려면 프레임 탭에서 I2V로 바꾸세요');
+    }
+    final sc = sceneOf(shot); // 해상도는 씬 단위
+    final track = trackOf(shot); // LoRA는 트랙 단위
+    final res = sc?.videoRes ?? _settings.videoRes;
+    final neg = (_vnegs[shot.id]?.text ?? shotVideoNeg(shot)).trim();
+    final jobId = await ApiService(_settings.effectiveServiceUrl).submitVideoJob(
+      image: img,
+      endImage: endImg,
+      prompt: prompt,
+      negativePrompt: neg.isNotEmpty ? neg : _settings.videoNegativePrompt.trim(),
+      width: res.width,
+      height: res.height,
+      seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
+      loraUrl: _effectiveLoraUrl(track),
+      loraStrength: track?.loraStrength ?? 0.8,
+      onProgress: (s) => _setProgress(busyKey(shot.id, GenMode.videoLow), s),
+    );
+    shot.videoJobId = jobId; // 이 샷 = 이 job (매칭 앵커)
+    await save(); // ★ 즉시 영속화
+  }
+
+  /// 진행 중인 자체 서버 영상 생성 취소. 서버에 취소 요청(best-effort)하고, 성공/실패와
+  /// 무관하게 로컬 상태(job_id·busy)를 즉시 정리한다 — 유저가 취소를 눌렀으면 화면에선 바로 멈춰야
+  /// 하고, 리컨실러도 더는 이 job을 안 쫓는다(서버가 못 멈췄어도 결과를 안 받아옴).
+  Future<void> cancelVideo(Shot shot) async {
+    final jobId = shot.videoJobId;
+    if (jobId == null) return;
+    final key = busyKey(shot.id, GenMode.videoLow);
     try {
-      return await body();
+      await ApiService(_settings.effectiveServiceUrl).cancelVideoJob(jobId);
+    } catch (e) {
+      debugPrint('[video-cancel] 서버 취소 실패(로컬은 정리): $e');
+    }
+    shot.videoJobId = null;
+    _busy.remove(key);
+    _progress.remove(key);
+    await save();
+    notifyListeners();
+  }
+
+  Timer? _reconcileTimer;
+  bool _reconciling = false;
+
+  /// 앱 시작 시: 저장돼 있던 진행 중 job들을 화면에 '생성 중'으로 복원하고, 주기적 리컨실을 건다.
+  /// [_load] 끝에서 한 번 호출된다.
+  void _startReconciler() {
+    for (final shot in _allShots()) {
+      if (shot.videoJobId != null) {
+        final key = busyKey(shot.id, GenMode.videoLow);
+        _busy.add(key);
+        _setProgress(key, '생성 중… (이어받는 중)');
+      }
+    }
+    notifyListeners();
+    _reconcileTimer ??=
+        Timer.periodic(const Duration(seconds: 5), (_) => _reconcile());
+  }
+
+  /// 진행 중 job들을 **순차로** 확인해 완료분을 받아 저장한다(무료 ngrok에 부드럽게).
+  /// - done  → mp4 받아 저장, videoPath 세팅, videoJobId 지움
+  /// - error → videoJobId 지우고 실패 알림
+  /// - 그 외(running/일시 네트워크 실패) → 그대로 두고 다음 스윕에 다시
+  Future<void> _reconcile() async {
+    if (_reconciling) return;
+    _reconciling = true;
+    try {
+      final api = ApiService(_settings.effectiveServiceUrl);
+      for (final shot in _allShots().where((s) => s.videoJobId != null).toList()) {
+        final jobId = shot.videoJobId;
+        if (jobId == null) continue; // 스윕 중 바뀌었을 수 있음
+        final key = busyKey(shot.id, GenMode.videoLow);
+        ({String state, String? error}) st;
+        try {
+          st = await api.pollVideoStatus(jobId);
+        } catch (_) {
+          // 서버 응답 없음(박스 꺼짐/네트워크 끊김). job_id는 **버리지 않고 보존**한 채 계속
+          // 재시도한다 — 서버가 돌아오면 그때 매듭짓는다: 그 job이 아직 살아있으면 결과를 회수하고,
+          // ComfyUI가 재시작돼 유실됐으면 서버가 error(job lost)로 답해 아래에서 정리된다.
+          // 이때는 '생성 중'이 아니라 '서버 응답 없음'으로 정직하게 표시(진행 중인 척하지 않음).
+          if (!_busy.contains(key)) _busy.add(key);
+          _setProgress(key, '서버 응답 없음 — 재연결 대기 중…');
+          notifyListeners();
+          continue;
+        }
+        if (st.state == 'running') {
+          // 새로고침 등으로 '생성 중' 표시가 사라졌으면 매 스윕에 복원(자가치유).
+          if (!_busy.contains(key)) {
+            _busy.add(key);
+            _setProgress(key, '생성 중… (이어받는 중)');
+            notifyListeners();
+          }
+          continue;
+        }
+        if (st.state == 'error') {
+          shot.videoJobId = null;
+          _busy.remove(key);
+          _progress.remove(key);
+          messenger?.call('영상 생성 실패: ${st.error ?? '알 수 없음'}');
+          await save();
+          notifyListeners();
+          continue;
+        }
+        // done → 결과 받아 저장(다운로드 실패 시 job_id 유지 → 다음 스윕에 재시도)
+        try {
+          final bytes = await api.fetchVideoResult(jobId);
+          final f = File('$projectDirPath/${shot.id}_vlow.mp4');
+          await f.writeAsBytes(bytes);
+          await FileImage(f).evict();
+          shot.videoPath = f.path;
+          shot.videoActualSeconds = await _measureSeconds(f);
+          shot.videoJobId = null;
+          _ver[key] = (_ver[key] ?? 0) + 1;
+          _busy.remove(key);
+          _progress.remove(key);
+          await save();
+          notifyListeners();
+        } catch (e) {
+          _setProgress(key, '결과 받는 중… 재시도');
+          notifyListeners();
+        }
+      }
     } finally {
-      _activeVideo--;
-      if (_videoQueue.isNotEmpty) _videoQueue.removeAt(0).complete();
+      _reconciling = false;
     }
   }
 
@@ -2932,6 +3046,7 @@ class StoryboardProvider extends ChangeNotifier {
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _reconcileTimer?.cancel();
     for (final c in _sceneTitles.values) {
       c.dispose();
     }
