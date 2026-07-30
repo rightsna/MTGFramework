@@ -2012,34 +2012,54 @@ class StoryboardProvider extends ChangeNotifier {
     }
     final key = busyKey(shot.id, GenMode.videoLow);
     _busy.add(key);
-    _setProgress(key, '스틸컷 만드는 중…');
+    _setProgress(key, '스틸컷 영상 만드는 중…');
     notifyListeners();
     try {
-      final out = '$projectDirPath/${shot.id}_vlow.mp4';
-      final res = sceneOf(shot)?.videoRes ?? _settings.videoRes; // 씬 단위 해상도
-      await VideoEdit.stillClip(
-        image: img!,
-        outPath: out,
-        seconds: shotVideoSeconds(shot), // 0.1초 단위 그대로(파생은 상속/오버라이드 해석)
-        effect: shotStillEffect(shot),
-        width: res.width,
-        height: res.height,
-      );
-      final f = File(out);
-      await FileImage(f).evict();
-      shot.videoPath = f.path;
-      shot.videoActualSeconds = await _measureSeconds(f);
-      _ver[key] = (_ver[key] ?? 0) + 1;
+      await _renderStill(shot);
       await save();
     } catch (e, st) {
       debugPrint('[still] $key 실패: $e\n$st');
-      messenger?.call('스틸컷 실패: $e');
+      messenger?.call('스틸컷 영상 생성 실패: $e');
     } finally {
       _busy.remove(key);
       _progress.remove(key);
       notifyListeners();
     }
   }
+
+  /// 스틸컷을 실제로 굽는 부분만 — busy 표시·저장·오류 알림은 부르는 쪽 몫이다.
+  /// 내보내기가 여러 샷을 한 번에 구울 때도 같은 규칙을 쓰도록 따로 뺐다.
+  Future<void> _renderStill(Shot shot) async {
+    final img = startPathOf(shot); // 연동 포함 시작 프레임
+    if (!_hasFile(img)) throw Exception('시작 프레임이 없습니다');
+    final out = '$projectDirPath/${shot.id}_vlow.mp4';
+    final res = sceneOf(shot)?.videoRes ?? _settings.videoRes; // 씬 단위 해상도
+    await VideoEdit.stillClip(
+      image: img!,
+      outPath: out,
+      seconds: shotVideoSeconds(shot), // 0.1초 단위 그대로(파생은 상속/오버라이드 해석)
+      effect: shotStillEffect(shot),
+      width: res.width,
+      height: res.height,
+    );
+    final f = File(out);
+    await FileImage(f).evict();
+    shot.videoPath = f.path;
+    shot.videoActualSeconds = await _measureSeconds(f);
+    final key = busyKey(shot.id, GenMode.videoLow);
+    _ver[key] = (_ver[key] ?? 0) + 1;
+  }
+
+  /// 아직 안 구운 스틸컷 샷들 — 모드가 스틸이고, 걸린 영상이 없고, 시작 프레임은 있는 것.
+  /// 스틸컷은 AI가 아니라 로컬 ffmpeg 산출물이라 내보내기가 직접 채워도 된다.
+  List<Shot> _pendingStills(VideoTrack track) => [
+        for (final beat in track.beats)
+          for (final s in beat.shots)
+            if (shotVideoMode(s) == VideoMode.still &&
+                !_hasFile(videoPathOf(s)) &&
+                _hasFile(startPathOf(s)))
+              s,
+      ];
 
   /// 시작/끝장면을 기존 이미지 파일에서 불러온다(생성 대신). 파생 샷이면 그 프레임만 오버라이드.
   Future<void> loadFrame(Shot shot, GenMode mode) async {
@@ -2960,19 +2980,25 @@ class StoryboardProvider extends ChangeNotifier {
   /// 내보내기 진행 상태 키(트랙 단위) — 버튼 비활성/스피너 표시용.
   String exportBusyKey(VideoTrack track) => 'export:${track.id}';
 
-  /// 씬을 볼 수 있는지(=이 트랙에 실제로 뽑힌 영상이 하나라도 있는지) — 내보내기 버튼 활성 판단.
+  /// 내보낼 게 있는지 — 이미 뽑힌 영상이 하나라도 있거나, 내보내기가 직접 구울 수 있는
+  /// 스틸컷([_pendingStills])이 하나라도 있으면 참(내보내기 버튼 활성 판단).
   bool trackHasVideo(VideoTrack track) {
     for (final beat in track.beats) {
       for (final s in beat.shots) {
         if (_hasFile(videoPathOf(s))) return true;
       }
     }
-    return false;
+    return _pendingStills(track).isNotEmpty;
   }
 
   /// **트랙 하나**를 하나의 mp4로 내보낸다 — 그 트랙의 영상에 대사 음성·효과음·배경음까지 합쳐서.
-  /// 영상이 없는 비트는 건너뛴다. 미리보기(영상 재생 팝업)와 같은 규칙(비트 = 영상·대사 중 긴 쪽).
+  /// 미리보기(영상 재생 팝업)와 같은 규칙(비트 = 영상·대사 중 긴 쪽).
   /// 트랙별 영상/음성은 [videoPathOf]/[voicePathOf]가 그 트랙 것(없으면 기준 상속)으로 해석한다.
+  ///
+  /// 안 구운 스틸컷은 **여기서 굽는다** — 스틸컷은 AI가 아니라 시작 프레임 + 길이만으로
+  /// 정해지는 로컬 산출물이라, 샷마다 생성을 눌러야 했던 탓에 대사만 다 넣고 내보내면
+  /// 스틸 비트가 통째로 빠진 몇 초짜리 무비가 나왔다.
+  /// 그래도 남는 빈 비트(=AI 영상 미생성)는 건너뛰고, 몇 개 빠졌는지 알려 준다.
   Future<void> exportTrackMovie(VideoTrack track) async {
     final sc = sceneOfTrack(track) ?? selectedScene;
     if (sc == null) return;
@@ -2980,14 +3006,53 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call(VideoEdit.missingHint);
       return;
     }
+    if (!trackHasVideo(track)) {
+      messenger?.call('${trackLabel(track)}에는 생성된 영상이 없습니다');
+      return;
+    }
+    // 파일명: "<씬 제목> - <트랙 이름>.mp4" (못 쓰는 문자만 걸러낸다).
+    final title = sc.title.trim().isEmpty ? sc.id : sc.title.trim();
+    final nameBase = '$title - ${trackLabel(track)}';
+    final safe = nameBase.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
+    final loc = await fs.getSaveLocation(suggestedName: '$safe.mp4');
+    if (loc == null) return;
+    final key = exportBusyKey(track);
+    _busy.add(key);
+    notifyListeners();
+
+    // 안 구운 스틸컷 먼저 채운다(실패한 샷은 그냥 빈 자리로 남고 아래에서 빠진 비트로 잡힌다).
+    final pending = _pendingStills(track);
+    var stillFailed = 0;
+    if (pending.isNotEmpty) {
+      messenger?.call('아직 안 만든 스틸컷 영상 ${pending.length}개 먼저 만드는 중…');
+    }
+    for (var i = 0; i < pending.length; i++) {
+      _setProgress(key, '스틸컷 영상 ${i + 1}/${pending.length} 만드는 중…');
+      notifyListeners();
+      try {
+        await _renderStill(pending[i]);
+      } catch (e, st) {
+        stillFailed++;
+        debugPrint('[trackMovie] 스틸컷 ${pending[i].id} 실패: $e\n$st');
+      }
+    }
+    if (pending.isNotEmpty) {
+      _progress.remove(key);
+      await save();
+    }
+
     // 비트마다 영상 클립(상속 포함) + 대사 음성 + 효과음을 모은다. 영상 없는 비트는 뺀다.
     final beats = <ExportBeat>[];
+    var skipped = 0;
     for (final beat in track.beats) {
       final clips = <String>[
         for (final s in beat.shots)
           if (_hasFile(videoPathOf(s))) videoPathOf(s)!,
       ];
-      if (clips.isEmpty) continue;
+      if (clips.isEmpty) {
+        skipped++;
+        continue;
+      }
       // 자막(트랙별 해석). 텍스트가 하나라도 있으면 영상 위에 구워 넣는다.
       final cap = captionOf(beat);
       final expCap = (cap != null && cap.cues.any((c) => c.text.trim().isNotEmpty))
@@ -3003,21 +3068,21 @@ class StoryboardProvider extends ChangeNotifier {
         caption: expCap,
       ));
     }
+    // 빠진 게 있으면 말해 준다 — 조용히 짧은 무비가 나오는 게 제일 나쁘다.
+    final dropped = [
+      if (skipped > 0) '영상 없는 비트 $skipped개 제외',
+      if (stillFailed > 0) '스틸컷 영상 생성 실패 $stillFailed개',
+    ];
+    final droppedNote = dropped.isEmpty ? '' : ' · ${dropped.join(' · ')}';
     if (beats.isEmpty) {
-      messenger?.call('${trackLabel(track)}에는 생성된 영상이 없습니다');
+      messenger?.call('${trackLabel(track)}에는 생성된 영상이 없습니다$droppedNote');
+      _busy.remove(key);
+      _progress.remove(key);
+      notifyListeners();
       return;
     }
-    // 파일명: "<씬 제목> - <트랙 이름>.mp4" (못 쓰는 문자만 걸러낸다).
-    final title = sc.title.trim().isEmpty ? sc.id : sc.title.trim();
-    final base = '$title - ${trackLabel(track)}';
-    final safe = base.replaceAll(RegExp(r'[/\\:*?"<>|]'), '_');
-    final loc = await fs.getSaveLocation(suggestedName: '$safe.mp4');
-    if (loc == null) return;
-    final key = exportBusyKey(track);
-    _busy.add(key);
-    notifyListeners();
-    messenger?.call(
-        '${trackLabel(track)} 무비 합치는 중… (비트 ${beats.length}개 · 음성·효과음·배경음 합성)');
+    messenger?.call('${trackLabel(track)} 무비 합치는 중… '
+        '(비트 ${beats.length}개 · 음성·효과음·배경음 합성$droppedNote)');
     try {
       await VideoEdit.exportScene(
         beats: beats,
@@ -3027,12 +3092,13 @@ class StoryboardProvider extends ChangeNotifier {
         outPath: loc.path,
         speed: track.speed, // 트랙 배속(미리보기와 동일)
       );
-      messenger?.call('${trackLabel(track)} 무비 저장: ${loc.path}');
+      messenger?.call('${trackLabel(track)} 무비 저장: ${loc.path}$droppedNote');
     } catch (e, st) {
       debugPrint('[trackMovie] 실패: $e\n$st');
       messenger?.call('무비 내보내기 실패: $e');
     } finally {
       _busy.remove(key);
+      _progress.remove(key);
       notifyListeners();
     }
   }

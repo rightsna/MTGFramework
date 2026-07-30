@@ -112,8 +112,10 @@ class _VideoTab extends StatelessWidget {
                   )
                 else if (isStill)
                   // 스틸컷은 AI가 아니라 로컬 ffmpeg — 백엔드 선택 없이 버튼 하나.
+                  // 문구에 '영상'을 붙인다 — 이 버튼도 결국 영상을 굽는다는 게 안 보여서
+                  // 안 눌러도 되는 줄 알고 넘어가는 일이 있었다.
                   _GenButton(
-                    label: '스틸컷 생성',
+                    label: '스틸컷 영상 생성',
                     icon: Icons.photo_outlined,
                     busyKey: p.busyKey(c.id, GenMode.videoLow),
                     onGen: () => p.gen(c, GenMode.videoLow),

@@ -47,7 +47,7 @@ class _FrameGenSettings extends StatelessWidget {
               _VideoModeCard(
                 icon: Icons.photo_outlined,
                 title: '스틸컷',
-                desc: 'AI 없이 사진',
+                desc: '사진 → 영상',
                 selected: mode == VideoMode.still,
                 onTap: () => p.setVideoMode(shot, VideoMode.still),
               ),

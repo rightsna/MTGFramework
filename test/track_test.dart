@@ -336,6 +336,27 @@ void main() {
         reason: '대사 체크를 지나 키 없음에서 멈춘다 = 대사는 인식됨');
   });
 
+  test('안 구운 스틸컷도 내보낼 거리로 센다 — 스틸 비트가 조용히 빠지지 않게', () async {
+    final beat = p.tracks.first.beats.single;
+    // 영상이 하나도 없는 상태로 되돌리고, 두 샷을 스틸컷 모드로 둔다(시작 프레임은 있다).
+    for (final s in beat.shots) {
+      File(s.videoPath!).deleteSync();
+      s.videoPath = null;
+      await p.setVideoMode(s, VideoMode.still);
+    }
+    await p.save();
+
+    expect(p.trackHasVideo(p.tracks.first), isTrue,
+        reason: '★ 스틸컷은 내보내기가 직접 구울 수 있으니 "영상 없음"이 아니다');
+
+    // 시작 프레임까지 없으면(연동으로 물려받는 앞 샷 끝장면도 없으면) 정말 내보낼 게 없다.
+    for (final s in beat.shots) {
+      File(s.startImagePath!).deleteSync();
+      File(s.endImagePath!).deleteSync();
+    }
+    expect(p.trackHasVideo(p.tracks.first), isFalse);
+  });
+
   test('트랙을 지워도 트랙 1은 남는다', () async {
     await p.addTrack();
     expect(p.tracks.length, 2);

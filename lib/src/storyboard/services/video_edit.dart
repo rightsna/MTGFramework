@@ -172,7 +172,7 @@ class VideoEdit {
       final f = File(outPath);
       if (await f.exists()) await f.delete();
       throw Exception(
-          '스틸컷 실패: ${(r.stderr as String).trim().split('\n').last}');
+          'ffmpeg: ${(r.stderr as String).trim().split('\n').last}');
     }
   }
 
