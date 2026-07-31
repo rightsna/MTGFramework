@@ -6,22 +6,52 @@ import '../../services/movie_settings_store.dart';
 import '../ui.dart';
 import 'lora_manager.dart';
 
-/// 설정 팝업(전역): Veo 키·옵션 / 자체 서버 / 대사 음성.
+/// 호스트 앱이 설정 팝업에 끼워 넣는 그룹 — 예: 프로젝트 목록 앱의 '프로젝트 폴더'.
+/// 킷은 왼쪽 목록에 자리만 내어 주고, 내용과 **저장은 앱이 갖는다**(킷 설정은 키·서버·음성
+/// 뿐이고, 프로젝트를 어디에 두는지는 목록을 소유한 앱의 일이라서).
+/// 그래서 이 그룹의 값은 팝업의 '저장' 버튼과 무관하다 — 앱이 바꾸는 즉시 저장하면 된다.
+class SettingsGroup {
+  const SettingsGroup({
+    required this.icon,
+    required this.label,
+    required this.desc,
+    required this.builder,
+  });
+
+  final IconData icon;
+  final String label;
+  final String desc;
+  final WidgetBuilder builder;
+}
+
+/// 설정 팝업(전역): Veo 키·옵션 / 자체 서버 / 대사 음성 (+ [extraGroups]).
 /// [MovieSettingsStore]로 직접 로드/저장하므로 어디서든(프로젝트 목록 등) 열 수 있다.
-Future<void> showSettingsDialog(BuildContext context) async {
+Future<void> showSettingsDialog(
+  BuildContext context, {
+  List<SettingsGroup> extraGroups = const [],
+}) async {
   final store = MovieSettingsStore();
   final initial = await store.load();
   if (!context.mounted) return;
   return showDialog<void>(
     context: context,
-    builder: (_) => _SettingsDialog(store: store, initial: initial),
+    builder: (_) => _SettingsDialog(
+      store: store,
+      initial: initial,
+      extraGroups: extraGroups,
+    ),
   );
 }
 
 class _SettingsDialog extends StatefulWidget {
-  const _SettingsDialog({required this.store, required this.initial});
+  const _SettingsDialog({
+    required this.store,
+    required this.initial,
+    required this.extraGroups,
+  });
   final MovieSettingsStore store;
   final MovieSettings initial;
+  final List<SettingsGroup> extraGroups;
 
   @override
   State<_SettingsDialog> createState() => _SettingsDialogState();
@@ -151,9 +181,17 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   int _tab = 0;
 
+  /// 킷 그룹 + 앱이 끼워 넣은 그룹(뒤에 붙는다) — 왼쪽 목록에 보이는 순서 그대로.
+  List<({IconData icon, String label, String desc})> get _allGroups => [
+    ..._groups,
+    for (final g in widget.extraGroups)
+      (icon: g.icon, label: g.label, desc: g.desc),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final g = _groups[_tab];
+    final groups = _allGroups;
+    final g = groups[_tab];
     return AlertDialog(
       title: const Row(
         children: [
@@ -174,9 +212,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               width: 190,
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                itemCount: _groups.length,
+                itemCount: groups.length,
                 itemBuilder: (context, i) {
-                  final it = _groups[i];
+                  final it = groups[i];
                   final sel = i == _tab;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 4),
@@ -251,7 +289,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    _detail(),
+                    _detail(context),
                   ],
                 ),
               ),
@@ -273,13 +311,18 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     );
   }
 
-  /// 선택된 그룹의 내용. (저장은 그룹과 무관하게 전체 [_s]를 한 번에 저장한다.)
-  /// 선택된 그룹의 내용. (저장은 그룹과 무관하게 전체 [_s]를 한 번에 저장한다.)
-  Widget _detail() => switch (_tab) {
-    0 => _veoSection(),
-    1 => _serverSection(),
-    _ => _voiceSection(),
-  };
+  /// 선택된 그룹의 내용. 킷 그룹은 저장 버튼이 [_s]를 한 번에 저장하고,
+  /// 앱이 끼워 넣은 그룹은 자기가 알아서 저장한다(그래서 여기선 그리기만 한다).
+  Widget _detail(BuildContext context) {
+    if (_tab >= _groups.length) {
+      return widget.extraGroups[_tab - _groups.length].builder(context);
+    }
+    return switch (_tab) {
+      0 => _veoSection(),
+      1 => _serverSection(),
+      _ => _voiceSection(),
+    };
+  }
 
   /// 영상 백엔드 자체는 인스펙터의 생성 버튼에서 고른다(Veo로 생성 / 자체 서버로 생성).
   /// 여기엔 Veo 전용 키·옵션만 — 자체 서버 해상도는 인스펙터 영상 탭에 있다.
