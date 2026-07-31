@@ -20,6 +20,7 @@ import '../services/api_service.dart';
 import '../services/elevenlabs_service.dart';
 import '../services/movie_settings_store.dart';
 import '../services/scene_export.dart';
+import '../services/still_image.dart';
 import '../services/storyboard_store.dart';
 import '../services/video_edit.dart';
 
@@ -1952,8 +1953,10 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final bytes = await _generateBytes(shot, mode, prompt, backend, key);
-      final ext = _extFor(bytes, mode);
+      final raw = await _generateBytes(shot, mode, prompt, backend, key);
+      // 스틸은 JPEG로 다시 굽는다(서버는 PNG를 준다). 영상 바이트는 그대로.
+      final (bytes, ext) =
+          mode.isVideo ? (raw, _extFor(raw, mode)) : encodeStill(raw);
       final name = switch (mode) {
         GenMode.imageStart => '${shot.id}_start',
         GenMode.imageEnd => '${shot.id}_end',
@@ -2045,8 +2048,7 @@ class StoryboardProvider extends ChangeNotifier {
     _busy.add(key);
     notifyListeners();
     try {
-      final bytes = await picked.readAsBytes();
-      final ext = _extFor(bytes, mode);
+      final (bytes, ext) = encodeStill(await picked.readAsBytes());
       final name = mode == GenMode.imageStart
           ? '${shot.id}_start'
           : '${shot.id}_end';
@@ -2884,8 +2886,8 @@ class StoryboardProvider extends ChangeNotifier {
     return f.readAsBytes();
   }
 
+  /// 영상 바이트의 확장자(스틸은 [encodeStill]이 형식과 확장자를 같이 정한다).
   String _extFor(Uint8List b, GenMode mode) {
-    if (!mode.isVideo) return 'png';
     final isWebp =
         b.length > 12 &&
         b[0] == 0x52 &&

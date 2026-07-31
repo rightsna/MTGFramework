@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/character.dart';
 import '../../services/elevenlabs_service.dart';
 import '../../services/movie_settings_store.dart';
+import '../../services/still_image.dart';
 import '../../services/storyboard_store.dart';
 import '../ui.dart';
 
@@ -196,12 +197,10 @@ class _CharacterManagerScreenState extends State<CharacterManagerScreen> {
     final files = await fs.openFiles(acceptedTypeGroups: [group]);
     if (files.isEmpty) return;
     for (final xf in files) {
-      final ext = xf.name.contains('.')
-          ? xf.name.split('.').last.toLowerCase()
-          : 'png';
+      final (bytes, ext) = encodeStill(await xf.readAsBytes());
       final dest = File(
           '${widget.projectDirPath}/${c.id}_${DateTime.now().millisecondsSinceEpoch}_${_seq++}.$ext');
-      await dest.writeAsBytes(await xf.readAsBytes());
+      await dest.writeAsBytes(bytes);
       await FileImage(dest).evict();
       c.photoPaths.add(dest.path);
       c.coverImagePath ??= dest.path; // 첫 사진을 대표로
