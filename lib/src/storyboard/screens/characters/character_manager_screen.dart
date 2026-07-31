@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/character.dart';
 import '../../services/elevenlabs_service.dart';
-import '../../services/movie_settings.dart';
+import '../../services/movie_settings_store.dart';
 import '../../services/storyboard_store.dart';
 import '../ui.dart';
 

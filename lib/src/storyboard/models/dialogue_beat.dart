@@ -130,6 +130,11 @@ class DialogueBeat {
   /// 상속하지 않는다 — 트랙마다 다른 take를 비교하려는 게 트랙을 나눈 이유다.
   Dialogue? get voice => dialogue;
 
+  /// 이 비트 자리에 **들리는 음성 파일** — 자기 것이 있으면 그것, 없으면 기준 비트 것 상속.
+  /// (아직 자기 트랙에서 안 뽑았으면 기준 트랙 음성이 그대로 들린다 — 화면·재생·내보내기 공통.)
+  String? resolvedVoicePath(DialogueBeat? base) =>
+      dialogue?.voicePath ?? (isDerived ? base?.dialogue?.voicePath : null);
+
   bool get hasDialogue => dialogue != null;
 
   /// 음성 길이(초). 실제 길이가 아니라 **샷들이 덮어야 할 목표치**다. 0 = 음성 없음.

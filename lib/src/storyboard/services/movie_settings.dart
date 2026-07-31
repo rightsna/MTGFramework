@@ -1,7 +1,8 @@
-import 'dart:convert';
-import 'dart:io';
-
-import 'package:path_provider/path_provider.dart';
+/// 설정 **값**만 있는 순수 Dart 파일 — Flutter를 물지 않는다.
+/// 디스크 저장([MovieSettingsStore])은 path_provider가 필요해 `movie_settings_store.dart`로
+/// 갈라 뒀다. 이 파일이 순수해야 씬 모델(ImageRes/VideoRes를 쓴다)도 순수하게 남고,
+/// 그래야 `bin/storyboard_export.dart`(CLI 내보내기)가 Flutter 없이 돈다.
+library;
 
 /// Where videos are generated. (스크린샷=시작·끝 프레임은 자체 서버 전용 — 외부 키 생성은 걷어냄.)
 /// 선언 순서 = 화면에 늘어놓는 순서(생성 버튼·트랙 메뉴). 자체 서버가 기본이라 위에 온다.
@@ -228,32 +229,4 @@ class MovieSettings {
     // 새 키만 읽는다(옛 'serviceApiUrl'은 무시 → 기존 설치도 도메인 디폴트로 시작).
     serviceApiUrl: (j['serverUrl'] as String?) ?? '',
   );
-}
-
-/// Persists [MovieSettings] to the app support folder (movie_settings.json).
-class MovieSettingsStore {
-  Future<File> _file() async {
-    final dir = await getApplicationSupportDirectory();
-    return File('${dir.path}/movie_settings.json');
-  }
-
-  Future<MovieSettings> load() async {
-    final f = await _file();
-    if (!await f.exists()) return const MovieSettings();
-    try {
-      final raw = await f.readAsString();
-      if (raw.trim().isEmpty) return const MovieSettings();
-      return MovieSettings.fromJson(
-        (jsonDecode(raw) as Map).cast<String, dynamic>(),
-      );
-    } catch (_) {
-      return const MovieSettings();
-    }
-  }
-
-  Future<void> save(MovieSettings s) async {
-    final f = await _file();
-    const encoder = JsonEncoder.withIndent('  ');
-    await f.writeAsString(encoder.convert(s.toJson()));
-  }
 }

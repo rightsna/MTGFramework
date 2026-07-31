@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:framework/framework.dart';
 
 import '../../services/api_service.dart';
-import '../../services/movie_settings.dart';
+import '../../services/movie_settings_store.dart';
 import '../ui.dart';
 import 'lora_manager.dart';
 

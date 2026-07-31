@@ -151,6 +151,12 @@ class Shot {
   String resolvedNote(Shot? b) => _r(kNote, b, (s) => s.note);
   String resolvedVideoNote(Shot? b) => _r(kVideoNote, b, (s) => s.videoNote);
 
+  /// 이 샷 자리에 **걸리는 영상** — 자기 트랙에서 뽑았으면 그것, 없으면 기준 샷 것 상속.
+  /// 영상은 오버라이드가 아니라 트랙별 소유라 [overrides]를 거치지 않는다(위 주석 참고).
+  /// 화면·미리보기·내보내기가 모두 이걸 통해야 셋이 같은 영상을 가리킨다.
+  String? resolvedVideoPath(Shot? base) =>
+      videoPath ?? (isDerived ? base?.videoPath : null);
+
   /// 타임라인에 쓰는 길이 — **뽑힌 게 있으면 실제 길이**, 없으면 주문한 길이.
   /// 실측이 0(측정 실패)이면 [orderedSeconds]로 떨어진다. 파생 샷의 주문 길이는 리졸버로
   /// 해석해야 하므로 [base]가 필요하다(자기 영상이 있으면 base 없이도 실측으로 답한다).

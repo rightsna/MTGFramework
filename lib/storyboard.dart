@@ -34,5 +34,5 @@ export 'src/storyboard/services/api_service.dart' show GenMode;
 export 'src/storyboard/screens/settings/settings_dialog.dart';
 export 'src/storyboard/screens/storyboard_screen.dart';
 export 'src/storyboard/screens/ui.dart';
-export 'src/storyboard/services/movie_settings.dart';
+export 'src/storyboard/services/movie_settings_store.dart'; // MovieSettings 값들도 함께 re-export
 export 'src/storyboard/services/storyboard_store.dart';

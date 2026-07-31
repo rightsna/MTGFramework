@@ -247,6 +247,9 @@ class VideoEdit {
   }
 
   /// 미디어(영상·오디오) 길이(초). 실패하면 0. (probe는 비디오 스트림 전용이라 오디오엔 못 쓴다.)
+  /// Flutter 없이 길이를 재야 하는 쪽(CLI 내보내기)이 쓰는 공개 입구이기도 하다.
+  static Future<double> mediaSeconds(String path) => _mediaDuration(path);
+
   static Future<double> _mediaDuration(String path) async {
     final ffprobe = toolPath('ffprobe');
     if (ffprobe == null) return 0;
