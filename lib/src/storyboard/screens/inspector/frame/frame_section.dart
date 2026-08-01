@@ -1,6 +1,7 @@
 part of '../inspector_panel.dart';
 
-/// 프레임(시작·끝) 한 칸 — 결과(프레임) + 프롬프트 + 생성/불러오기. 시작 프레임은 연동 토글도.
+/// 프레임(시작·끝) 한 칸 — 결과(프레임) + 프롬프트 + 생성/불러오기.
+/// 시작 프레임엔 '앞 샷 끝 프레임으로 생성'이 하나 더 붙는다(컷 잇기).
 class _FrameSection extends StatelessWidget {
   const _FrameSection({
     required this.title,
@@ -36,9 +37,9 @@ class _FrameSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
     final busy = p.isBusy(busyKey);
-    // 연동은 시작 프레임에만 있다 — 끝 프레임은 물려받을 대상이 아니라 만드는 것이다.
-    final canLink = mode == GenMode.imageStart && p.prevShotOf(shot) != null;
-    final linked = mode == GenMode.imageStart && p.shotLinkStart(shot);
+    // 앞 샷에서 가져오기는 시작 프레임에만 있다 — 끝 프레임은 가져올 대상이 아니라 만드는 것이다.
+    final isStart = mode == GenMode.imageStart;
+    final hasPrev = isStart && p.prevShotOf(shot) != null;
     return _GroupCard(
       icon: genIcon,
       title: title,
@@ -46,26 +47,19 @@ class _FrameSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (canLink) ...[
-            _LinkStartToggle(shot: shot),
-            const SizedBox(height: 10),
-          ],
           // 결과(프레임)가 위, 그걸 만드는 수단(프롬프트·생성/불러오기)이 아래.
           _OutputBlock(
             title: title,
             path: path,
             busyKey: busyKey,
-            // 연동 중인 시작 프레임은 앞 샷의 끝 프레임 파일 그 자체다 — 여기서 지우면 앞 샷이 날아간다.
-            // 지우려면 연동을 먼저 끄거나, 앞 샷의 끝 프레임에서 지워야 한다.
-            deleteTarget: linked ? null : (shot: shot, mode: mode),
+            deleteTarget: (shot: shot, mode: mode),
           ),
           const SizedBox(height: 14),
           _PromptPair(
             label: '프롬프트',
             controller: controller,
             koController: koController,
-            hint: linked ? '앞 샷의 끝 프레임 프롬프트가 들어옵니다' : hint,
-            readOnly: linked,
+            hint: hint,
             trailing: IconButton(
               tooltip: '프롬프트 복사 (씬 공통 포함)',
               visualDensity: VisualDensity.compact,
@@ -84,28 +78,43 @@ class _FrameSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          // 연동 중이면 만들 게 없다 — 앞 샷의 끝장면이 곧 이 샷의 시작이다.
-          if (!linked)
-            Row(
-              children: [
-                Expanded(
-                  child: _GenButton(
-                    label: genLabel,
-                    icon: genIcon,
-                    busyKey: busyKey,
-                    onGen: onGen,
-                    enabled: p.imageReady,
-                    disabledHint: p.imageBlockReason,
-                  ),
+          Row(
+            children: [
+              Expanded(
+                child: _GenButton(
+                  label: genLabel,
+                  icon: genIcon,
+                  busyKey: busyKey,
+                  onGen: onGen,
+                  enabled: p.imageReady,
+                  disabledHint: p.imageBlockReason,
                 ),
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: busy ? null : onLoad,
-                  icon: const Icon(Icons.upload_file_outlined, size: 18),
-                  label: const Text('불러오기'),
-                ),
-              ],
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: busy ? null : onLoad,
+                icon: const Icon(Icons.upload_file_outlined, size: 18),
+                label: const Text('불러오기'),
+              ),
+            ],
+          ),
+          // 컷 잇기 — 앞 샷의 끝 프레임(FE2V)이나 그 영상의 마지막 프레임을 이 샷의 시작으로.
+          // AI 생성이 아니라 **가져오기**라 서버·키가 필요 없다.
+          if (hasPrev) ...[
+            const SizedBox(height: 8),
+            Tooltip(
+              message: p.canStartFromPrevShot(shot)
+                  ? '앞 샷의 끝 프레임(없으면 앞 샷 영상의 마지막 프레임)을 가져옵니다'
+                  : '앞 샷에 끝 프레임도 영상도 없습니다',
+              child: OutlinedButton.icon(
+                onPressed: (busy || !p.canStartFromPrevShot(shot))
+                    ? null
+                    : () => p.startFromPrevShot(shot),
+                icon: const Icon(Icons.link, size: 18),
+                label: const Text('앞 샷 끝 프레임으로 생성'),
+              ),
             ),
+          ],
         ],
       ),
     );

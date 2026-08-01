@@ -361,42 +361,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           onChanged: (v) => setState(() => _s = _s.copyWith(veoModel: v)),
         ),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<VideoAspect>(
-                initialValue: _s.videoAspect,
-                decoration: const InputDecoration(
-                  labelText: '비율',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final a in VideoAspect.values)
-                    DropdownMenuItem(value: a, child: Text(a.label)),
-                ],
-                onChanged: (v) =>
-                    setState(() => _s = _s.copyWith(videoAspect: v)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButtonFormField<VideoResolution>(
-                initialValue: _s.videoResolution,
-                decoration: const InputDecoration(
-                  labelText: '해상도',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final r in VideoResolution.values)
-                    DropdownMenuItem(value: r, child: Text(r.label)),
-                ],
-                onChanged: (v) =>
-                    setState(() => _s = _s.copyWith(videoResolution: v)),
-              ),
-            ),
-          ],
+        const Text(
+          '비율·해상도는 여기서 안 고릅니다 — **트랙 탭의 영상 해상도**에서 유도합니다'
+          '(세로/가로 → 비율, 긴 변 720 초과 → 1080p).',
+          style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
         ),
         const SizedBox(height: 10),
         TextFormField(

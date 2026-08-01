@@ -43,6 +43,9 @@ class _SceneTitleBar extends StatelessWidget {
                   onChanged: (_) => p.noteEdited(),
                 ),
               ),
+              // 씬 미리보기 — 영상 탭의 재생 팝업과 같은 것을 **항상 처음부터** 연다.
+              // (영상 탭 것은 누른 그 샷에서 시작한다.)
+              _ScenePreviewButton(),
             ],
           ),
           const SizedBox(height: 4),
@@ -55,7 +58,9 @@ class _SceneTitleBar extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _statePill(Icons.aspect_ratio,
-                    '영상 ${sc.videoRes.width}×${sc.videoRes.height}'),
+                    // 영상 해상도는 트랙별 — 보고 있는 트랙 기준으로 보여 준다.
+                    '영상 ${p.selectedTrack?.videoRes.width ?? sc.baseTrack.videoRes.width}'
+                    '×${p.selectedTrack?.videoRes.height ?? sc.baseTrack.videoRes.height}'),
                 _statePill(Icons.image_outlined,
                     '프레임 ${sc.imageRes.width}×${sc.imageRes.height}'),
                 _statePill(Icons.layers_outlined, '트랙 ${p.tracks.length}'),
@@ -98,6 +103,31 @@ class _ShotArrow extends StatelessWidget {
     return const Padding(
       padding: EdgeInsets.only(top: 40, left: 4, right: 4),
       child: Icon(Icons.arrow_right_alt, color: accent, size: 30),
+    );
+  }
+}
+
+/// 씬 제목 바 오른쪽 끝의 미리보기 버튼 — 영상 탭 팝업과 **같은 재생**을 씬 **처음부터** 연다.
+/// 뽑은 영상이 하나도 없어도 시작 프레임으로 세워 보여 주므로, 대사만 채운 콘티도 훑을 수 있다.
+class _ScenePreviewButton extends StatelessWidget {
+  const _ScenePreviewButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final p = StoryboardScope.of(context);
+    final playlist = p.scenePlaylist();
+    return IconButton(
+      tooltip: playlist.isEmpty ? '미리볼 샷이 없습니다' : '씬 미리보기 (처음부터)',
+      onPressed: playlist.isEmpty
+          ? null
+          : () => showVideoPlayDialog(
+                context,
+                playlist: playlist,
+                bgmPath: p.scenePlayBgmPath,
+                speed: p.scenePlaySpeed,
+              ),
+      icon: const Icon(Icons.play_circle_outline, size: 22),
+      color: accent2,
     );
   }
 }

@@ -6,10 +6,12 @@ import 'package:framework/src/storyboard/models/sfx.dart';
 import 'package:framework/src/storyboard/models/caption.dart';
 import 'package:framework/src/storyboard/models/story_scene.dart';
 import 'package:framework/src/storyboard/models/video_track.dart';
+import 'package:framework/src/storyboard/services/movie_settings.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// `scene<N>.json` 직렬화 검증. 씬 = 대사들의 나열, 각 대사 = 대사(0/1) + 샷들.
-/// 자기설명적이고, 미디어는 파일명(상대)만 담기며, 왕복 후 값이 보존되고, 구버전도 마이그레이션되는지.
+/// 자기설명적이고, 미디어는 파일명(상대)만 담기며, 왕복 후 값이 보존되는지.
+/// (구형식 마이그레이션은 없다 — 데이터를 한 번에 옮기고 코드에서 걷어냈다.)
 void main() {
   const dir = '/proj/abc';
 
@@ -103,12 +105,10 @@ void main() {
     expect(clips1.length, 2);
     final c1 = clips1.first as Map;
     expect(c1['refCharacters'], ['char_miles']);
-    // inherit = 시작장면을 앞 샷 끝장면에 연동할지.
     expect(c1['startScene'], {
       'prompt': '마일스 입을 뗀다, 클로즈업',
       'promptKo': '',
       'image': 'clip_1_start.png',
-      'inherit': false,
     });
     // mode = 영상 생성 방식(fe2v/i2v/still). 기본은 fe2v. stillEffect = 스틸컷 켄번스(기본 none).
     // negativePrompt = 빼고 싶은 것만 적는 칸(비면 서버 워크플로 기본 네거티브).
@@ -271,35 +271,76 @@ void main() {
     final beat = DialogueBeat.fromJson({'id': 'b_min'}, dir);
     expect(beat.shots, isEmpty);
     expect(beat.dialogue, isNull);
-    expect(beat.sfx, isNull);
   });
 
-  test('마이그레이션: 옛 씬 단위 기본 성우가 모든 트랙으로 옮겨진다 (옛 lora는 무시)', () {
-    // 옛 형식 — lora/voice가 씬 레벨, 트랙엔 자기 값이 없다. lora는 기능째 없어져 버린다.
+  test('영상 해상도는 트랙 JSON에 적히고 왕복 보존된다', () {
+    final sc = sampleScene();
+    sc.baseTrack.videoRes = VideoRes.p704x1280;
+    final j = sc.toJson();
+
+    // 씬에는 프레임 해상도만 남는다 — 영상 해상도는 트랙 것이다.
+    expect((j['res'] as Map).containsKey('video'), isFalse);
+    expect((j['res'] as Map)['image'], isNotNull);
+    expect(((j['tracks'] as List).first as Map)['res'], {'video': 'p704x1280'});
+
+    final after = StoryScene.fromJson(j, dir);
+    expect(after.baseTrack.videoRes, VideoRes.p704x1280);
+  });
+
+  test('트랙마다 다른 해상도를 갖는다 — 씬은 프레임 해상도만', () {
     final sc = StoryScene.fromJson({
-      'id': 'scene_old',
-      'lora': {'url': 'https://civitai.com/old', 'strength': 0.9},
-      'voice': {'id': 'v_old', 'name': '옛 성우'},
+      'id': 'scene_res',
+      'res': {'image': 'p704x1280'},
       'tracks': [
-        {'id': 't1', 'name': '트랙 1'},
-        {'id': 't2', 'name': '트랙 2'},
+        {
+          'id': 't1',
+          'name': '트랙 1',
+          'res': {'video': 'p544x960'},
+        },
+        {
+          'id': 't2',
+          'name': '트랙 2',
+          'res': {'video': 'p352x640'},
+        },
       ],
     }, dir);
-    // 모든 트랙이 씬 값을 물려받는다(옛 동작 = 전 트랙 공유).
-    for (final t in sc.tracks) {
-      expect(t.defaultVoiceId, 'v_old');
-      expect(t.defaultVoiceName, '옛 성우');
-    }
+
+    expect(sc.tracks.first.videoRes, VideoRes.p544x960);
+    expect(sc.tracks.last.videoRes, VideoRes.p352x640);
+    expect(sc.imageRes, ImageRes.p704x1280, reason: '프레임 해상도는 씬에 남는다');
   });
 
-  test('효과음(SFX)은 기준 비트에 저장되고 왕복 보존, 파생 비트엔 안 적힌다', () {
-    final base = DialogueBeat(
-      id: 'b1',
+  test('Veo 파라미터는 트랙 해상도에서 유도된다', () {
+    expect(VideoRes.p352x640.veoAspect, '9:16');
+    expect(VideoRes.l1280x704.veoAspect, '16:9');
+    expect(VideoRes.p352x640.veoResolution, '720p', reason: '긴 변 640 ≤ 720');
+    expect(VideoRes.p544x960.veoResolution, '1080p', reason: '긴 변 960 > 720');
+  });
+
+  test('IA2V 방식은 왕복 보존되고 끝 프레임을 요구하지 않는다', () {
+    final shot = Shot(id: 'c_ia', videoMode: VideoMode.ia2v);
+    expect((shot.toJson()['video'] as Map)['mode'], 'ia2v');
+
+    final back = Shot.fromJson(shot.toJson(), dir);
+    expect(back.resolvedVideoMode(null), VideoMode.ia2v);
+    expect(back.needsEndFrameWith(null), isFalse,
+        reason: '끝 프레임은 서버가 시작 프레임으로 물린다 — 사람이 만들 필요 없다');
+    // 시작 프레임만 있으면 뽑을 준비가 된 것으로 본다(음성 유무는 생성 시점에 본다).
+    final ready = Shot.fromJson(
+        (Shot(id: 'c_ia2', videoMode: VideoMode.ia2v, startImagePath: '$dir/a.png')
+            .toJson()),
+        dir);
+    expect(ready.videoInputsReadyWith(null), isTrue);
+  });
+
+  test('효과음(SFX)은 **샷**에 저장되고 왕복 보존, 파생 샷은 오버라이드로만 적힌다', () {
+    final base = Shot(
+      id: 'c1',
       sfx: Sfx(
         prompt: 'deep cinematic impact boom',
         durationSeconds: 1.6,
         promptInfluence: 0.6,
-        path: '$dir/b1_sfx.mp3',
+        path: '$dir/c1_sfx.mp3',
         soundSeconds: 1.55,
       ),
     );
@@ -308,18 +349,25 @@ void main() {
     expect(sfxJson['prompt'], 'deep cinematic impact boom');
     expect(sfxJson['durationSeconds'], 1.6);
     expect(sfxJson['promptInfluence'], 0.6);
-    expect((sfxJson['sound'] as Map)['file'], 'b1_sfx.mp3'); // 파일명(상대)만
+    expect((sfxJson['sound'] as Map)['file'], 'c1_sfx.mp3'); // 파일명(상대)만
 
-    final back = DialogueBeat.fromJson(j, dir);
+    final back = Shot.fromJson(j, dir);
     expect(back.sfx!.prompt, 'deep cinematic impact boom');
     expect(back.sfx!.durationSeconds, 1.6);
     expect(back.sfx!.promptInfluence, 0.6);
-    expect(back.sfx!.path, '$dir/b1_sfx.mp3'); // 절대경로로 복원
+    expect(back.sfx!.path, '$dir/c1_sfx.mp3'); // 절대경로로 복원
     expect(back.sfx!.hasSound, isTrue);
+    expect(back.resolvedSfx(null)!.prompt, 'deep cinematic impact boom');
 
-    // 파생 비트(base 있음)는 효과음을 적지 않는다(트랙 공유 — 기준 비트에만).
-    final derived = DialogueBeat(id: 'b1_t2', baseId: 'b1', sfx: Sfx(prompt: 'x'));
-    expect(derived.toJson().containsKey('sfx'), isFalse);
+    // 파생 샷: 손대기 전엔 아무것도 안 적히고(기준 샷 상속), 손대면 overrides로 간다.
+    final inherit = Shot(id: 'c1_t2', baseId: 'c1');
+    expect((inherit.toJson()['overrides'] as Map).containsKey('sfx'), isFalse);
+    expect(inherit.resolvedSfx(back)!.prompt, 'deep cinematic impact boom',
+        reason: '상속으로 기준 샷 효과음이 들린다');
+
+    inherit.overrides[Shot.kSfx] = Sfx(prompt: 'glass shatter');
+    final ov = Shot.fromJson(inherit.toJson(), dir);
+    expect(ov.resolvedSfx(back)!.prompt, 'glass shatter', reason: '자기 것 우선');
   });
 
   test('자막(캡션)은 구간 목록·위치가 왕복 보존되고, 파생 비트엔 안 적힌다', () {

@@ -148,9 +148,8 @@ void main() {
 
     await p.duplicateScene();
     final cShots = p.scenes.last.beats.single.shots;
-    expect(cShots.last.linkStart, isTrue, reason: '연동 상태가 복제돼야 한다');
-    // 복제본의 둘째 샷 시작 = 복제본 첫 샷의 끝(원본이 아니라).
-    expect(p.startPathOf(cShots.last), cShots.first.endImagePath);
-    expect(p.startPathOf(cShots.last), isNot(end.path));
+    // 복제본의 끝 프레임은 복제본 자기 파일이어야 한다(원본을 가리키면 안 된다).
+    expect(cShots.first.endImagePath, isNot(end.path));
+    expect(File(cShots.first.endImagePath!).existsSync(), isTrue);
   });
 }

@@ -1,9 +1,14 @@
-/// 영상 생성 방식 — 세 갈래(명시적 상태). 끝 프레임이 필요한 건 FE2V 하나뿐이다.
+import 'sfx.dart';
+
+/// 영상 생성 방식 — 네 갈래(명시적 상태). 끝 프레임이 필요한 건 FE2V 하나뿐이다.
 ///  - [fe2v]: 시작·끝 두 장을 고정하고 그 사이를 AI로 생성(기본). 끝 그림이 정해진다.
 ///  - [i2v]: 시작 한 장만 고정하고 끝은 모델이 자유롭게 — 끝장면은 안 쓴다.
 ///  - [still]: AI 없이 **시작 프레임 한 장을 그대로** 영상 길이만큼 채운다(로컬 ffmpeg).
 ///    켄번스([StillEffect])로 줌 인/아웃도 준다.
-enum VideoMode { fe2v, i2v, still }
+///  - [ia2v]: 시작 한 장 + **그 비트의 대사 음성**을 함께 넣어, 그 음성에 맞춰 입까지 움직이는
+///    영상을 한 번에 만든다(자체 서버 `video-ltx-ia2v`). 끝 프레임은 서버가 시작 프레임으로
+///    물려 구도를 잡으므로 따로 만들지 않는다. 대사 음성이 먼저 있어야 한다.
+enum VideoMode { fe2v, i2v, still, ia2v }
 
 /// 스틸컷의 켄번스 효과 — 사진첩 앨범 미리보기처럼 천천히 줌.
 enum StillEffect {
@@ -45,10 +50,10 @@ class Shot {
   static const kVideoSeconds = 'videoSeconds';
   static const kStartImage = 'startImage'; // 절대경로(메모리) / 파일명(JSON)
   static const kEndImage = 'endImage';
-  static const kLinkStart = 'linkStart';
   static const kVideoMode = 'videoMode';
   static const kStillEffect = 'stillEffect';
   static const kNote = 'note';
+  static const kSfx = 'sfx'; // Sfx? (null=명시적 없음)
   static const kVideoNote = 'videoNote';
 
   String id;
@@ -66,11 +71,16 @@ class Shot {
   double videoSeconds; // **주문할** 영상 길이(초)
   String? startImagePath; // 생성된 시작장면 파일 경로(런타임 절대경로)
   String? endImagePath;
-  bool linkStart; // 시작장면을 앞 샷 끝장면에 연동
   VideoMode videoMode;
   StillEffect stillEffect;
   String note; // 장면 탭 메모
   String videoNote; // 영상 탭 메모(장면 메모와 별개)
+
+  /// 이 샷의 효과음(0 또는 1). null = 없음.
+  /// 효과음은 백엔드와 무관하므로 **트랙끼리 공유**한다(기준 샷에 두고 파생은 상속).
+  /// 비트가 아니라 샷에 붙는다 — 한 대사를 여러 샷이 덮을 때 소리가 나야 할 자리는
+  /// 대사 전체가 아니라 특정 컷이라서.
+  Sfx? sfx;
 
   // ── 언제나 이 샷(트랙) 소유 — 오버라이드/상속 대상이 아니다 ──
   double? videoActualSeconds; // 뽑힌 영상의 실제 길이(초). 없으면 아직 안 뽑음
@@ -102,11 +112,11 @@ class Shot {
     this.endImagePath,
     this.videoPath,
     this.videoJobId,
-    this.linkStart = false,
     this.videoMode = VideoMode.fe2v,
     this.stillEffect = StillEffect.none,
     this.note = '',
     this.videoNote = '',
+    this.sfx,
     this.baseId,
     Map<String, Object?>? overrides,
   })  : refCharacterIds = refCharacterIds ?? [],
@@ -144,12 +154,16 @@ class Shot {
   String? resolvedStartImage(Shot? b) =>
       _r(kStartImage, b, (s) => s.startImagePath);
   String? resolvedEndImage(Shot? b) => _r(kEndImage, b, (s) => s.endImagePath);
-  bool resolvedLinkStart(Shot? b) => _r(kLinkStart, b, (s) => s.linkStart);
   VideoMode resolvedVideoMode(Shot? b) => _r(kVideoMode, b, (s) => s.videoMode);
   StillEffect resolvedStillEffect(Shot? b) =>
       _r(kStillEffect, b, (s) => s.stillEffect);
   String resolvedNote(Shot? b) => _r(kNote, b, (s) => s.note);
   String resolvedVideoNote(Shot? b) => _r(kVideoNote, b, (s) => s.videoNote);
+
+  /// 이 샷 자리의 효과음 — 기준 샷 것을 상속하되, 파생에서 손대면 그것.
+  Sfx? resolvedSfx(Shot? b) => !isDerived
+      ? sfx
+      : (overrides.containsKey(kSfx) ? overrides[kSfx] as Sfx? : b?.sfx);
 
   /// 이 샷 자리에 **걸리는 영상** — 자기 트랙에서 뽑았으면 그것, 없으면 기준 샷 것 상속.
   /// 영상은 오버라이드가 아니라 트랙별 소유라 [overrides]를 거치지 않는다(위 주석 참고).
@@ -201,7 +215,6 @@ class Shot {
         'prompt': startPrompt,
         'promptKo': startPromptKo,
         'image': mediaName(startImagePath),
-        'inherit': linkStart,
       },
       'endScene': {
         'prompt': endPrompt,
@@ -220,6 +233,7 @@ class Shot {
         'stillEffect': stillEffect.name,
         'note': videoNote,
       },
+      'sfx': sfx?.toJson(), // null = 효과음 없음
       'note': note,
     };
   }
@@ -234,6 +248,7 @@ class Shot {
         kStartImage || kEndImage => mediaName(v as String?),
         kVideoMode => (v as VideoMode).name,
         kStillEffect => (v as StillEffect).name,
+        kSfx => (v as Sfx?)?.toJson(),
         _ => v, // String / double / bool / List<String> / null
       };
     }
@@ -267,6 +282,7 @@ class Shot {
     final start = (j['startScene'] as Map?)?.cast<String, dynamic>();
     final end = (j['endScene'] as Map?)?.cast<String, dynamic>();
     final video = (j['video'] as Map?)?.cast<String, dynamic>();
+    final sfxJson = (j['sfx'] as Map?)?.cast<String, dynamic>();
     return Shot(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
@@ -284,7 +300,6 @@ class Shot {
       endImagePath: mediaPath(dir, end?['image']),
       videoPath: mediaPath(dir, video?['file']),
       videoJobId: video?['jobId'] as String?,
-      linkStart: (start?['inherit'] as bool?) ?? false,
       videoMode: _readVideoMode(video),
       stillEffect: StillEffect.values.firstWhere(
         (e) => e.name == video?['stillEffect'],
@@ -292,6 +307,7 @@ class Shot {
       ),
       note: (j['note'] as String?) ?? '',
       videoNote: (video?['note'] as String?) ?? '',
+      sfx: sfxJson == null ? null : Sfx.fromJson(sfxJson, dir),
     );
   }
 
@@ -313,7 +329,6 @@ class Shot {
       kVideoPromptKo: (video?['promptKo'] as String?) ?? '',
       kVideoNeg: (video?['negativePrompt'] as String?) ?? '',
       kVideoSeconds: (video?['seconds'] as num?)?.toDouble() ?? 5,
-      kLinkStart: (start?['inherit'] as bool?) ?? false,
       kVideoMode: _readVideoMode(video),
       kStillEffect: StillEffect.values.firstWhere(
           (e) => e.name == video?['stillEffect'],
@@ -351,6 +366,9 @@ class Shot {
           out[e.key] = (e.value as List?)?.cast<String>() ?? <String>[];
         case kVideoSeconds:
           out[e.key] = (e.value as num?)?.toDouble();
+        case kSfx:
+          final m = (e.value as Map?)?.cast<String, dynamic>();
+          out[e.key] = m == null ? null : Sfx.fromJson(m, dir);
         default:
           out[e.key] = e.value; // String / bool / null
       }

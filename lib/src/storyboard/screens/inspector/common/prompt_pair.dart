@@ -9,7 +9,6 @@ class _PromptPair extends StatelessWidget {
     required this.controller,
     required this.koController,
     required this.hint,
-    this.readOnly = false,
     this.trailing,
   });
 
@@ -17,7 +16,6 @@ class _PromptPair extends StatelessWidget {
   final TextEditingController controller; // 원문(생성에 실제로 쓰임)
   final TextEditingController koController; // 번역(확인용)
   final String hint;
-  final bool readOnly;
   final Widget? trailing; // 라벨 우측(복사 버튼 등)
 
   @override
@@ -45,7 +43,6 @@ class _PromptPair extends StatelessWidget {
         _PromptField(
           controller: ko ? koController : controller,
           hint: ko ? '위 프롬프트를 한국어로 — 확인용이고 생성엔 안 쓰임' : hint,
-          readOnly: readOnly,
         ),
       ],
     );

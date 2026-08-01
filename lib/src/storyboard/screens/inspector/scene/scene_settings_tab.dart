@@ -25,10 +25,11 @@ class _SceneSettingsTab extends StatelessWidget {
               key: ValueKey('scene_note_${sc.id}'),
               controller: p.sceneNoteCtrl(sc.id)),
           const SizedBox(height: 16),
-          // 해상도는 **씬 단위** — 씬마다 따로 저장된다. (기본 성우는 '트랙' 탭으로 옮겼다.)
+          // 프레임 해상도는 **씬 단위** — 프레임은 트랙끼리 공유(상속)하니 씬에 두는 게 맞다.
+          // (영상 해상도·기본 성우는 '트랙' 탭으로 옮겼다.)
           _GroupCard(
             icon: Icons.aspect_ratio,
-            title: '해상도',
+            title: '프레임 해상도',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -49,21 +50,6 @@ class _SceneSettingsTab extends StatelessWidget {
                         label: Text(r.label, style: _chipLabel),
                         selected: sc.imageRes == r,
                         onSelected: (_) => p.setImageRes(r),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _SectionLabel('영상 해상도'),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final r in VideoRes.values)
-                      ChoiceChip(
-                        label: Text(r.label, style: _chipLabel),
-                        selected: sc.videoRes == r,
-                        onSelected: (_) => p.setVideoRes(r),
                       ),
                   ],
                 ),

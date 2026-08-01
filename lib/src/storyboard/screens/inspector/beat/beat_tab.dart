@@ -72,9 +72,7 @@ class _BeatTab extends StatelessWidget {
           // 대사 내용·화자·음성은 팝업 대신 이 탭에서 바로 편집한다.
           _DialogueEditor(key: ValueKey('dlg_${beat.id}'), beat: beat),
           const SizedBox(height: 14),
-          // 효과음(SFX) — 대사와 비슷하나 화자가 없다. 트랙 공유.
-          _SfxEditor(key: ValueKey('sfx_${beat.id}'), beat: beat),
-          const SizedBox(height: 14),
+          // (효과음은 **샷**에 붙는다 — 영상 탭 하단에서 편집한다.)
           // 자막 — 시간순 구간 목록 + 위치. 트랙 공유.
           _CaptionEditor(key: ValueKey('cap_${beat.id}'), beat: beat),
         ],

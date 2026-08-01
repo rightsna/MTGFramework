@@ -1,6 +1,5 @@
 import 'shot.dart';
 import 'dialogue.dart';
-import 'sfx.dart';
 import 'caption.dart';
 
 /// 대사(DialogueBeat) = 씬 타임라인의 한 단위. **대사 내용 1개(선택) + 샷 여러 개**를 담는다.
@@ -13,7 +12,7 @@ import 'caption.dart';
 /// ## 트랙 상속(파생 비트)
 /// 첫 트랙이 **기준 트랙**이고, 그 비트가 대본·연출의 원본이다([baseId]=null).
 /// 트랙을 추가하면 파생 비트가 생기는데 — **파생 비트는 진짜로 비어 있다**. 타입 필드
-/// (title/note/direction/dialogue의 대본/sfx/caption)를 쓰지 않고, 사용자가 **손댄 필드만**
+/// (title/note/direction/dialogue의 대본/caption)를 쓰지 않고, 사용자가 **손댄 필드만**
 /// [overrides] 맵에 하나씩 담는다({} → {'text': '...'}). 그래서 파생 비트가 기준 비트의
 /// 값을 **복사해 들고 있는 일이 없다** — 트랙1이 파생 편집으로 바뀌는 사고가 구조적으로 불가능.
 ///
@@ -24,7 +23,8 @@ import 'caption.dart';
 /// 예외 — **음성(TTS mp3)**: 대본과 달리 트랙마다 따로 뽑아 비교하는 결과물이라, 파생 비트도
 /// **자기 음성**을 [dialogue](voice 전용)에 직접 갖는다(오버라이드가 아니라 트랙별 소유).
 ///
-/// 저장(JSON): 기준 비트는 개념별 중첩(dialogue/sfx/caption), 파생 비트는 `overrides`(손댄 것만)
+/// 저장(JSON): 기준 비트는 개념별 중첩(dialogue/caption), 파생 비트는 `overrides`(손댄 것만)
+/// (효과음은 **샷**으로 옮겼다 — [Shot.sfx])
 /// + `voice` + `shots`만 적는다 — 파일만 봐도 무엇이 트랙 고유인지 읽힌다.
 class DialogueBeat {
   // ── 오버라이드 키 (파생 비트의 [overrides] 맵에서 쓰는 필드 이름) ──
@@ -34,7 +34,6 @@ class DialogueBeat {
   static const kText = 'text'; // 대사 텍스트
   static const kSpeaker = 'speaker'; // 화자(Character.id, null=내레이션)
   static const kSilent = 'silent'; // true = 이 트랙은 무음(기준이 말해도 대사 없음)
-  static const kSfx = 'sfx'; // Sfx? (null=명시적 없음)
   static const kCaption = 'caption'; // Caption? (null=명시적 없음)
 
   String id;
@@ -44,7 +43,6 @@ class DialogueBeat {
   String note; // 사용자 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
   String direction; // 연출 노트 — 이 비트에서 무엇을 표현할지. 자동 생성엔 안 물림
   Dialogue? dialogue; // 이 대사의 내용(0 또는 1). null = 무음 대사
-  Sfx? sfx; // 이 비트의 효과음(0 또는 1). null = 없음
   Caption? caption; // 이 비트의 자막(0 또는 1). null = 없음
 
   List<Shot> shots; // 이 대사를 화면으로 덮는 샷들(순서대로) — 각 샷 = FE2V 1회
@@ -62,7 +60,6 @@ class DialogueBeat {
     this.note = '',
     this.direction = '',
     this.dialogue,
-    this.sfx,
     this.caption,
     List<Shot>? shots,
     this.baseId,
@@ -115,9 +112,6 @@ class DialogueBeat {
   }
 
   /// 이 비트의 효과음(트랙별 오버라이드 해석). null = 없음(상속받은 것도 없거나 명시적 없음).
-  Sfx? resolvedSfx(DialogueBeat? base) => !isDerived
-      ? sfx
-      : (overrides.containsKey(kSfx) ? overrides[kSfx] as Sfx? : base?.sfx);
 
   /// 이 비트의 자막(트랙별 오버라이드 해석). null = 없음.
   Caption? resolvedCaption(DialogueBeat? base) => !isDerived
@@ -174,20 +168,18 @@ class DialogueBeat {
       'note': note,
       'direction': direction,
       'dialogue': dialogue?.toJson(), // null = 무음 대사
-      'sfx': sfx?.toJson(), // null = 효과음 없음
       'caption': caption?.toJson(), // null = 자막 없음
       'shots': shots.map((c) => c.toJson()).toList(),
     };
   }
 
-  /// overrides 맵을 JSON으로 — 키는 그대로, 값 객체(Sfx/Caption)는 toJson으로 직렬화.
+  /// overrides 맵을 JSON으로 — 키는 그대로, 값 객체(Caption)는 toJson으로 직렬화.
   /// **키 존재 = 오버라이드**라, 값이 null인 키도 반드시 남긴다(명시적 없음).
   Map<String, dynamic> _overridesToJson() {
     final out = <String, dynamic>{};
     for (final e in overrides.entries) {
       final v = e.value;
       out[e.key] = switch (v) {
-        Sfx s => s.toJson(),
         Caption c => c.toJson(),
         _ => v, // String / null
       };
@@ -220,7 +212,6 @@ class DialogueBeat {
     }
     // 기준 비트: 대본·연출 전체.
     final dlg = (j['dialogue'] as Map?)?.cast<String, dynamic>();
-    final sx = (j['sfx'] as Map?)?.cast<String, dynamic>();
     final cap = (j['caption'] as Map?)?.cast<String, dynamic>();
     return DialogueBeat(
       id: j['id'] as String,
@@ -228,7 +219,6 @@ class DialogueBeat {
       note: (j['note'] as String?) ?? '',
       direction: (j['direction'] as String?) ?? '',
       dialogue: dlg == null ? null : Dialogue.fromJson(dlg, dir),
-      sfx: sx == null ? null : Sfx.fromJson(sx, dir),
       caption: cap == null ? null : Caption.fromJson(cap),
       shots: ((j['shots'] as List?) ?? const [])
           .map((e) => Shot.fromJson((e as Map).cast<String, dynamic>(), dir))
@@ -236,7 +226,7 @@ class DialogueBeat {
     );
   }
 
-  /// overrides JSON을 메모리 맵으로 — Sfx/Caption 키는 값 객체로 되살린다.
+  /// overrides JSON을 메모리 맵으로 — Caption 키는 값 객체로 되살린다.
   /// 키가 있으면(값이 null이어도) 그대로 담는다(오버라이드 존재 = containsKey).
   static Map<String, Object?> _overridesFromJson(
       Map<String, dynamic>? j, String dir) {
@@ -244,9 +234,6 @@ class DialogueBeat {
     if (j == null) return out;
     for (final e in j.entries) {
       switch (e.key) {
-        case kSfx:
-          final m = (e.value as Map?)?.cast<String, dynamic>();
-          out[e.key] = m == null ? null : Sfx.fromJson(m, dir);
         case kCaption:
           final m = (e.value as Map?)?.cast<String, dynamic>();
           out[e.key] = m == null ? null : Caption.fromJson(m);

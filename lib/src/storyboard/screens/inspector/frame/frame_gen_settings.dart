@@ -1,9 +1,10 @@
 part of '../inspector_panel.dart';
 
-/// 이 샷의 **프레임 생성 설정** — 영상 방식(FE2V/I2V)과 인물 참조를 한 카드에 묶는다.
+/// 이 샷의 **프레임 생성 설정** — 영상 방식(FE2V/I2V/스틸컷/IA2V)과 인물 참조를 한 카드에 묶는다.
 /// 둘 다 "프레임을 어떻게 뽑을지"의 입력이라 한자리에 있는 게 읽기 쉽다.
 ///  - FE2V/I2V: 같은 모델·같은 그래프고 끝 프레임을 박느냐만 다르다. FE2V는 끝 그림이 정해지는
 ///    대신 양끝이 멀면 중간이 깨지고, I2V는 끝이 자유로운 대신 어디로 갈지 통제가 안 된다.
+///  - IA2V: 시작 한 장 + 그 비트의 **대사 음성**을 조건으로 넣어 입까지 움직인다(자체 서버 전용).
 ///  - 인물 참조: 선택 인물(최대 3)의 대표사진을 레퍼런스로 정체성 유지 생성(FireRed 멀티).
 class _FrameGenSettings extends StatelessWidget {
   const _FrameGenSettings({required this.shot});
@@ -50,6 +51,15 @@ class _FrameGenSettings extends StatelessWidget {
                 desc: '사진 → 영상',
                 selected: mode == VideoMode.still,
                 onTap: () => p.setVideoMode(shot, VideoMode.still),
+              ),
+              const SizedBox(width: 8),
+              // IA2V — 시작 한 장 + **그 비트의 대사 음성**. 그 음성에 맞춰 입이 움직인다.
+              _VideoModeCard(
+                icon: Icons.record_voice_over_outlined,
+                title: 'IA2V',
+                desc: '음성에 입 맞춤',
+                selected: mode == VideoMode.ia2v,
+                onTap: () => p.setVideoMode(shot, VideoMode.ia2v),
               ),
             ],
           ),

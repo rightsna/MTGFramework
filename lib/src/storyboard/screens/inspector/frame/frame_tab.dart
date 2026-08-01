@@ -37,7 +37,7 @@ class _FrameTab extends StatelessWidget {
             shot: shot,
             mode: GenMode.imageStart,
           ),
-          // 끝 프레임은 FE2V에서만 쓴다 — I2V·스틸컷이면 숨긴다(파일은 남아 되돌리면 보인다).
+          // 끝 프레임은 FE2V에서만 쓴다 — I2V·스틸컷·IA2V면 숨긴다(파일은 남아 되돌리면 보인다).
           if (p.shotNeedsEndFrame(shot)) ...[
             const SizedBox(height: 16),
             _FrameSection(

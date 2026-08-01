@@ -21,16 +21,21 @@ enum GenMode {
 }
 
 /// service-api 접속 상태 스냅샷.
+/// 음성 조건 영상(IA2V) 워크플로 이름 — 서버(`service-api`)와 맞춰 둔 값.
+const kIa2vWorkflow = 'video-ltx-ia2v';
+
 class ApiStatus {
   const ApiStatus({
     required this.reachable,
     this.videoReady = false,
     this.audioReady = false,
+    this.ia2vReady = false,
   });
 
   final bool reachable; // /health 응답 여부
   final bool videoReady; // video-ltx 워크플로 설치됨(=/video 사용 가능)
   final bool audioReady; // bgm 워크플로 설치됨(=/bgm 사용 가능)
+  final bool ia2vReady; // video-ltx-ia2v 워크플로 설치됨(=음성 조건 생성 가능)
 
   factory ApiStatus.offline() => const ApiStatus(reachable: false);
 }
@@ -47,7 +52,7 @@ class ApiService {
     'ngrok-skip-browser-warning': 'true',
   };
 
-  /// 접속 상태 확인: /health 로 서버 도달 여부, /workflow/video-ltx 로 영상 워크플로 설치 여부.
+  /// 접속 상태 확인: /health 로 서버 도달 여부, /workflow/* 로 워크플로 설치 여부.
   Future<ApiStatus> checkStatus() async {
     bool reachable = false;
     try {
@@ -71,8 +76,20 @@ class ApiService {
           .timeout(const Duration(seconds: 3));
       audioReady = r.statusCode == 200;
     } catch (_) {}
+    // IA2V(음성에 입 맞추는 영상)는 별도 워크플로라 따로 본다.
+    bool ia2vReady = false;
+    try {
+      final r = await http
+          .get(Uri.parse('$_base/workflow/$kIa2vWorkflow'), headers: _ngrok)
+          .timeout(const Duration(seconds: 3));
+      ia2vReady = r.statusCode == 200;
+    } catch (_) {}
     return ApiStatus(
-        reachable: true, videoReady: videoReady, audioReady: audioReady);
+      reachable: true,
+      videoReady: videoReady,
+      audioReady: audioReady,
+      ia2vReady: ia2vReady,
+    );
   }
 
   /// 텍스트→이미지 (/image). 시작/끝 스크린샷 생성용.
@@ -153,6 +170,7 @@ class ApiService {
     required int width,
     required int height,
     required int seconds,
+    Uint8List? audio, // 있으면 IA2V — 이 음성에 맞춰 입이 움직인다
     void Function(String status)? onProgress,
   }) async {
     http.MultipartRequest buildReq() {
@@ -165,6 +183,12 @@ class ApiService {
         ..fields['seconds'] = '$seconds'
         ..files.add(
             http.MultipartFile.fromBytes('image', image, filename: 'start.png'));
+      // 음성을 주면 서버가 IA2V 워크플로로 간다(끝 프레임은 서버가 시작 프레임으로 물린다).
+      if (audio != null) {
+        r.fields['workflow'] = kIa2vWorkflow;
+        r.files.add(http.MultipartFile.fromBytes('audio', audio,
+            filename: 'voice.mp3'));
+      }
       // I2V면 끝 프레임을 아예 안 붙인다 — 서버가 그걸 보고 i2v 워크플로로 간다.
       if (endImage != null) {
         r.files.add(http.MultipartFile.fromBytes('image_end', endImage,

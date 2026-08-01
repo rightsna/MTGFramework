@@ -7,6 +7,7 @@ import '../../providers/storyboard_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/movie_settings.dart';
 import '../common/output_preview.dart';
+import '../common/video_play_dialog.dart';
 import '../common/voice_play_button.dart';
 import '../ui.dart';
 

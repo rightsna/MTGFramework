@@ -29,7 +29,7 @@ class _TrackTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            '기본 성우·배속은 **트랙마다 따로**입니다 — 트랙별로 다른 조건으로 뽑아 비교하세요.\n'
+            '해상도·기본 성우·배속은 **트랙마다 따로**입니다 — 트랙별로 다른 조건으로 뽑아 비교하세요.\n'
             '내보내기는 그 트랙의 영상에 대사 음성·효과음·배경음을 합쳐 하나의 mp4로 굽습니다.',
             style: TextStyle(fontSize: 11.5, color: Colors.white38, height: 1.45),
           ),
@@ -51,7 +51,7 @@ class _TrackTab extends StatelessWidget {
   }
 }
 
-/// 트랙 하나의 카드 — 머리말(이름·백엔드·진행도·내보내기) + 배속 + 기본 성우.
+/// 트랙 하나의 카드 — 머리말(이름·백엔드·진행도·내보내기) + 해상도 + 배속 + 기본 성우.
 class _TrackCard extends StatelessWidget {
   const _TrackCard({required this.track, required this.isBase});
 
@@ -108,6 +108,27 @@ class _TrackCard extends StatelessWidget {
           const SizedBox(height: 14),
           const Divider(height: 1, color: Color(0x14FFFFFF)),
           const SizedBox(height: 12),
+          _SectionLabel('영상 해상도'),
+          const SizedBox(height: 2),
+          const Text(
+            '이 트랙의 생성·스틸컷·내보내기 캔버스에 모두 걸립니다. '
+            'Veo 트랙이면 여기서 비율(세로/가로)과 720p/1080p를 유도합니다.',
+            style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final r in VideoRes.values)
+                ChoiceChip(
+                  label: Text(r.label, style: _chipLabel),
+                  selected: track.videoRes == r,
+                  onSelected: (_) => p.setVideoRes(r),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
           _SectionLabel('재생 배속'),
           const SizedBox(height: 2),
           const Text(

@@ -65,7 +65,7 @@ void main() {
     final out = '${tmp.path}/out.mp4';
     await VideoEdit.exportScene(
       beats: [
-        ExportBeat(clips: [clip1], voice: voice1, sfx: sfx1), // 0~1s
+        ExportBeat(clips: [clip1], voice: voice1, sfx: [(clipIndex: 0, path: sfx1)]), // 0~1s
         ExportBeat(clips: [clip2], voice: voice2), // 1~2s
       ],
       width: 128,
@@ -84,6 +84,31 @@ void main() {
         reason: '★ 효과음 비트 다음 대사(500Hz)가 살아 있어야 한다');
   }, skip: has ? null : 'ffmpeg 없음');
 
+  test('효과음은 **그 샷이 시작하는 자리**에서 난다 (비트 시작이 아니라)', () async {
+    // 한 비트에 클립 2개(각 1초). 효과음을 **두 번째 샷**에 달면 1초 뒤부터 들려야 한다.
+    final clip1 = await colorClip('c1', 1.0);
+    final clip2 = await colorClip('c2', 1.0);
+    final sfx2 = await tone('s2', 900, 0.6, 2);
+
+    final out = '${tmp.path}/offset.mp4';
+    await VideoEdit.exportScene(
+      beats: [
+        ExportBeat(
+          clips: [clip1, clip2],
+          sfx: [(clipIndex: 1, path: sfx2)], // 두 번째 샷의 효과음
+        ),
+      ],
+      width: 128,
+      height: 128,
+      outPath: out,
+    );
+
+    expect(await bandDb(out, 0.1, 0.7, 900), lessThan(-45),
+        reason: '★ 첫 샷 구간엔 아직 효과음이 없어야 한다');
+    expect(await bandDb(out, 1.1, 0.5, 900), greaterThan(-45),
+        reason: '★ 두 번째 샷이 시작하는 1초 지점부터 효과음이 들려야 한다');
+  }, skip: has ? null : 'ffmpeg 없음');
+
   test('2배속 — 길이가 절반이 되고 대사·효과음은 그대로 들린다', () async {
     final clip1 = await colorClip('c1', 1.0);
     final clip2 = await colorClip('c2', 1.0);
@@ -94,7 +119,7 @@ void main() {
     final out = '${tmp.path}/fast.mp4';
     await VideoEdit.exportScene(
       beats: [
-        ExportBeat(clips: [clip1], voice: voice1, sfx: sfx1),
+        ExportBeat(clips: [clip1], voice: voice1, sfx: [(clipIndex: 0, path: sfx1)]),
         ExportBeat(clips: [clip2], voice: voice2),
       ],
       width: 128,

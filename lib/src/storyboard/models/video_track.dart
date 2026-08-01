@@ -18,7 +18,13 @@ class VideoTrack {
   VideoBackend backend; // 이 트랙의 영상을 뽑을 백엔드 — 트랙을 가르는 기준
   List<DialogueBeat> beats; // 이 트랙의 비트들(기준 트랙과 개수·순서가 항상 같다)
 
-  // ── 생성 설정도 **트랙별**이다 — 트랙마다 다른 성우로 뽑아 비교한다(예전엔 씬 단위였다). ──
+  // ── 생성 설정도 **트랙별**이다 — 트랙마다 다른 성우·해상도로 뽑아 비교한다(예전엔 씬 단위였다). ──
+
+  /// 이 트랙의 **영상 해상도**. 생성(자체 서버)·스틸컷 굽기·내보내기 캔버스가 모두 이 값을 쓴다.
+  /// Veo 트랙이면 여기서 비율(세로/가로)과 720p/1080p를 유도한다([veoAspect]/[veoResolution]).
+  /// 트랙마다 다른 게 사실이다 — 백엔드가 트랙마다 다르니 뽑히는 크기도 트랙마다 다르다.
+  VideoRes videoRes;
+
   String defaultVoiceId; // 이 트랙의 기본 성우(내레이션·화자 미지정 대사용). 비면 미지정
   String defaultVoiceName; // 사람이 읽는 기본 성우 이름(라벨)
 
@@ -31,6 +37,7 @@ class VideoTrack {
     this.name = '',
     this.backend = VideoBackend.serviceApi,
     List<DialogueBeat>? beats,
+    this.videoRes = VideoRes.p352x640,
     this.defaultVoiceId = '',
     this.defaultVoiceName = '',
     this.speed = 1.0,
@@ -47,6 +54,7 @@ class VideoTrack {
         'id': id,
         'name': name,
         'backend': backend.name,
+        'res': {'video': videoRes.name},
         'voice': {'id': defaultVoiceId, 'name': defaultVoiceName},
         'speed': speed,
         'beats': beats.map((b) => b.toJson()).toList(),
@@ -54,6 +62,7 @@ class VideoTrack {
 
   /// [dir] = 프로젝트 폴더(미디어 파일명을 절대경로로 되살릴 기준).
   factory VideoTrack.fromJson(Map<String, dynamic> j, String dir) {
+    final res = (j['res'] as Map?)?.cast<String, dynamic>();
     final voice = (j['voice'] as Map?)?.cast<String, dynamic>();
     return VideoTrack(
       id: j['id'] as String,
@@ -61,6 +70,11 @@ class VideoTrack {
       backend: VideoBackend.values.firstWhere(
         (e) => e.name == j['backend'],
         orElse: () => VideoBackend.serviceApi,
+      ),
+      // 해상도가 없던 옛 트랙은 씬 값으로 시드된다([StoryScene.fromJson]).
+      videoRes: VideoRes.values.firstWhere(
+        (e) => e.name == res?['video'],
+        orElse: () => VideoRes.p352x640,
       ),
       defaultVoiceId: (voice?['id'] as String?) ?? '',
       defaultVoiceName: (voice?['name'] as String?) ?? '',

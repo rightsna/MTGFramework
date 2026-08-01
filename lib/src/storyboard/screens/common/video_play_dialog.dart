@@ -26,12 +26,12 @@ typedef PlaylistItem = ({
 });
 
 /// 영상을 크게 재생하는 팝업 — **씬의 영상들을 순서대로 이어서** 보며, 대사 음성·씬 배경음도
-/// 함께 튼다(완성본 미리보기). [startPath]에서 시작한다. 기본은 그 샷을 반복하고,
-/// "다음 영상 자동 재생"을 켜면 씬을 이어서 본다.
+/// 함께 튼다(완성본 미리보기). [startPath]가 있으면 그 영상에서, 없으면(=null)
+/// **씬 처음부터** 시작한다. 기본은 그 샷을 반복하고, "다음 영상 자동 재생"을 켜면 이어서 본다.
 Future<void> showVideoPlayDialog(
   BuildContext context, {
   required List<PlaylistItem> playlist,
-  required String startPath,
+  String? startPath,
   String? bgmPath,
   double speed = 1.0, // 트랙 배속 — 영상·대사·효과음이 함께 빨라진다(배경음은 등속)
 }) =>
@@ -49,12 +49,12 @@ Future<void> showVideoPlayDialog(
 class _VideoPlayDialog extends StatefulWidget {
   const _VideoPlayDialog({
     required this.playlist,
-    required this.startPath,
+    this.startPath,
     this.bgmPath,
     this.speed = 1.0,
   });
   final List<PlaylistItem> playlist;
-  final String startPath;
+  final String? startPath;
   final String? bgmPath;
   final double speed;
 
@@ -66,10 +66,10 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     with SingleTickerProviderStateMixin {
   VideoPlayerController? _ctrl; // 영상
   VideoPlayerController? _voice; // 현재 비트의 대사 음성(mp3)
-  VideoPlayerController? _sfx; // 현재 비트의 효과음(mp3)
+  VideoPlayerController? _sfx; // 현재 **샷**의 효과음(mp3)
   VideoPlayerController? _bgm; // 씬 배경음(mp3, 루프)
   String? _voiceBeatId; // 지금 음성이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
-  String? _sfxBeatId; // 지금 효과음이 걸린 비트 — 비트가 바뀔 때만 새로 튼다
+  // 효과음은 샷 단위라 항목이 바뀔 때마다 새로 튼다(비트 경계가 아니라).
 
   // 자막: 비트 시작부터 흐르는 시계(_beatElapsed)로 지금 보여줄 구간을 고른다. 재생 중일 때만 흐른다.
   late final Ticker _ticker;
@@ -108,7 +108,10 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
   @override
   void initState() {
     super.initState();
-    final i = _items.indexWhere((e) => e.path == widget.startPath);
+    // startPath가 없거나 목록에 없으면 처음부터.
+    final i = widget.startPath == null
+        ? -1
+        : _items.indexWhere((e) => e.path == widget.startPath);
     _index = i < 0 ? 0 : i;
     _ticker = createTicker(_onTicker)..start();
     _openBgm();
@@ -215,7 +218,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     if (_items.isEmpty) return;
 
     await _syncVoice(); // 비트가 바뀌면 이 지점에서 음성을 새로 튼다
-    await _syncSfx(); // 효과음도 비트 경계에서 새로 튼다
+    await _syncSfx(); // 효과음은 샷마다 새로 튼다
     _syncCaption(); // 자막 시계도 비트 경계에서 0으로
 
     final path = _items[_index].path;
@@ -295,12 +298,10 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     }
   }
 
-  /// 현재 비트의 효과음을 맞춘다 — 비트가 바뀔 때만 새로 튼다(같은 비트 이어지면 유지).
+  /// 현재 **샷**의 효과음을 맞춘다 — 항목이 바뀌면 그 샷 것으로 새로 튼다.
   /// 대사와 달리 **타임라인을 좌우하지 않는다**(진행 판단에 안 낀다) — 영상 위에 얹혀 재생만 된다.
   Future<void> _syncSfx() async {
     final it = _items[_index];
-    if (it.beatId == _sfxBeatId) return; // 같은 비트 — 효과음 유지
-    _sfxBeatId = it.beatId;
     final old = _sfx;
     _sfx = null;
     await old?.dispose();

@@ -20,7 +20,8 @@ class StoryScene {
   int bgmSeconds; // 배경음 길이(초)
   String note; // 씬 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
   ImageRes imageRes; // 이 씬의 프레임(시작·끝) 생성 해상도 — **씬별**
-  VideoRes videoRes; // 이 씬의 영상 생성 해상도 — **씬별**
+  // 영상 해상도는 **트랙별**로 옮겼다([VideoTrack.videoRes]) — 백엔드가 트랙마다 다르니
+  // 뽑히는 크기도 트랙마다 다른 게 사실이다.
 
   StoryScene({
     required this.id,
@@ -32,7 +33,6 @@ class StoryScene {
     this.bgmSeconds = 30,
     this.note = '',
     this.imageRes = ImageRes.p704x1280,
-    this.videoRes = VideoRes.p352x640,
   }) : tracks = (tracks == null || tracks.isEmpty)
             ? [VideoTrack(id: '${id}_track1', name: '트랙 1')]
             : tracks;
@@ -64,10 +64,7 @@ class StoryScene {
           'file': mediaName(bgmPath),
         },
         // 기본 성우는 트랙별로 옮겨 각 트랙 JSON에 적힌다(여기서 안 적는다).
-        'res': {
-          'image': imageRes.name,
-          'video': videoRes.name,
-        },
+        'res': {'image': imageRes.name}, // 영상 해상도는 각 트랙 JSON에 적힌다
         'note': note,
       };
 
@@ -75,55 +72,24 @@ class StoryScene {
   factory StoryScene.fromJson(Map<String, dynamic> j, String dir) {
     final bgm = (j['bgm'] as Map?)?.cast<String, dynamic>();
     final res = (j['res'] as Map?)?.cast<String, dynamic>();
-    final tracks = _readTracks(j, dir);
-
-    // 마이그레이션: 옛 파일은 기본 성우가 **씬 단위**였다. 그 값을 각 트랙에 시드한다
-    // (옛 동작 = 모든 트랙이 씬 값을 공유했으므로 모든 트랙에 넣는다). 트랙이 자기 값을 이미
-    // 가졌으면(새 형식) 건드리지 않는다. (옛 씬 단위 'lora'는 기능째 없어져 무시한다.)
-    final oldVoice = (j['voice'] as Map?)?.cast<String, dynamic>();
-    for (final t in tracks) {
-      if (oldVoice != null && t.defaultVoiceId.isEmpty) {
-        t.defaultVoiceId = (oldVoice['id'] as String?) ?? '';
-        t.defaultVoiceName = (oldVoice['name'] as String?) ?? '';
-      }
-    }
-
+    // 옛 형식(씬 단위 해상도·성우, 트랙 없던 시절의 dialogues) 마이그레이션은 없다 —
+    // 데이터를 새 형식으로 한 번에 옮기고 걷어냈다. 정본 스키마만 읽는다.
     return StoryScene(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
       commonPrompt: (j['commonPrompt'] as String?) ?? '',
-      tracks: tracks,
+      tracks: (j['tracks'] as List?)
+          ?.map((e) =>
+              VideoTrack.fromJson((e as Map).cast<String, dynamic>(), dir))
+          .toList(),
       bgmPrompt: (bgm?['prompt'] as String?) ?? '',
       bgmPath: mediaPath(dir, bgm?['file']),
       bgmSeconds: (bgm?['seconds'] as int?) ?? 30,
       note: (j['note'] as String?) ?? '',
-      // 해상도 없던 옛 데이터는 기본값(704×1280 / 352×640).
       imageRes: ImageRes.values.firstWhere(
         (e) => e.name == res?['image'],
         orElse: () => ImageRes.p704x1280,
       ),
-      videoRes: VideoRes.values.firstWhere(
-        (e) => e.name == res?['video'],
-        orElse: () => VideoRes.p352x640,
-      ),
     );
-  }
-
-  /// 트랙 읽기 — 트랙이 없던 시절의 파일(`dialogues`)은 그 비트들을 **기준 트랙 하나**로 읽는다.
-  static List<VideoTrack> _readTracks(Map<String, dynamic> j, String dir) {
-    final tracks = (j['tracks'] as List?)
-        ?.map((e) => VideoTrack.fromJson((e as Map).cast<String, dynamic>(), dir))
-        .toList();
-    if (tracks != null && tracks.isNotEmpty) return tracks;
-    return [
-      VideoTrack(
-        id: '${j['id']}_track1',
-        name: '트랙 1',
-        beats: ((j['dialogues'] as List?) ?? const [])
-            .map((e) =>
-                DialogueBeat.fromJson((e as Map).cast<String, dynamic>(), dir))
-            .toList(),
-      ),
-    ];
   }
 }

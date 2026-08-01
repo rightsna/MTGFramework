@@ -2,7 +2,7 @@ part of '../inspector_panel.dart';
 
 /// 영상 탭 관련 위젯 — 샷의 영상 생성과 그 설정(길이).
 
-/// 영상 탭(샷): 설정(해상도) + 영상.
+/// 영상 탭(샷): 영상 + 길이·프롬프트 + **효과음**(샷 단위).
 class _VideoTab extends StatelessWidget {
   const _VideoTab({required this.shot});
 
@@ -13,7 +13,9 @@ class _VideoTab extends StatelessWidget {
     final p = StoryboardScope.of(context);
     final c = shot;
     // 파생 샷도 영상은 늘 자기 것이고, 프롬프트·길이는 고치면 그것만 이 트랙 것으로 오버라이드된다.
-    final isStill = p.shotVideoMode(c) == VideoMode.still;
+    final mode = p.shotVideoMode(c);
+    final isStill = mode == VideoMode.still;
+    final isIa2v = mode == VideoMode.ia2v;
     final vBusyKey = p.busyKey(c.id, GenMode.videoLow);
     // busy(생성 중) 여부는 프로바이더가 중앙 관리한다 — 자체 서버 job이 오프라인이면 리컨실러가
     // busy를 내려서 여기 포함 모든 곳의 스피너가 사라진다. 그래서 여기선 그냥 isBusy만 본다.
@@ -80,6 +82,16 @@ class _VideoTab extends StatelessWidget {
                       ),
                       const SizedBox(height: 14),
                     ],
+                    if (isIa2v) ...[
+                      const SizedBox(height: 4),
+                      const Text(
+                        '이 비트의 대사 음성을 조건으로 넣습니다 — 길이는 음성에 맞추세요. '
+                        '끝 프레임은 서버가 시작 프레임으로 물려 구도를 잡습니다.',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.white38, height: 1.4),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     // 스틸컷은 0.1초 단위, AI 방식은 1초 단위 — 값은 하나(videoSeconds).
                     _SectionLabel(
                         isStill ? '길이 (초 · 0.1 단위)' : '길이 (초 · 이 샷)'),
@@ -109,6 +121,19 @@ class _VideoTab extends StatelessWidget {
                         ),
                       ],
                     ],
+                  )
+                else if (isIa2v)
+                  // IA2V — 자체 서버 전용(Veo엔 음성 입력이 없다). 그 비트의 대사 음성이
+                  // 조건이라 음성이 없으면 여기서 막고 무엇이 없는지 말해 준다.
+                  _GenButton(
+                    label: '자체 서버로 생성 (음성에 입 맞춤)',
+                    icon: Icons.record_voice_over_outlined,
+                    busyKey: p.busyKey(c.id, GenMode.videoLow),
+                    onGen: () => p.gen(c, GenMode.videoLow,
+                        backend: VideoBackend.serviceApi),
+                    enabled: p.ia2vReady && p.ia2vVoicePathOf(c) != null,
+                    disabledHint: p.ia2vBlockReason ??
+                        '이 비트의 대사 음성을 먼저 만들어 주세요 (비트 탭)',
                   )
                 else if (isStill)
                   // 스틸컷은 AI가 아니라 로컬 ffmpeg — 백엔드 선택 없이 버튼 하나.
@@ -147,7 +172,10 @@ class _VideoTab extends StatelessWidget {
               ],
             ),
           ),
-          // 해상도는 씬 단위라 씬 탭의 '생성 설정'으로 옮겼다.
+          const SizedBox(height: 16),
+          // 효과음 — **샷 단위**다. 소리가 나야 할 자리는 대사 전체가 아니라 이 컷이라
+          // 영상 바로 아래에 둔다(비트 탭에서 옮겨 왔다).
+          _SfxEditor(key: ValueKey('sfx_${c.id}'), shot: c),
         ],
       ),
     );

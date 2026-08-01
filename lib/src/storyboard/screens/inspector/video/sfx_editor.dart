@@ -1,11 +1,12 @@
 part of '../inspector_panel.dart';
 
 /// 효과음(SFX) 편집 — 소리 묘사 + 길이·충실도 + 생성/불러오기. 대사와 달리 **화자가 없다**.
-/// 효과음은 트랙끼리 공유(기준 비트 소유)라 어느 트랙에서 편집하든 같이 바뀐다.
+/// 효과음은 **샷**에 붙는다(대사 전체가 아니라 소리가 나야 할 컷에). 트랙끼리 공유
+/// (기준 샷 소유)라 어느 트랙에서 편집하든 같이 바뀐다.
 class _SfxEditor extends StatefulWidget {
-  const _SfxEditor({super.key, required this.beat});
+  const _SfxEditor({super.key, required this.shot});
 
-  final DialogueBeat beat;
+  final Shot shot;
 
   @override
   State<_SfxEditor> createState() => _SfxEditorState();
@@ -13,13 +14,13 @@ class _SfxEditor extends StatefulWidget {
 
 class _SfxEditorState extends State<_SfxEditor> {
   late final TextEditingController _prompt = TextEditingController(
-    text: StoryboardScope.read(context).sfxOf(widget.beat)?.prompt ?? '',
+    text: StoryboardScope.read(context).sfxOf(widget.shot)?.prompt ?? '',
   );
   late double _dur =
-      (StoryboardScope.read(context).sfxOf(widget.beat)?.durationSeconds ?? 2.0)
+      (StoryboardScope.read(context).sfxOf(widget.shot)?.durationSeconds ?? 2.0)
           .clamp(0.5, 22);
   late double _infl =
-      (StoryboardScope.read(context).sfxOf(widget.beat)?.promptInfluence ?? 0.3)
+      (StoryboardScope.read(context).sfxOf(widget.shot)?.promptInfluence ?? 0.3)
           .clamp(0.0, 1.0);
   bool _genning = false;
 
@@ -32,8 +33,8 @@ class _SfxEditorState extends State<_SfxEditor> {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final beat = widget.beat;
-    final has = p.hasSfx(beat);
+    final shot = widget.shot;
+    final has = p.hasSfx(shot);
     final canGen = p.voiceReady && _prompt.text.trim().isNotEmpty;
 
     return _GroupCard(
@@ -57,7 +58,7 @@ class _SfxEditorState extends State<_SfxEditor> {
               border: OutlineInputBorder(),
             ),
             onChanged: (v) {
-              p.setSfxPrompt(beat, v);
+              p.setSfxPrompt(shot, v);
               setState(() {}); // 생성 버튼 활성 갱신
             },
           ),
@@ -84,7 +85,7 @@ class _SfxEditorState extends State<_SfxEditor> {
             divisions: 215, // 0.1초 단위
             label: '${_dur.toStringAsFixed(1)}초',
             onChanged: (v) => setState(() => _dur = v),
-            onChangeEnd: (v) => p.setSfxDuration(beat, v),
+            onChangeEnd: (v) => p.setSfxDuration(shot, v),
           ),
           // 프롬프트 충실도(0~1) — 높을수록 묘사에 충실, 낮을수록 다양.
           Row(
@@ -103,7 +104,7 @@ class _SfxEditorState extends State<_SfxEditor> {
             divisions: 20,
             label: _infl.toStringAsFixed(2),
             onChanged: (v) => setState(() => _infl = v),
-            onChangeEnd: (v) => p.setSfxInfluence(beat, v),
+            onChangeEnd: (v) => p.setSfxInfluence(shot, v),
           ),
           const SizedBox(height: 8),
           const Divider(height: 1),
@@ -111,10 +112,10 @@ class _SfxEditorState extends State<_SfxEditor> {
           _SectionLabel('효과음'),
           const SizedBox(height: 6),
           AudioBox(
-            path: p.sfxPathOf(beat),
+            path: p.sfxPathOf(shot),
             emptyText: '효과음 없음 — 불러오거나 생성하세요',
-            busy: _genning || p.isBusy(p.sfxBusyKey(beat.id)),
-            version: p.verOf(p.sfxBusyKey(beat.id)),
+            busy: _genning || p.isBusy(p.sfxBusyKey(shot.id)),
+            version: p.verOf(p.sfxBusyKey(shot.id)),
             extraActions: [
               if (has)
                 IconButton(
@@ -122,14 +123,14 @@ class _SfxEditorState extends State<_SfxEditor> {
                   visualDensity: VisualDensity.compact,
                   iconSize: 16,
                   color: Colors.redAccent,
-                  onPressed: () => p.clearSfxSound(beat),
+                  onPressed: () => p.clearSfxSound(shot),
                   icon: const Icon(Icons.delete_outline),
                 ),
             ],
           ),
           const SizedBox(height: 10),
           FilledButton.icon(
-            onPressed: _genning ? null : () => p.loadSfx(beat),
+            onPressed: _genning ? null : () => p.loadSfx(shot),
             icon: const Icon(Icons.audio_file_outlined, size: 18),
             label: Text(has ? '다른 파일 불러오기' : '오디오 파일 불러오기'),
           ),
@@ -162,7 +163,7 @@ class _SfxEditorState extends State<_SfxEditor> {
                 ? null
                 : () async {
                     setState(() => _genning = true);
-                    await p.genSfx(beat);
+                    await p.genSfx(shot);
                     if (mounted) setState(() => _genning = false);
                   },
             icon: _genning

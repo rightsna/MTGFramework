@@ -20,26 +20,6 @@ enum VideoBackend {
 /// Storyboard Maker settings: 영상 백엔드 옵션 + 키/URL.
 /// 스크린샷(이미지)은 자체 서버(service-api)로만 만든다 — Gemini/OpenAI 이미지 생성은 제거됨.
 /// [geminiKey]는 이제 Veo 전용.
-/// 영상 비율(Veo 옵션).
-enum VideoAspect {
-  landscape('16:9', '16:9 (가로)'),
-  portrait('9:16', '9:16 (세로)');
-
-  const VideoAspect(this.value, this.label);
-  final String value; // API에 보내는 값
-  final String label;
-}
-
-/// 영상 해상도(Veo 옵션). 길이는 설정이 아니라 **샷마다** 정한다(Veo는 4·6·8초로 스냅).
-enum VideoResolution {
-  hd720('720p', '720p'),
-  hd1080('1080p', '1080p');
-
-  const VideoResolution(this.value, this.label);
-  final String value;
-  final String label;
-}
-
 /// 자체 서버 스크린샷(시작·끝 프레임) 생성 해상도 — 비율(세로/가로)까지 한 값에 통합.
 /// 8의 배수여야 한다(서버 /image 제약). FE2V 입력이라 **영상과 비율을 맞추는 게 기본**이고,
 /// 큰 쪽(1088×1984)은 같은 비율로 더 선명하게 뽑는 용도 — 영상 워크플로가 어차피 긴 변을
@@ -69,6 +49,16 @@ enum VideoRes {
   final int width;
   final int height;
   final String label;
+
+  /// Veo에 보낼 비율 — 트랙 해상도의 방향에서 유도한다(설정을 따로 두지 않는다:
+  /// 해상도를 트랙에서 고르는데 비율만 전역이면 둘이 엇갈린다).
+  String get veoAspect => width >= height ? '16:9' : '9:16';
+
+  /// Veo에 보낼 해상도 티어 — 긴 변이 720을 넘으면 1080p, 아니면 720p.
+  /// (Veo는 임의 크기를 못 받는다. 길이는 여전히 **샷마다** 정한다 — 4·6·8초로 스냅.)
+  String get veoResolution => (width > height ? width : height) > 720
+      ? '1080p'
+      : '720p';
 }
 
 /// videoRes 읽기 — 신 키(videoRes) 우선, 없으면 구버전(videoResTier + videoOrientation) 합성.
@@ -108,8 +98,6 @@ class MovieSettings {
   final ImageRes imageRes; // 스크린샷(시작·끝 프레임) 생성 해상도(비율 포함)
   final VideoBackend videoBackend;
   final String veoModel; // Veo 모델 id (3.1 / Fast / Lite)
-  final VideoAspect videoAspect;
-  final VideoResolution videoResolution;
   final VideoRes videoRes; // 자체 서버 FE2V 생성 해상도(비율 포함, 4종)
   final int videoSeconds; // 자체 서버 FE2V 영상 길이(초, 1~15)
   final int inspectorTab; // 인스펙터 마지막 선택 탭(0=비트,1=장면,2=영상,3=씬,4=배경음)
@@ -128,8 +116,6 @@ class MovieSettings {
     this.imageRes = ImageRes.p704x1280,
     this.videoBackend = VideoBackend.serviceApi,
     this.veoModel = 'veo-3.1-generate-preview',
-    this.videoAspect = VideoAspect.landscape,
-    this.videoResolution = VideoResolution.hd720,
     this.videoRes = VideoRes.p352x640,
     this.videoSeconds = 5,
     this.inspectorTab = 0,
@@ -145,8 +131,6 @@ class MovieSettings {
     ImageRes? imageRes,
     VideoBackend? videoBackend,
     String? veoModel,
-    VideoAspect? videoAspect,
-    VideoResolution? videoResolution,
     VideoRes? videoRes,
     int? videoSeconds,
     int? inspectorTab,
@@ -160,8 +144,6 @@ class MovieSettings {
     imageRes: imageRes ?? this.imageRes,
     videoBackend: videoBackend ?? this.videoBackend,
     veoModel: veoModel ?? this.veoModel,
-    videoAspect: videoAspect ?? this.videoAspect,
-    videoResolution: videoResolution ?? this.videoResolution,
     videoRes: videoRes ?? this.videoRes,
     videoSeconds: videoSeconds ?? this.videoSeconds,
     inspectorTab: inspectorTab ?? this.inspectorTab,
@@ -177,8 +159,6 @@ class MovieSettings {
     'imageRes': imageRes.name,
     'videoBackend': videoBackend.name,
     'veoModel': veoModel,
-    'videoAspect': videoAspect.name,
-    'videoResolution': videoResolution.name,
     'videoRes': videoRes.name,
     'videoSeconds': videoSeconds,
     'inspectorTab': inspectorTab,
@@ -200,14 +180,6 @@ class MovieSettings {
       orElse: () => VideoBackend.serviceApi,
     ),
     veoModel: (j['veoModel'] as String?) ?? 'veo-3.1-generate-preview',
-    videoAspect: VideoAspect.values.firstWhere(
-      (e) => e.name == j['videoAspect'],
-      orElse: () => VideoAspect.landscape,
-    ),
-    videoResolution: VideoResolution.values.firstWhere(
-      (e) => e.name == j['videoResolution'],
-      orElse: () => VideoResolution.hd720,
-    ),
     videoRes: _readVideoRes(j),
     videoSeconds: (j['videoSeconds'] as int?) ?? 5,
     inspectorTab: (j['inspectorTab'] as int?) ?? 0,

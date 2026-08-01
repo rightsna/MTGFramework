@@ -119,7 +119,7 @@ void main() {
     p.setShotDialogueText(baseBeat, '원래 대사');
     p.setShotDialogueSpeaker(baseBeat, null); // 내레이션
     p.titleCtrl(baseBeat.id).text = '원래 제목';
-    p.setSfxPrompt(baseBeat, '천둥소리');
+    p.setSfxPrompt(baseBeat.shots.first, '천둥소리'); // 효과음은 샷 단위
     await p.save();
 
     await p.addTrack();
@@ -129,20 +129,20 @@ void main() {
     p.setShotDialogueSpeaker(derivedBeat, 'char_kim'); // ← 유저가 발견한 그 버그
     p.setShotDialogueText(derivedBeat, '다른 대사');
     p.titleCtrl(derivedBeat.id).text = '다른 제목';
-    p.setSfxPrompt(derivedBeat, '빗소리');
+    p.setSfxPrompt(derivedBeat.shots.first, '빗소리');
     await p.save();
 
     // 트랙 1(기준)은 하나도 안 바뀐다.
     expect(baseBeat.dialogue?.text, '원래 대사');
     expect(baseBeat.dialogue?.speakerId, isNull, reason: '★ 화자가 트랙1로 새지 않는다');
     expect(baseBeat.title, '원래 제목');
-    expect(baseBeat.sfx?.prompt, '천둥소리');
+    expect(baseBeat.shots.first.sfx?.prompt, '천둥소리');
 
     // 트랙 2는 자기 것으로 바뀐다.
     expect(p.beatScript(derivedBeat)?.speakerId, 'char_kim');
     expect(p.beatScript(derivedBeat)?.text, '다른 대사');
     expect(p.beatTitle(derivedBeat), '다른 제목');
-    expect(p.sfxOf(derivedBeat)?.prompt, '빗소리');
+    expect(p.sfxOf(derivedBeat.shots.first)?.prompt, '빗소리');
   });
 
   test('기준 트랙에서 고치면 상속 중인 파생 샷 읽기값·편집칸이 따라온다', () async {

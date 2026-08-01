@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math' as math;
 
 import '../models/shot.dart' show StillEffect;
@@ -127,6 +128,32 @@ class VideoEdit {
     }
     await tmp.rename(path);
     return (last - first + 1) / fps;
+  }
+
+  /// [videoPath]의 **마지막 프레임**을 PNG 바이트로 뽑는다. 실패하면 예외.
+  ///
+  /// `-sseof -1`로 끝 1초만 열고 `-update 1`로 프레임을 계속 덮어쓰면, 남는 파일이 곧
+  /// 마지막 프레임이다(짧은 클립에서도 안전 — 열린 구간의 마지막을 쓰게 된다).
+  static Future<Uint8List> lastFrame(String videoPath) async {
+    final ffmpeg = toolPath('ffmpeg');
+    if (ffmpeg == null) throw Exception(missingHint);
+    final out = '$videoPath.lastframe.png';
+    final r = await Process.run(ffmpeg, [
+      '-y',
+      '-sseof', '-1',
+      '-i', videoPath,
+      '-update', '1',
+      out,
+    ]);
+    final f = File(out);
+    if (r.exitCode != 0 || !await f.exists()) {
+      if (await f.exists()) await f.delete();
+      throw Exception(
+          'ffmpeg: ${(r.stderr as String).trim().split('\n').last}');
+    }
+    final bytes = await f.readAsBytes();
+    await f.delete();
+    return bytes;
   }
 
   /// 사진 한 장([image])을 [seconds]초짜리 영상([outPath])으로 만든다 — **스틸컷**(AI 없이).
@@ -409,10 +436,12 @@ class VideoEdit {
     String? assPath, // 자막 ASS 경로(없으면 null)
     double speed, // 재생 배속(1.0=등속)
   ) async {
-    var dv = 0.0; // 영상 길이 합
+    // 클립별 길이 — 합(비트 길이)과 **효과음 오프셋**(그 앞 클립들의 합)에 쓴다.
+    final clipDur = <double>[];
     for (final c in b.clips) {
-      dv += await _mediaDuration(c);
+      clipDur.add(await _mediaDuration(c));
     }
+    final dv = clipDur.fold(0.0, (a, d) => a + d); // 영상 길이 합
     final voiceDur = b.voice == null ? 0.0 : await _mediaDuration(b.voice!);
     final beatDur = math.max(dv, voiceDur); // 긴 쪽 기준(원본 속도 기준)
     final durStr = beatDur.toStringAsFixed(3);
@@ -428,8 +457,15 @@ class VideoEdit {
     }
     final voiceIdx = b.voice == null ? -1 : b.clips.length;
     if (b.voice != null) args.addAll(['-i', b.voice!]);
-    final sfxIdx = b.sfx == null ? -1 : (voiceIdx >= 0 ? voiceIdx + 1 : b.clips.length);
-    if (b.sfx != null) args.addAll(['-i', b.sfx!]);
+    // 효과음들 — 입력 순서대로 인덱스를 매기고, 시작 오프셋(초)을 함께 들고 간다.
+    final sfxInputs = <({int idx, double at})>[];
+    for (final s in b.sfx) {
+      final at = clipDur
+          .take(s.clipIndex.clamp(0, clipDur.length))
+          .fold(0.0, (a, d) => a + d);
+      sfxInputs.add((idx: args.where((a) => a == '-i').length, at: at));
+      args.addAll(['-i', s.path]);
+    }
 
     final fc = StringBuffer();
     // 영상: 각 클립을 규격에 맞춰 스케일·패딩 후 이어붙인다.
@@ -467,10 +503,14 @@ class VideoEdit {
           'asetpts=PTS-STARTPTS[av];');
       aparts.add('[av]');
     }
-    if (sfxIdx >= 0) {
-      fc.write('[$sfxIdx:a]$aFmt,apad,atrim=0:$durStr,'
-          'asetpts=PTS-STARTPTS[as];');
-      aparts.add('[as]');
+    // 효과음은 **자기 샷이 시작하는 시각**에 얹는다(adelay). 비트 시작이 아니다.
+    for (var i = 0; i < sfxInputs.length; i++) {
+      final s = sfxInputs[i];
+      final delayMs = (s.at * 1000).round();
+      fc.write('[${s.idx}:a]$aFmt'
+          '${delayMs > 0 ? ',adelay=$delayMs:all=1' : ''},'
+          'apad,atrim=0:$durStr,asetpts=PTS-STARTPTS[as$i];');
+      aparts.add('[as$i]');
     }
     if (aparts.isEmpty) {
       fc.write('anullsrc=r=48000:cl=stereo,atrim=0:$durStr[am];');
@@ -532,12 +572,20 @@ class VideoEdit {
 
 /// [VideoEdit.exportScene]에 넘기는 비트 하나 — 영상 클립들 + (있으면)대사 음성·효과음·자막.
 class ExportBeat {
-  const ExportBeat({required this.clips, this.voice, this.sfx, this.caption});
+  const ExportBeat({
+    required this.clips,
+    this.voice,
+    this.sfx = const [],
+    this.caption,
+  });
 
   /// 이 비트의 영상들(순서대로) — 최소 1개. 없으면 이 비트는 내보내기에서 빠진다.
   final List<String> clips;
   final String? voice; // 대사 음성(mp3)
-  final String? sfx; // 효과음(mp3)
+
+  /// 효과음들 — **샷 단위**라 어느 클립에서 시작하는지([clipIndex])를 함께 갖는다.
+  /// 시작 시각은 그 앞 클립들의 실제 길이 합이다(굽는 쪽에서 잰다).
+  final List<({int clipIndex, String path})> sfx;
   final ExportCaption? caption; // 자막(시간순 구간 + 위치) — 영상 위에 구워 넣는다
 }
 

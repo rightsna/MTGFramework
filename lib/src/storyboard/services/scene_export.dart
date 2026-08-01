@@ -6,6 +6,7 @@ import '../models/sfx.dart';
 import '../models/shot.dart';
 import '../models/story_scene.dart';
 import '../models/video_track.dart';
+import 'movie_settings.dart'; // VideoRes
 import 'video_edit.dart';
 
 /// 씬 하나 안에서 **트랙 상속을 해석**하는 순수 Dart 리졸버.
@@ -64,16 +65,21 @@ class SceneResolver {
   /// 이 비트 자리에 **들리는** 대사 음성 — 자기 것 우선, 없으면 기준 트랙 것 상속.
   String? voicePathOf(DialogueBeat b) => b.resolvedVoicePath(baseBeatOf(b));
 
-  Sfx? sfxOf(DialogueBeat b) => b.resolvedSfx(baseBeatOf(b));
-  String? sfxPathOf(DialogueBeat b) => sfxOf(b)?.path;
+  /// 효과음은 **샷 단위**다(비트가 아니라). 기준 샷 것을 상속하되 파생이 손대면 그것.
+  Sfx? sfxOf(Shot s) => s.resolvedSfx(baseShotOf(s));
+  String? sfxPathOf(Shot s) => sfxOf(s)?.path;
   Caption? captionOf(DialogueBeat b) => b.resolvedCaption(baseBeatOf(b));
 
   double shotVideoSeconds(Shot s) => s.resolvedVideoSeconds(baseShotOf(s));
+
+  /// 이 샷의 영상 해상도 — **트랙 단위**다(생성·스틸컷·내보내기 캔버스가 같은 값을 쓴다).
+  /// 트랙을 못 찾으면 기준 트랙 값으로 떨어진다.
+  VideoRes videoResOf(Shot s) =>
+      (trackOf(s) ?? scene.baseTrack).videoRes;
   VideoMode shotVideoMode(Shot s) => s.resolvedVideoMode(baseShotOf(s));
   StillEffect shotStillEffect(Shot s) => s.resolvedStillEffect(baseShotOf(s));
   String? shotStartImage(Shot s) => s.resolvedStartImage(baseShotOf(s));
   String? shotEndImage(Shot s) => s.resolvedEndImage(baseShotOf(s));
-  bool shotLinkStart(Shot s) => s.resolvedLinkStart(baseShotOf(s));
   String shotTitle(Shot s) => s.resolvedTitle(baseShotOf(s));
   String beatTitle(DialogueBeat b) => b.resolvedTitle(baseBeatOf(b));
 
@@ -86,14 +92,9 @@ class SceneResolver {
     return i <= 0 ? null : all[i - 1];
   }
 
-  /// 이 샷의 시작 프레임 — **연동 중이면 앞 샷의 끝 프레임 그 자체**.
-  String? startPathOf(Shot shot) {
-    if (shotLinkStart(shot)) {
-      final prev = prevShotOf(shot);
-      return prev == null ? null : shotEndImage(prev);
-    }
-    return shotStartImage(shot);
-  }
+  /// 이 샷의 시작 프레임. (앞 샷에서 가져오는 건 한 번짜리 동작이라 여기서 볼 게 없다 —
+  /// 가져온 순간 이 샷의 자기 파일이 된다.)
+  String? startPathOf(Shot shot) => shotStartImage(shot);
 
   // ───────── 트랙 단위 상태 ─────────
 
@@ -296,10 +297,18 @@ class SceneExporter {
     for (final beat in track.beats) {
       // 자리 해석은 리졸버 하나로 — 미리보기가 세운 것과 같은 자리를 본다.
       // (영상 없는 자리는 굽지 못하니 여기선 빠진다. 미리보기는 시작 프레임으로 세운다.)
-      final clips = <String>[
-        for (final slot in beat.shots.map((s) => r.slotOf(beat, s)))
-          if (slot.videoPath != null) slot.videoPath!,
-      ];
+      final clips = <String>[];
+      // 효과음은 **샷 단위**라 "몇 번째 클립에서 시작하는지"를 함께 넘긴다 —
+      // 그 자리까지의 클립 길이 합이 비트 안 오프셋이 된다(길이 실측은 굽는 쪽에서).
+      final sfx = <({int clipIndex, String path})>[];
+      for (final slot in beat.shots.map((s) => r.slotOf(beat, s))) {
+        if (slot.videoPath == null) continue; // 영상 없는 자리는 못 굽는다
+        final sp = r.sfxPathOf(slot.shot);
+        if (SceneResolver.hasFile(sp)) {
+          sfx.add((clipIndex: clips.length, path: sp!));
+        }
+        clips.add(slot.videoPath!);
+      }
       if (clips.isEmpty) {
         skipped++;
         continue;
@@ -316,11 +325,10 @@ class SceneExporter {
                 )
               : null;
       final voice = r.voicePathOf(beat);
-      final sfx = r.sfxPathOf(beat);
       beats.add(ExportBeat(
         clips: clips,
         voice: SceneResolver.hasFile(voice) ? voice : null,
-        sfx: SceneResolver.hasFile(sfx) ? sfx : null,
+        sfx: sfx,
         caption: expCap,
       ));
     }
@@ -335,8 +343,8 @@ class SceneExporter {
     await VideoEdit.exportScene(
       beats: beats,
       bgm: SceneResolver.hasFile(scene.bgmPath) ? scene.bgmPath : null,
-      width: scene.videoRes.width,
-      height: scene.videoRes.height,
+      width: track.videoRes.width, // 캔버스는 **그 트랙**의 해상도
+      height: track.videoRes.height,
       outPath: outPath,
       speed: speed ?? track.speed,
     );
@@ -369,8 +377,8 @@ class SceneExporter {
       outPath: out,
       seconds: r.shotVideoSeconds(shot), // 0.1초 단위 그대로(상속/오버라이드 해석)
       effect: r.shotStillEffect(shot),
-      width: scene.videoRes.width, // 씬 단위 해상도
-      height: scene.videoRes.height,
+      width: r.videoResOf(shot).width, // 트랙 단위 해상도
+      height: r.videoResOf(shot).height,
     );
     final f = File(out);
     await onFileWritten?.call(f);
