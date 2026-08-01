@@ -18,10 +18,18 @@ import 'package:framework/src/storyboard/services/scene_export.dart';
 import 'package:framework/src/storyboard/services/storyboard_store.dart';
 import 'package:framework/src/storyboard/services/video_edit.dart';
 
-/// 프로젝트 루트 — 스토리보드 메이커가 쓰는 그 폴더(ProjectStore.rootFolderName).
+/// 프로젝트 루트 — **앱이 실제로 쓰는 폴더**를 그대로 따라간다.
+/// 앱은 루트를 바꿀 수 있고(외장 디스크·동기화 폴더) 그 값을 `project_root.txt` 에 적어 둔다.
+/// 그걸 안 읽으면 루트를 옮긴 순간 CLI만 옛 폴더를 보게 되어 "프로젝트가 없다"고 나온다.
 String defaultRoot() {
   final home = Platform.environment['HOME'] ?? '';
-  return '$home/Documents/StoryboardMaker';
+  final pref = File(
+      '$home/Library/Application Support/com.mtg.storyboardMaker/project_root.txt');
+  if (pref.existsSync()) {
+    final saved = pref.readAsStringSync().trim();
+    if (saved.isNotEmpty && Directory(saved).existsSync()) return saved;
+  }
+  return '$home/Documents/StoryboardMaker'; // 설정 전이면 앱 기본값과 같은 자리
 }
 
 const _usage = '''
@@ -33,7 +41,7 @@ const _usage = '''
   --track <번호|이름>       트랙 지정(1부터). 생략하면 1(기준 트랙)
   --out <경로.mp4>          저장 위치. 생략하면 ~/Downloads/<씬 제목> - <트랙 이름>.mp4
   --speed <1.0~2.0>         이번 내보내기만 이 배속으로(트랙 설정은 안 건드린다)
-  --root <경로>             프로젝트 루트 폴더(기본 ~/Documents/StoryboardMaker)
+  --root <경로>             프로젝트 루트 폴더(생략하면 앱이 쓰는 루트를 그대로 따라간다)
   --json                    결과를 JSON 한 줄로(기계 판독용)
 ''';
 
