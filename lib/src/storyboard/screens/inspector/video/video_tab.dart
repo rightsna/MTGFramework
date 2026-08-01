@@ -2,7 +2,7 @@ part of '../inspector_panel.dart';
 
 /// 영상 탭 관련 위젯 — 샷의 영상 생성과 그 설정(길이).
 
-/// 영상 탭(샷): 설정(해상도·LoRA) + 영상.
+/// 영상 탭(샷): 설정(해상도) + 영상.
 class _VideoTab extends StatelessWidget {
   const _VideoTab({required this.shot});
 
@@ -147,7 +147,7 @@ class _VideoTab extends StatelessWidget {
               ],
             ),
           ),
-          // 해상도·LoRA는 씬 단위라 씬 탭의 '생성 설정'으로 옮겼다.
+          // 해상도는 씬 단위라 씬 탭의 '생성 설정'으로 옮겼다.
         ],
       ),
     );

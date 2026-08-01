@@ -4,7 +4,6 @@ import 'package:framework/framework.dart';
 import '../../services/api_service.dart';
 import '../../services/movie_settings_store.dart';
 import '../ui.dart';
-import 'lora_manager.dart';
 
 /// 호스트 앱이 설정 팝업에 끼워 넣는 그룹 — 예: 프로젝트 목록 앱의 '프로젝트 폴더'.
 /// 킷은 왼쪽 목록에 자리만 내어 주고, 내용과 **저장은 앱이 갖는다**(킷 설정은 키·서버·음성
@@ -62,9 +61,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   late final TextEditingController _geminiCtrl = TextEditingController(
     text: _s.geminiKey,
   );
-  late final TextEditingController _civitaiCtrl = TextEditingController(
-    text: _s.civitaiToken,
-  );
   late final TextEditingController _elevenCtrl = TextEditingController(
     text: _s.elevenKey,
   );
@@ -103,7 +99,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   @override
   void dispose() {
     _geminiCtrl.dispose();
-    _civitaiCtrl.dispose();
     _elevenCtrl.dispose();
     _urlCtrl.dispose();
     super.dispose();
@@ -113,7 +108,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     widget.store.save(
       _s.copyWith(
         geminiKey: _geminiCtrl.text.trim(),
-        civitaiToken: _civitaiCtrl.text.trim(),
         elevenKey: _elevenCtrl.text.trim(),
         serviceApiUrl: _urlCtrl.text.trim(),
       ),
@@ -171,7 +165,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       label: '영상 · Veo',
       desc: 'Veo로 생성할 때 쓰는 키와 옵션',
     ),
-    (icon: Icons.dns_outlined, label: '자체 서버', desc: '스크린샷·영상 생성 서버 · LoRA'),
+    (icon: Icons.dns_outlined, label: '자체 서버', desc: '스크린샷·영상 생성 서버'),
     (
       icon: Icons.record_voice_over_outlined,
       label: '대사 음성',
@@ -464,32 +458,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           '직접 넣으면 그 주소로 연결 — 예: up.sh가 출력한 http://<ip>:8000 '
           '(ngrok을 우회하고 싶을 때).',
           style: TextStyle(fontSize: 12, color: Colors.white54),
-        ),
-        const SizedBox(height: 20),
-        const _Label('LoRA'),
-        const SizedBox(height: 6),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.folder_open_outlined, size: 18),
-            label: const Text('LoRA 관리 (서버 용량/삭제)'),
-            onPressed: () => showLoraManager(context, _effectiveUrl),
-          ),
-        ),
-        const SizedBox(height: 12),
-        // civitai 토큰은 서버가 LoRA를 받을 때 쓴다 — LoRA 옆이 제자리.
-        TextField(
-          controller: _civitaiCtrl,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: 'civitai 토큰 (선택)',
-            helperText: 'civitai LoRA 다운로드용 — civitai URL에 자동 부착',
-            helperStyle: TextStyle(fontSize: 11, color: Colors.white38),
-            isDense: true,
-            hintText: 'civitai API key',
-            hintStyle: hintStyle,
-            border: OutlineInputBorder(),
-          ),
         ),
       ],
     );

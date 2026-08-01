@@ -104,15 +104,34 @@ class SceneResolver {
     return '트랙 ${i < 0 ? '?' : i + 1}';
   }
 
+  /// 이 샷 자리에 **무엇이 몇 초 걸리는지** — 해석은 여기 한 번뿐이다.
+  /// 영상이 없으면 시작 프레임을 그 자리에 세운다(그것도 없으면 빈 자리).
+  ShotSlot slotOf(DialogueBeat beat, Shot s) {
+    final video = videoPathOf(s);
+    final hasVideo = hasFile(video);
+    final img = hasVideo ? null : startPathOf(s);
+    return ShotSlot(
+      beat: beat,
+      shot: s,
+      videoPath: hasVideo ? video : null,
+      imagePath: hasFile(img) ? img : null,
+      seconds: shotVideoSeconds(s),
+      isStillMode: shotVideoMode(s) == VideoMode.still,
+    );
+  }
+
+  /// 트랙의 모든 샷 자리를 순서대로. **미리보기와 내보내기가 이걸 같이 읽는다** —
+  /// 재생에서 본 것과 내보낸 결과가 어긋나지 않으려면 자리 해석이 한 벌이어야 한다.
+  List<ShotSlot> slots(VideoTrack track) => [
+        for (final beat in track.beats)
+          for (final s in beat.shots) slotOf(beat, s),
+      ];
+
   /// 아직 안 구운 스틸컷 샷들 — 방식이 스틸이고, 걸린 영상이 없고, 시작 프레임은 있는 것.
   /// 스틸컷은 AI가 아니라 로컬 ffmpeg 산출물이라 내보내기가 직접 채워도 된다.
   List<Shot> pendingStills(VideoTrack track) => [
-        for (final beat in track.beats)
-          for (final s in beat.shots)
-            if (shotVideoMode(s) == VideoMode.still &&
-                !hasFile(videoPathOf(s)) &&
-                hasFile(startPathOf(s)))
-              s,
+        for (final slot in slots(track))
+          if (slot.canBakeStill) slot.shot,
       ];
 
   /// 내보낼 게 있는지 — 걸린 영상이 하나라도 있거나, 여기서 구울 스틸컷이 있으면 참.
@@ -128,6 +147,38 @@ class SceneResolver {
   /// 파일이 실제로 있는지(경로가 비었거나 지워졌으면 false).
   static bool hasFile(String? path) =>
       path != null && path.isNotEmpty && File(path).existsSync();
+}
+
+/// 타임라인의 한 자리(샷 하나) — "여기에 무엇이 몇 초 걸리는가"만 말한다.
+/// [SceneResolver.slotOf]가 만들고, 미리보기(재생 목록)와 내보내기가 함께 읽는다.
+class ShotSlot {
+  const ShotSlot({
+    required this.beat,
+    required this.shot,
+    required this.videoPath,
+    required this.imagePath,
+    required this.seconds,
+    required this.isStillMode,
+  });
+
+  final DialogueBeat beat;
+  final Shot shot;
+
+  /// 이 자리에 걸린 영상(상속 해석 + 파일 존재 확인까지 끝난 것). 없으면 null.
+  final String? videoPath;
+
+  /// 영상이 없을 때 대신 세울 시작 프레임. 이것도 없으면 빈 자리(검은 화면).
+  final String? imagePath;
+
+  /// 이 자리가 차지하는 길이(초) — 주문한 길이. 실제 재생은 대사와 긴 쪽을 따른다.
+  final double seconds;
+
+  /// 스틸컷 방식인지 — 영상이 없어도 로컬 ffmpeg로 구울 수 있는 자리라는 뜻.
+  final bool isStillMode;
+
+  /// 내보내기가 지금 구울 수 있는 스틸컷 자리인지.
+  bool get canBakeStill =>
+      isStillMode && videoPath == null && imagePath != null;
 }
 
 /// 트랙 하나를 mp4 하나로 내보낸 결과.
@@ -243,9 +294,11 @@ class SceneExporter {
     final beats = <ExportBeat>[];
     var skipped = 0;
     for (final beat in track.beats) {
+      // 자리 해석은 리졸버 하나로 — 미리보기가 세운 것과 같은 자리를 본다.
+      // (영상 없는 자리는 굽지 못하니 여기선 빠진다. 미리보기는 시작 프레임으로 세운다.)
       final clips = <String>[
-        for (final s in beat.shots)
-          if (SceneResolver.hasFile(r.videoPathOf(s))) r.videoPathOf(s)!,
+        for (final slot in beat.shots.map((s) => r.slotOf(beat, s)))
+          if (slot.videoPath != null) slot.videoPath!,
       ];
       if (clips.isEmpty) {
         skipped++;

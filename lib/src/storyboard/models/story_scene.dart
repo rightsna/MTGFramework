@@ -7,14 +7,14 @@ import '../services/movie_settings.dart'; // ImageRes / VideoRes
 /// 계층: 씬 > 트랙 > 대사(DialogueBeat: 대사 1개(선택) + 샷 여러 개) > 샷.
 /// 첫 트랙이 기준([baseTrack])이고, 구조(비트·샷)는 트랙끼리 항상 같다 — [VideoTrack] 참고.
 ///
-/// 저장은 씬 하나당 `scene<N>.json` 한 파일. 개념별로 묶어서(tracks/bgm/lora) 적어
+/// 저장은 씬 하나당 `scene<N>.json` 한 파일. 개념별로 묶어서(tracks/bgm/res) 적어
 /// JSON만 봐도 씬 구성이 읽히게 한다. 미디어는 프로젝트 폴더 안 파일명(상대)만 저장한다.
 class StoryScene {
   String id;
   String title; // 씬 제목 (비우면 SCENE n 으로 표시)
   String commonPrompt; // 이 씬 공통 프롬프트 — 씬 내 모든 샷 생성에 함께 붙는다
   List<VideoTrack> tracks; // 비교용 트랙들(첫 번째가 기준). 최소 1개는 항상 있다
-  // LoRA·기본 성우는 **트랙별**로 옮겼다([VideoTrack.loraUrl] / [VideoTrack.defaultVoiceId]).
+  // 기본 성우는 **트랙별**로 옮겼다([VideoTrack.defaultVoiceId]).
   String bgmPrompt; // 이 씬의 배경음 스타일 태그(장르·분위기·악기) — ACE-Step BGM 생성용
   String? bgmPath; // 생성된 배경음(mp3) 파일 경로(런타임 절대경로)
   int bgmSeconds; // 배경음 길이(초)
@@ -63,7 +63,7 @@ class StoryScene {
           'seconds': bgmSeconds,
           'file': mediaName(bgmPath),
         },
-        // LoRA·기본 성우는 트랙별로 옮겨 각 트랙 JSON에 적힌다(여기서 안 적는다).
+        // 기본 성우는 트랙별로 옮겨 각 트랙 JSON에 적힌다(여기서 안 적는다).
         'res': {
           'image': imageRes.name,
           'video': videoRes.name,
@@ -77,16 +77,11 @@ class StoryScene {
     final res = (j['res'] as Map?)?.cast<String, dynamic>();
     final tracks = _readTracks(j, dir);
 
-    // 마이그레이션: 옛 파일은 LoRA·기본 성우가 **씬 단위**였다. 그 값을 각 트랙에 시드한다
+    // 마이그레이션: 옛 파일은 기본 성우가 **씬 단위**였다. 그 값을 각 트랙에 시드한다
     // (옛 동작 = 모든 트랙이 씬 값을 공유했으므로 모든 트랙에 넣는다). 트랙이 자기 값을 이미
-    // 가졌으면(새 형식) 건드리지 않는다.
-    final oldLora = (j['lora'] as Map?)?.cast<String, dynamic>();
+    // 가졌으면(새 형식) 건드리지 않는다. (옛 씬 단위 'lora'는 기능째 없어져 무시한다.)
     final oldVoice = (j['voice'] as Map?)?.cast<String, dynamic>();
     for (final t in tracks) {
-      if (oldLora != null && t.loraUrl.isEmpty) {
-        t.loraUrl = (oldLora['url'] as String?) ?? '';
-        t.loraStrength = (oldLora['strength'] as num?)?.toDouble() ?? 0.8;
-      }
       if (oldVoice != null && t.defaultVoiceId.isEmpty) {
         t.defaultVoiceId = (oldVoice['id'] as String?) ?? '';
         t.defaultVoiceName = (oldVoice['name'] as String?) ?? '';

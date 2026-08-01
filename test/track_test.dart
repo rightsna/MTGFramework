@@ -336,6 +336,23 @@ void main() {
         reason: '대사 체크를 지나 키 없음에서 멈춘다 = 대사는 인식됨');
   });
 
+  test('영상 없는 샷도 재생 목록에 남는다 — 시작 프레임으로 세워 대사를 들려준다', () async {
+    final beat = p.tracks.first.beats.single;
+    p.setShotDialogueText(beat, '영상은 아직 없지만 대사는 있다');
+    final first = beat.shots.first;
+    File(first.videoPath!).deleteSync();
+    first.videoPath = null; // 영상만 없는 상태(시작 프레임은 그대로)
+    await p.save();
+
+    final list = p.scenePlaylist();
+    expect(list.length, 2, reason: '★ 영상 없는 샷을 빼면 그 대사가 통째로 안 들린다');
+    expect(list.first.path, isNull);
+    expect(list.first.imagePath, first.startImagePath,
+        reason: '시작 프레임을 그 자리에 세운다');
+    expect(list.first.seconds, greaterThan(0), reason: '머무는 길이가 있어야 한다');
+    expect(list.last.path, isNotNull, reason: '뽑아 둔 영상은 그대로');
+  });
+
   test('안 구운 스틸컷도 내보낼 거리로 센다 — 스틸 비트가 조용히 빠지지 않게', () async {
     final beat = p.tracks.first.beats.single;
     // 영상이 하나도 없는 상태로 되돌리고, 두 샷을 스틸컷 모드로 둔다(시작 프레임은 있다).

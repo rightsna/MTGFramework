@@ -39,7 +39,6 @@ part 'scene/scene_settings_tab.dart';
 part 'scene/scene_common_field.dart';
 part 'track/track_tab.dart';
 part 'track/track_default_voice_field.dart';
-part 'track/track_lora_field.dart';
 part 'track/track_speed_field.dart';
 part 'bgm/bgm_tab.dart';
 part 'common/chip_label.dart';

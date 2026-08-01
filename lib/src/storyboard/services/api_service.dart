@@ -153,8 +153,6 @@ class ApiService {
     required int width,
     required int height,
     required int seconds,
-    String loraUrl = '',
-    double loraStrength = 0.8,
     void Function(String status)? onProgress,
   }) async {
     http.MultipartRequest buildReq() {
@@ -165,8 +163,6 @@ class ApiService {
         ..fields['width'] = '$width'
         ..fields['height'] = '$height'
         ..fields['seconds'] = '$seconds'
-        ..fields['lora_url'] = loraUrl
-        ..fields['lora_strength'] = '$loraStrength'
         ..files.add(
             http.MultipartFile.fromBytes('image', image, filename: 'start.png'));
       // I2V면 끝 프레임을 아예 안 붙인다 — 서버가 그걸 보고 i2v 워크플로로 간다.
@@ -237,36 +233,6 @@ class ApiService {
     _check(r.statusCode, r.bodyBytes);
   }
 
-  // ───────── LoRA 관리 (서버 custom/ 폴더) ─────────
-
-  /// 받아둔 커스텀 LoRA 목록 + 총 용량(MB).
-  Future<({List<LoraInfo> items, double totalMb})> listLoras() async {
-    final r = await http
-        .get(Uri.parse('$_base/loras'), headers: _ngrok)
-        .timeout(const Duration(seconds: 10));
-    _check(r.statusCode, r.bodyBytes);
-    final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
-    final items = [
-      for (final e in (j['loras'] as List))
-        LoraInfo(e['name'] as String, (e['size_mb'] as num).toDouble()),
-    ];
-    return (items: items, totalMb: (j['total_mb'] as num).toDouble());
-  }
-
-  Future<void> deleteLora(String name) async {
-    final r = await http
-        .delete(Uri.parse('$_base/loras/${Uri.encodeComponent(name)}'), headers: _ngrok)
-        .timeout(const Duration(seconds: 10));
-    _check(r.statusCode, r.bodyBytes);
-  }
-
-  Future<void> clearLoras() async {
-    final r = await http
-        .delete(Uri.parse('$_base/loras'), headers: _ngrok)
-        .timeout(const Duration(seconds: 15));
-    _check(r.statusCode, r.bodyBytes);
-  }
-
   void _check(int status, Uint8List body) {
     if (status != 200) {
       throw Exception('$status: ${utf8.decode(body)}');
@@ -274,9 +240,3 @@ class ApiService {
   }
 }
 
-/// 서버에 받아둔 LoRA 하나의 정보.
-class LoraInfo {
-  const LoraInfo(this.name, this.sizeMb);
-  final String name;
-  final double sizeMb;
-}

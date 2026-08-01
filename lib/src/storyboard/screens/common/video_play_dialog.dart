@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,8 +10,13 @@ import '../ui.dart' show accent2;
 /// 재생 목록의 한 항목 — 영상 + 그 샷이 속한 비트의 음성(있으면).
 /// [beatId]로 비트 경계를 안다: 1 대사 = 여러 샷이라, 같은 비트가 이어지는 동안엔 음성을 새로
 /// 틀지 않고 이어서 재생한다(샷마다 처음부터 다시 틀면 대사가 뚝뚝 끊긴다).
+///
+/// [path]가 null이면 **아직 영상이 없는 샷**이다 — 빼지 않고 [imagePath](시작 프레임,
+/// 그것도 없으면 검은 화면)를 [seconds]만큼 세워 둔다. 대사는 그대로 들린다.
 typedef PlaylistItem = ({
-  String path,
+  String? path,
+  String? imagePath,
+  double seconds, // 영상 없는 항목이 화면에 머무는 길이(영상 항목은 실제 길이를 쓴다)
   String title,
   String beatId,
   String? voicePath,
@@ -69,6 +75,11 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
   late final Ticker _ticker;
   Duration _tickerLast = Duration.zero;
   Duration _beatElapsed = Duration.zero;
+
+  /// 지금 항목이 화면에 머문 시간 — **영상 없는 항목**(이미지·검은 화면)의 진행 시계다.
+  /// 영상이 있으면 진행은 영상 컨트롤러가 알려 준다.
+  Duration _itemElapsed = Duration.zero;
+  double _imageRatio = 9 / 16; // 이미지 항목의 가로세로비(로드 후 실제 값으로)
   String? _capBeatId; // 자막 시계가 걸린 비트 — 바뀌면 시계를 0으로
   List<({double seconds, String text})> _cues = const [];
   String _capPos = 'bottom';
@@ -78,6 +89,18 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
   bool _autoNext = true; // 다음 영상 자동 재생 — 켜짐(끄면 현재 샷 반복)
 
   List<PlaylistItem> get _items => widget.playlist;
+
+  PlaylistItem? get _item =>
+      (_index >= 0 && _index < _items.length) ? _items[_index] : null;
+
+  /// 지금 항목에 영상이 없는지(=이미지나 검은 화면으로 세워 두는 중).
+  bool get _isStillItem => _item != null && _item!.path == null;
+
+  /// 영상 없는 항목이 머무는 길이(초) — 0 이하면 최소 1초는 보여 준다.
+  double get _stillSeconds {
+    final s = _item?.seconds ?? 0;
+    return s <= 0 ? 1.0 : s;
+  }
 
   /// 트랙 배속(1.0~2.0). 영상·대사·효과음에 걸고, 배경음은 등속으로 둔다(내보내기와 같은 규칙).
   double get _speed => widget.speed.clamp(1.0, 2.0).toDouble();
@@ -92,7 +115,8 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     _open();
   }
 
-  /// 자막 시계 — 재생 중일 때만 흐른다. 보여줄 자막 구간이 바뀌면 그때만 다시 그린다.
+  /// 자막·항목 시계 — 재생 중일 때만 흐른다. 보여줄 자막 구간이 바뀌면 그때만 다시 그린다.
+  /// 영상 없는 항목일 땐 이 시계가 진행의 유일한 기준이라 매 프레임 다시 그리고 진행도 본다.
   void _onTicker(Duration elapsed) {
     if (!mounted) return;
     final delta = elapsed - _tickerLast;
@@ -101,7 +125,13 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     final before = _activeCaption();
     // 자막 구간은 **원본 시간축** 기준이라, 배속으로 빨라진 만큼 시계도 빨리 흘려야 맞는다.
     _beatElapsed += delta * _speed;
-    if (_activeCaption() != before) setState(() {});
+    _itemElapsed += delta * _speed;
+    if (_isStillItem) {
+      setState(() {}); // 진행바
+      _maybeAdvance();
+    } else if (_activeCaption() != before) {
+      setState(() {});
+    }
   }
 
   /// 지금(_beatElapsed) 보여줄 자막 텍스트. 공백 구간이거나 범위 밖이면 null.
@@ -180,6 +210,7 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     old?.removeListener(_onTick);
     await old?.dispose();
     if (!mounted) return;
+    _itemElapsed = Duration.zero; // 이 자리의 시계는 항상 0에서
     setState(() {});
     if (_items.isEmpty) return;
 
@@ -187,7 +218,16 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     await _syncSfx(); // 효과음도 비트 경계에서 새로 튼다
     _syncCaption(); // 자막 시계도 비트 경계에서 0으로
 
-    final c = VideoPlayerController.file(File(_items[_index].path));
+    final path = _items[_index].path;
+    if (path == null) {
+      // 아직 영상이 없는 자리 — 시작 프레임(없으면 검은 화면)을 계획 길이만큼 세운다.
+      // 진행은 컨트롤러가 아니라 [_itemElapsed] 시계가 본다.
+      _imageRatio = await _resolveRatio(_items[_index].imagePath);
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final c = VideoPlayerController.file(File(path));
     try {
       await c.initialize();
     } catch (e) {
@@ -205,6 +245,26 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     _ctrl = c;
     if (_playing) c.play();
     setState(() {});
+  }
+
+  /// 세울 이미지의 가로세로비 — 못 읽으면 세로(9:16)로 둔다(숏폼이 기본이라).
+  Future<double> _resolveRatio(String? path) async {
+    if (path == null || !File(path).existsSync()) return 9 / 16;
+    final done = Completer<double>();
+    final stream = FileImage(File(path)).resolve(const ImageConfiguration());
+    late final ImageStreamListener l;
+    l = ImageStreamListener((info, _) {
+      if (!done.isCompleted) {
+        final h = info.image.height;
+        done.complete(h == 0 ? 9 / 16 : info.image.width / h);
+      }
+      stream.removeListener(l);
+    }, onError: (_, _) {
+      if (!done.isCompleted) done.complete(9 / 16);
+      stream.removeListener(l);
+    });
+    stream.addListener(l);
+    return done.future;
   }
 
   /// 현재 항목의 비트에 맞춰 음성을 맞춘다. 같은 비트가 이어지면 그대로 두고,
@@ -271,7 +331,12 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     _capPos = it.captionPos;
   }
 
+  /// 이 자리의 **화면**이 끝났는지. 영상이 있으면 영상이, 없으면 계획 길이 시계가 기준이다.
+  /// (대사가 더 길면 아래 진행 판단이 대사 끝까지 기다린다 — 규칙은 그대로.)
   bool get _ended {
+    if (_isStillItem) {
+      return _itemElapsed.inMilliseconds / 1000.0 >= _stillSeconds;
+    }
     final v = _ctrl?.value;
     return v != null &&
         v.duration > Duration.zero &&
@@ -312,6 +377,13 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
   void _onTick() {
     if (!mounted) return;
     setState(() {}); // 재생 아이콘·진행바 갱신
+    _maybeAdvance();
+  }
+
+  /// 자동 진행 판단 — **대사와 화면 중 긴 쪽**까지 재생한다.
+  /// 영상 컨트롤러(=_onTick)와 시계(=_onTicker) 둘 다 여기로 들어온다.
+  void _maybeAdvance() {
+    if (!mounted) return;
     if (!_playing || !_autoNext || _advancing) return;
 
     void go(int i) {
@@ -335,11 +407,11 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
             _stopAtEnd();
           }
         }
-        // else 마지막 샷 영상은 끝났지만 대사가 남음 → 대사가 더 길다 → 마지막 프레임 유지(대기).
+        // else 마지막 샷 화면은 끝났지만 대사가 남음 → 대사가 더 길다 → 그대로 두고 기다린다.
       }
-      // 영상이 아직 재생 중이면(대사가 먼저 끝나도) 그대로 둔다 — 영상이 더 길면 끝까지 본다.
+      // 화면이 아직 남았으면(대사가 먼저 끝나도) 그대로 둔다 — 화면이 더 길면 끝까지 본다.
     } else {
-      // 대사 없는 비트: 영상이 끝나면 다음으로.
+      // 대사 없는 비트: 화면이 끝나면 다음으로.
       if (_ended) {
         if (_index < _items.length - 1) {
           go(_index + 1);
@@ -358,20 +430,22 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     if (mounted) setState(() {});
   }
 
+  /// 재생/일시정지 — 영상이 없는 자리(이미지·검은 화면)에서도 눌린다(대사·시계가 선다).
   void _toggle() {
-    final c = _ctrl;
-    if (c == null) return;
     setState(() {
-      if (c.value.isPlaying) {
+      final c = _ctrl;
+      if (_playing) {
         _playing = false;
-        c.pause();
+        c?.pause();
         _voice?.pause();
         _sfx?.pause();
         _bgm?.pause();
       } else {
         _playing = true;
-        if (c.value.position >= c.value.duration) c.seekTo(Duration.zero);
-        c.play();
+        if (c != null && c.value.position >= c.value.duration) {
+          c.seekTo(Duration.zero);
+        }
+        c?.play();
         _voice?.play();
         _sfx?.play();
         _bgm?.play();
@@ -466,6 +540,23 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     );
   }
 
+  /// 영상이 없는 자리의 화면 — 시작 프레임, 그것도 없으면 "영상 없음" 검은 화면.
+  /// 자리를 비우지 않는 게 요점이다(비우면 그 비트 대사가 통째로 사라진다).
+  Widget _stillFrame() {
+    final img = _item?.imagePath;
+    if (img != null && File(img).existsSync()) {
+      return Image.file(File(img), fit: BoxFit.contain);
+    }
+    return Container(
+      color: Colors.black,
+      alignment: Alignment.center,
+      child: const Text(
+        '영상 없음 — 대사만 재생',
+        style: TextStyle(color: Colors.white38, fontSize: 12),
+      ),
+    );
+  }
+
   Widget _body() {
     if (_error != null) {
       return const SizedBox(
@@ -478,15 +569,18 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
       );
     }
     final c = _ctrl;
-    if (c == null) {
+    // 영상이 있는 자리인데 컨트롤러가 아직 없으면 = 여는 중.
+    if (c == null && !_isStillItem) {
       return const SizedBox(
         width: 120,
         height: 120,
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    final playing = c.value.isPlaying;
-    final ratio = c.value.aspectRatio == 0 ? 16 / 9 : c.value.aspectRatio;
+    final playing = c?.value.isPlaying ?? _playing;
+    final ratio = c == null
+        ? _imageRatio
+        : (c.value.aspectRatio == 0 ? 16 / 9 : c.value.aspectRatio);
     final hasPrev = _index > 0;
     final hasNext = _index < _items.length - 1;
     return LayoutBuilder(
@@ -511,7 +605,10 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    VideoPlayer(c),
+                    if (c != null)
+                      VideoPlayer(c)
+                    else
+                      _stillFrame(),
                     if (!playing)
                       const IgnorePointer(
                         child: Icon(Icons.play_circle,
@@ -525,7 +622,17 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
             const SizedBox(height: 8),
             SizedBox(
               width: w,
-              child: VideoProgressIndicator(c, allowScrubbing: true),
+              child: c != null
+                  ? VideoProgressIndicator(c, allowScrubbing: true)
+                  : LinearProgressIndicator(
+                      // 영상이 없는 자리 — 계획 길이 대비 얼마나 지났는지.
+                      value: (_itemElapsed.inMilliseconds /
+                              1000.0 /
+                              _stillSeconds)
+                          .clamp(0.0, 1.0),
+                      minHeight: 4,
+                      backgroundColor: const Color(0x22FFFFFF),
+                    ),
             ),
             const SizedBox(height: 2),
             Row(

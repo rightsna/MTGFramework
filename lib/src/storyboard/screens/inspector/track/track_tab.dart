@@ -1,7 +1,10 @@
 part of '../inspector_panel.dart';
 
-/// 트랙 탭 — 씬의 **트랙별** 설정을 한곳에: 기본 성우 · LoRA · 무비 내보내기.
-/// (트랙 이름·백엔드·삭제는 캔버스의 트랙 줄 머리말에서. 여기선 생성 설정과 내보내기를 다룬다.)
+/// 트랙 탭 — **지금 보고 있는 트랙**의 설정: 재생 배속 · 기본 성우 · 무비 내보내기.
+/// (트랙 이름·백엔드·삭제·전환은 캔버스의 트랙 줄 머리말에서. 여기선 그 트랙의 설정만 다룬다.)
+///
+/// 예전엔 씬의 모든 트랙 카드를 아래로 쭉 쌓았다 — 트랙이 늘수록 어느 게 지금 것인지
+/// 안 보였다. 캔버스에서 고른 트랙 하나만 보여 준다.
 class _TrackTab extends StatelessWidget {
   const _TrackTab();
 
@@ -14,21 +17,25 @@ class _TrackTab extends StatelessWidget {
         child: Text('씬을 선택하세요', style: TextStyle(color: Colors.white38)),
       );
     }
+    final track = p.selectedTrack;
+    if (track == null) {
+      return const Center(
+        child: Text('트랙을 선택하세요', style: TextStyle(color: Colors.white38)),
+      );
+    }
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'LoRA와 기본 성우는 **트랙마다 따로**입니다 — 트랙별로 다른 조건으로 뽑아 비교하세요.\n'
+            '기본 성우·배속은 **트랙마다 따로**입니다 — 트랙별로 다른 조건으로 뽑아 비교하세요.\n'
             '내보내기는 그 트랙의 영상에 대사 음성·효과음·배경음을 합쳐 하나의 mp4로 굽습니다.',
             style: TextStyle(fontSize: 11.5, color: Colors.white38, height: 1.45),
           ),
           const SizedBox(height: 14),
-          for (var i = 0; i < sc.tracks.length; i++) ...[
-            _TrackCard(track: sc.tracks[i], isBase: i == 0),
-            const SizedBox(height: 14),
-          ],
+          _TrackCard(track: track, isBase: p.onBaseTrack),
+          const SizedBox(height: 14),
           OutlinedButton.icon(
             onPressed: p.addTrack,
             icon: const Icon(Icons.add, size: 18),
@@ -44,7 +51,7 @@ class _TrackTab extends StatelessWidget {
   }
 }
 
-/// 트랙 하나의 카드 — 머리말(이름·백엔드·진행도·내보내기) + 기본 성우 + LoRA.
+/// 트랙 하나의 카드 — 머리말(이름·백엔드·진행도·내보내기) + 배속 + 기본 성우.
 class _TrackCard extends StatelessWidget {
   const _TrackCard({required this.track, required this.isBase});
 
@@ -122,10 +129,6 @@ class _TrackCard extends StatelessWidget {
           const SizedBox(height: 6),
           _TrackDefaultVoiceField(
               key: ValueKey('track_voice_${track.id}'), track: track),
-          const SizedBox(height: 16),
-          _SectionLabel('LoRA (LTX-2.3용)'),
-          const SizedBox(height: 6),
-          _TrackLoraField(key: ValueKey('track_lora_${track.id}'), track: track),
         ],
       ),
     );

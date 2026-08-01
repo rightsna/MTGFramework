@@ -2,7 +2,7 @@ part of '../inspector_panel.dart';
 
 /// 씬 탭 — 선택 씬 전체 설정(제목·생성 설정·일괄 생성·삭제). 배경음은 별도 '배경음' 탭.
 
-/// 씬 탭 — 선택 씬의 것들을 한곳에: 생성 설정(해상도·LoRA·기본 성우) · 삭제. (제목은 캔버스 바.)
+/// 씬 탭 — 선택 씬의 것들을 한곳에: 생성 설정(해상도) · 삭제. (제목은 캔버스 바.)
 class _SceneSettingsTab extends StatelessWidget {
   const _SceneSettingsTab();
 
@@ -25,7 +25,7 @@ class _SceneSettingsTab extends StatelessWidget {
               key: ValueKey('scene_note_${sc.id}'),
               controller: p.sceneNoteCtrl(sc.id)),
           const SizedBox(height: 16),
-          // 해상도는 **씬 단위** — 씬마다 따로 저장된다. (LoRA·기본 성우는 '트랙' 탭으로 옮겼다.)
+          // 해상도는 **씬 단위** — 씬마다 따로 저장된다. (기본 성우는 '트랙' 탭으로 옮겼다.)
           _GroupCard(
             icon: Icons.aspect_ratio,
             title: '해상도',

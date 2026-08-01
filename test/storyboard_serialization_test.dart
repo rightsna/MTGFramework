@@ -24,8 +24,6 @@ void main() {
           VideoTrack(
               id: 'track_1',
               name: '트랙 1',
-              loraUrl: 'https://civitai.com/x',
-              loraStrength: 0.7,
               defaultVoiceId: 'voice_narrator',
               defaultVoiceName: '내레이터',
               beats: [
@@ -72,7 +70,7 @@ void main() {
   test('JSON은 대사 나열 + 각 대사=대사(0/1)+샷들 + 미디어는 파일명(상대)만', () {
     final j = sampleScene().toJson();
 
-    // LoRA·기본 성우는 트랙별로 옮겨 씬 최상위에는 더 이상 없다(트랙 JSON 안에 있다).
+    // 기본 성우는 트랙별로 옮겨 씬 최상위에는 더 이상 없다(트랙 JSON 안에 있다).
     expect(j.keys, containsAll(['id', 'title', 'commonPrompt', 'tracks', 'bgm']));
     expect(j.keys, isNot(contains('lora')));
     expect(j.keys, isNot(contains('voice')));
@@ -86,9 +84,8 @@ void main() {
     final tracks = j['tracks'] as List;
     expect(tracks.length, 1);
     expect((tracks.first as Map)['backend'], 'serviceApi');
-    // LoRA·기본 성우가 트랙 JSON에 적힌다.
-    expect((tracks.first as Map)['lora'],
-        {'url': 'https://civitai.com/x', 'strength': 0.7});
+    // 기본 성우가 트랙 JSON에 적힌다. (LoRA는 기능째 없어져 아예 안 적힌다.)
+    expect((tracks.first as Map).containsKey('lora'), isFalse);
     expect((tracks.first as Map)['voice'],
         {'id': 'voice_narrator', 'name': '내레이터'});
     final dialogues = (tracks.first as Map)['beats'] as List;
@@ -143,9 +140,7 @@ void main() {
     expect(after.id, 'scene_1');
     expect(after.commonPrompt, '세로 9:16, 애니풍');
     expect(after.bgmPath, '$dir/scene_1_bgm.mp3');
-    // LoRA·기본 성우는 트랙 단위로 왕복 보존된다.
-    expect(after.tracks.first.loraUrl, 'https://civitai.com/x');
-    expect(after.tracks.first.loraStrength, 0.7);
+    // 기본 성우는 트랙 단위로 왕복 보존된다.
     expect(after.tracks.first.defaultVoiceId, 'voice_narrator');
     expect(after.tracks.first.defaultVoiceName, '내레이터');
     expect(after.beats.length, 2);
@@ -270,7 +265,6 @@ void main() {
     final sc = StoryScene.fromJson({'id': 'scene_min'}, dir);
     expect(sc.beats, isEmpty);
     expect(sc.tracks.length, 1, reason: '트랙이 없으면 기준 트랙 하나로 시작한다');
-    expect(sc.tracks.first.loraStrength, 0.8);
     expect(sc.bgmSeconds, 30);
     expect(sc.bgmPath, isNull);
 
@@ -280,8 +274,8 @@ void main() {
     expect(beat.sfx, isNull);
   });
 
-  test('마이그레이션: 옛 씬 단위 LoRA·기본 성우가 모든 트랙으로 옮겨진다', () {
-    // 옛 형식 — lora/voice가 씬 레벨, 트랙엔 자기 값이 없다.
+  test('마이그레이션: 옛 씬 단위 기본 성우가 모든 트랙으로 옮겨진다 (옛 lora는 무시)', () {
+    // 옛 형식 — lora/voice가 씬 레벨, 트랙엔 자기 값이 없다. lora는 기능째 없어져 버린다.
     final sc = StoryScene.fromJson({
       'id': 'scene_old',
       'lora': {'url': 'https://civitai.com/old', 'strength': 0.9},
@@ -293,8 +287,6 @@ void main() {
     }, dir);
     // 모든 트랙이 씬 값을 물려받는다(옛 동작 = 전 트랙 공유).
     for (final t in sc.tracks) {
-      expect(t.loraUrl, 'https://civitai.com/old');
-      expect(t.loraStrength, 0.9);
       expect(t.defaultVoiceId, 'v_old');
       expect(t.defaultVoiceName, '옛 성우');
     }

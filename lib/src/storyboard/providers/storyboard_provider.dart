@@ -529,12 +529,18 @@ class StoryboardProvider extends ChangeNotifier {
   /// 선택 씬의 모든 샷(대사 순서 → 샷 순서로 평탄화). 미리보기·연속 재생용.
   List<Shot> get sceneShots => [for (final sh in dialogues) ...sh.shots];
 
-  /// 선택 씬의 재생 목록 — 영상이 있는 샷만 순서대로 (경로 + 라벨). 영상 팝업 연속 재생용.
+  /// 선택 씬의 재생 목록 — **씬의 모든 샷**을 순서대로. 영상 팝업 연속 재생용.
   /// 각 항목에 그 샷이 속한 **비트의 음성 경로·비트 id**도 실어, 팝업이 영상과 음성을 함께
   /// 재생하게 한다. 비트가 바뀔 때만 음성을 새로 트도록(1 대사 = 여러 샷) beatId로 구분한다.
+  ///
+  /// 영상을 아직 안 뽑은 샷도 **빼지 않는다** — 시작 프레임(없으면 검은 화면)을 그 샷 길이만큼
+  /// 세워 둔다. 빼 버리면 그 비트의 대사가 통째로 안 들리고 씬이 짧게 지나가 버린다
+  /// (콘티를 대사 기준으로 먼저 채우는 판이라 "영상 없는 샷"이 정상 상태다).
   List<
       ({
-        String path,
+        String? path,
+        String? imagePath,
+        double seconds,
         String title,
         String beatId,
         String? voicePath,
@@ -543,7 +549,9 @@ class StoryboardProvider extends ChangeNotifier {
         String captionPos,
       })> scenePlaylist() {
     final out = <({
-      String path,
+      String? path,
+      String? imagePath,
+      double seconds,
       String title,
       String beatId,
       String? voicePath,
@@ -551,31 +559,29 @@ class StoryboardProvider extends ChangeNotifier {
       List<({double seconds, String text})> captionCues,
       String captionPos,
     })>[];
+    final sc = selectedScene;
+    final track = selectedTrack;
+    if (sc == null || track == null) return out;
+    final r = SceneResolver(sc);
     var n = 0;
-    for (final beat in dialogues) {
-      final voice = voicePathOf(beat); // 상속 포함(자기 것 없으면 기준 트랙 음성)
-      final sfx = sfxPathOf(beat); // 효과음(트랙 공유)
-      final cap = captionOf(beat); // 자막(트랙 공유)
-      final cues = <({double seconds, String text})>[
-        for (final c in cap?.cues ?? const [])
-          (seconds: c.seconds, text: c.text),
-      ];
-      final capPos = (cap?.position ?? CaptionPosition.bottom).name;
-      for (final shot in beat.shots) {
-        n++;
-        final path = videoPathOf(shot); // 상속 포함(자기 것 없으면 기준 트랙 영상)
-        if (path == null) continue;
-        final t = shotTitle(shot).trim();
-        out.add((
-          path: path,
-          title: t.isEmpty ? '샷 $n' : '샷 $n · $t',
-          beatId: beat.id,
-          voicePath: voice,
-          sfxPath: sfx,
-          captionCues: cues,
-          captionPos: capPos,
-        ));
-      }
+    for (final slot in r.slots(track)) {
+      n++;
+      final cap = r.captionOf(slot.beat); // 자막(비트 단위, 트랙별 해석)
+      final t = r.shotTitle(slot.shot).trim();
+      out.add((
+        path: slot.videoPath,
+        imagePath: slot.imagePath,
+        seconds: slot.seconds,
+        title: t.isEmpty ? '샷 $n' : '샷 $n · $t',
+        beatId: slot.beat.id,
+        voicePath: r.voicePathOf(slot.beat), // 상속 포함(없으면 기준 트랙 음성)
+        sfxPath: r.sfxPathOf(slot.beat),
+        captionCues: [
+          for (final c in cap?.cues ?? const [])
+            (seconds: c.seconds, text: c.text),
+        ],
+        captionPos: (cap?.position ?? CaptionPosition.bottom).name,
+      ));
     }
     return out;
   }
@@ -2163,7 +2169,6 @@ class StoryboardProvider extends ChangeNotifier {
           '끝 없이 뽑으려면 프레임 탭에서 I2V로 바꾸세요');
     }
     final sc = sceneOf(shot); // 해상도는 씬 단위
-    final track = trackOf(shot); // LoRA는 트랙 단위
     final res = sc?.videoRes ?? _settings.videoRes;
     final neg = (_vnegs[shot.id]?.text ?? shotVideoNeg(shot)).trim();
     final jobId = await ApiService(_settings.effectiveServiceUrl).submitVideoJob(
@@ -2174,8 +2179,6 @@ class StoryboardProvider extends ChangeNotifier {
       width: res.width,
       height: res.height,
       seconds: shotVideoSeconds(shot).round(), // 자체 서버는 정수 초
-      loraUrl: _effectiveLoraUrl(track),
-      loraStrength: track?.loraStrength ?? 0.8,
       onProgress: (s) => _setProgress(busyKey(shot.id, GenMode.videoLow), s),
     );
     shot.videoJobId = jobId; // 이 샷 = 이 job (매칭 앵커)
@@ -2330,23 +2333,9 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
-  /// **이 트랙**의 LoRA URL 저장(트랙끼리 별개).
-  void setTrackLoraUrl(VideoTrack track, String url) {
-    track.loraUrl = url.trim();
-    notifyListeners();
-    save();
-  }
-
   /// **이 트랙**의 재생 배속(1.0~2.0) 저장 — 미리보기·내보내기에 똑같이 걸린다.
   void setTrackSpeed(VideoTrack track, double v) {
     track.speed = ((v * 10).round() / 10).clamp(1.0, 2.0); // 0.1 단위
-    notifyListeners();
-    save();
-  }
-
-  /// **이 트랙**의 LoRA 강도(0~1.5) 저장.
-  void setTrackLoraStrength(VideoTrack track, double v) {
-    track.loraStrength = v.clamp(0.0, 1.5);
     notifyListeners();
     save();
   }
@@ -2849,25 +2838,6 @@ class StoryboardProvider extends ChangeNotifier {
     if (!shotLinkStart(next)) return;
     final k = busyKey(next.id, GenMode.imageStart);
     _ver[k] = (_ver[k] ?? 0) + 1;
-  }
-
-  /// LoRA URL 정규화: civitai 페이지 URL → api/download 링크로 변환 + 토큰 자동 부착.
-  String _effectiveLoraUrl(VideoTrack? track) {
-    var url = (track?.loraUrl ?? '').trim();
-    if (url.isEmpty) return '';
-    if (url.contains('civitai.com')) {
-      if (!url.contains('/api/download/')) {
-        final vid = RegExp(r'modelVersionId=(\d+)').firstMatch(url)?.group(1);
-        if (vid != null) {
-          url = 'https://civitai.com/api/download/models/$vid';
-        }
-      }
-      final token = _settings.civitaiToken.trim();
-      if (token.isNotEmpty && !url.contains('token=')) {
-        url += '${url.contains('?') ? '&' : '?'}token=$token';
-      }
-    }
-    return url;
   }
 
   Future<Uint8List?> _startFrameBytes(Shot shot) async {

@@ -116,8 +116,6 @@ class MovieSettings {
   final bool promptShowKo; // 프롬프트 칸을 번역(한국어)으로 보고 있는지 — 토글 상태 유지용
   final String videoNegativePrompt; // 영상 네거티브 프롬프트
   final String geminiKey; // Veo 전용
-  final String
-  civitaiToken; // civitai LoRA 다운로드용 API 토큰(있으면 civitai URL에 자동 부착)
   final String elevenKey; // 일레븐랩스 TTS(대사 음성) API 키
   final TtsStability ttsStability; // 대사 TTS 안정성 프리셋(Creative/Natural/Robust)
   final String serviceApiUrl; // 사용자 오버라이드(비우면 kServerDomain 사용)
@@ -138,7 +136,6 @@ class MovieSettings {
     this.promptShowKo = false,
     this.videoNegativePrompt = '',
     this.geminiKey = '',
-    this.civitaiToken = '',
     this.elevenKey = '',
     this.ttsStability = TtsStability.creative, // 대사는 Creative가 표현력이 좋다
     this.serviceApiUrl = '', // 비우면 kServerDomain
@@ -156,7 +153,6 @@ class MovieSettings {
     bool? promptShowKo,
     String? videoNegativePrompt,
     String? geminiKey,
-    String? civitaiToken,
     String? elevenKey,
     TtsStability? ttsStability,
     String? serviceApiUrl,
@@ -172,7 +168,6 @@ class MovieSettings {
     promptShowKo: promptShowKo ?? this.promptShowKo,
     videoNegativePrompt: videoNegativePrompt ?? this.videoNegativePrompt,
     geminiKey: geminiKey ?? this.geminiKey,
-    civitaiToken: civitaiToken ?? this.civitaiToken,
     elevenKey: elevenKey ?? this.elevenKey,
     ttsStability: ttsStability ?? this.ttsStability,
     serviceApiUrl: serviceApiUrl ?? this.serviceApiUrl,
@@ -190,7 +185,6 @@ class MovieSettings {
     'promptShowKo': promptShowKo,
     'videoNegativePrompt': videoNegativePrompt,
     'geminiKey': geminiKey,
-    'civitaiToken': civitaiToken,
     'elevenKey': elevenKey,
     'ttsStability': ttsStability.name,
     'serverUrl': serviceApiUrl, // 새 키 — 옛 'serviceApiUrl'(localhost 저장분)은 무시
@@ -220,7 +214,6 @@ class MovieSettings {
     promptShowKo: (j['promptShowKo'] as bool?) ?? false,
     videoNegativePrompt: (j['videoNegativePrompt'] as String?) ?? '',
     geminiKey: (j['geminiKey'] as String?) ?? '',
-    civitaiToken: (j['civitaiToken'] as String?) ?? '',
     elevenKey: (j['elevenKey'] as String?) ?? '',
     ttsStability: TtsStability.values.firstWhere(
       (e) => e.name == j['ttsStability'],
