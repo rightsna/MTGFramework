@@ -47,10 +47,6 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _dialogueTitles = {};
   final Map<String, TextEditingController> _notes = {};
   final Map<String, TextEditingController> _directions = {};
-  final Map<String, TextEditingController> _startPrompts = {};
-  final Map<String, TextEditingController> _startPromptKos = {};
-  final Map<String, TextEditingController> _endPrompts = {};
-  final Map<String, TextEditingController> _endPromptKos = {};
   final Map<String, TextEditingController> _vprompts = {};
   final Map<String, TextEditingController> _vpromptKos = {};
   final Map<String, TextEditingController> _vnegs = {};
@@ -98,10 +94,7 @@ class StoryboardProvider extends ChangeNotifier {
   // ───────── 백엔드별 생성 준비 상태(버튼 활성/비활성 판단) ─────────
 
   /// 이미지(시작/끝장면) 생성 가능 여부 — 자체 서버(service-api) 전용.
-  bool get imageReady => _apiStatus.reachable;
 
-  String? get imageBlockReason =>
-      imageReady ? null : '서버에 연결되지 않았습니다 (상단·설정에서 확인)';
 
   /// 영상 생성 가능 여부 — **백엔드별로** 판단한다(생성 버튼이 백엔드를 직접 고르므로).
   /// [b] 생략 시 설정의 기본 백엔드 기준.
@@ -408,12 +401,6 @@ class StoryboardProvider extends ChangeNotifier {
   // ───────── 샷 필드 리졸버 — 파생 샷은 overrides에 있으면 그 값, 없으면 기준 샷 ─────────
 
   String shotTitle(Shot s) => s.resolvedTitle(baseShotOf(s));
-  List<String> shotRefCharacterIds(Shot s) =>
-      s.resolvedRefCharacterIds(baseShotOf(s));
-  String shotStartPrompt(Shot s) => s.resolvedStartPrompt(baseShotOf(s));
-  String shotStartPromptKo(Shot s) => s.resolvedStartPromptKo(baseShotOf(s));
-  String shotEndPrompt(Shot s) => s.resolvedEndPrompt(baseShotOf(s));
-  String shotEndPromptKo(Shot s) => s.resolvedEndPromptKo(baseShotOf(s));
   String shotVideoPrompt(Shot s) => s.resolvedVideoPrompt(baseShotOf(s));
   String shotVideoPromptKo(Shot s) => s.resolvedVideoPromptKo(baseShotOf(s));
   String shotVideoNeg(Shot s) => s.resolvedVideoNeg(baseShotOf(s));
@@ -636,10 +623,6 @@ class StoryboardProvider extends ChangeNotifier {
   TextEditingController noteCtrl(String dialogueId) => _notes[dialogueId]!;
   TextEditingController directionCtrl(String dialogueId) =>
       _directions[dialogueId]!;
-  TextEditingController startCtrl(String shotId) => _startPrompts[shotId]!;
-  TextEditingController startKoCtrl(String shotId) => _startPromptKos[shotId]!;
-  TextEditingController endCtrl(String shotId) => _endPrompts[shotId]!;
-  TextEditingController endKoCtrl(String shotId) => _endPromptKos[shotId]!;
   TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
   TextEditingController videoKoCtrl(String shotId) => _vpromptKos[shotId]!;
   TextEditingController videoNegCtrl(String shotId) => _vnegs[shotId]!;
@@ -918,10 +901,6 @@ class StoryboardProvider extends ChangeNotifier {
       _dialogueTitles,
       _notes,
       _directions,
-      _startPrompts,
-      _startPromptKos,
-      _endPrompts,
-      _endPromptKos,
       _vprompts,
       _vpromptKos,
       _vnegs,
@@ -1008,14 +987,6 @@ class StoryboardProvider extends ChangeNotifier {
   /// 샷 편집칸 생성 — 상속 해석값을 시드로. [base] 생략 시 씬에서 찾는다.
   void _addShotControllers(Shot shot, [Shot? base]) {
     base ??= baseShotOf(shot);
-    _startPrompts[shot.id] =
-        TextEditingController(text: shot.resolvedStartPrompt(base));
-    _startPromptKos[shot.id] =
-        TextEditingController(text: shot.resolvedStartPromptKo(base));
-    _endPrompts[shot.id] =
-        TextEditingController(text: shot.resolvedEndPrompt(base));
-    _endPromptKos[shot.id] =
-        TextEditingController(text: shot.resolvedEndPromptKo(base));
     _vprompts[shot.id] =
         TextEditingController(text: shot.resolvedVideoPrompt(base));
     _vpromptKos[shot.id] =
@@ -1027,10 +998,6 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
   void _disposeShotControllers(String shotId) {
-    _startPrompts.remove(shotId)?.dispose();
-    _startPromptKos.remove(shotId)?.dispose();
-    _endPrompts.remove(shotId)?.dispose();
-    _endPromptKos.remove(shotId)?.dispose();
     _vprompts.remove(shotId)?.dispose();
     _vpromptKos.remove(shotId)?.dispose();
     _vnegs.remove(shotId)?.dispose();
@@ -1067,13 +1034,6 @@ class StoryboardProvider extends ChangeNotifier {
           }
           for (final shot in beat.shots) {
             if (!shot.isDerived) {
-              shot.startPrompt =
-                  _startPrompts[shot.id]?.text ?? shot.startPrompt;
-              shot.startPromptKo =
-                  _startPromptKos[shot.id]?.text ?? shot.startPromptKo;
-              shot.endPrompt = _endPrompts[shot.id]?.text ?? shot.endPrompt;
-              shot.endPromptKo =
-                  _endPromptKos[shot.id]?.text ?? shot.endPromptKo;
               shot.videoPrompt = _vprompts[shot.id]?.text ?? shot.videoPrompt;
               shot.videoPromptKo =
                   _vpromptKos[shot.id]?.text ?? shot.videoPromptKo;
@@ -1083,14 +1043,6 @@ class StoryboardProvider extends ChangeNotifier {
               shot.videoNote = _videoNotes[shot.id]?.text ?? shot.videoNote;
             } else {
               final bs = baseShotOf(shot);
-              _flushShotStr(shot, Shot.kStartPrompt,
-                  _startPrompts[shot.id]?.text, bs?.startPrompt ?? '');
-              _flushShotStr(shot, Shot.kStartPromptKo,
-                  _startPromptKos[shot.id]?.text, bs?.startPromptKo ?? '');
-              _flushShotStr(shot, Shot.kEndPrompt, _endPrompts[shot.id]?.text,
-                  bs?.endPrompt ?? '');
-              _flushShotStr(shot, Shot.kEndPromptKo,
-                  _endPromptKos[shot.id]?.text, bs?.endPromptKo ?? '');
               _flushShotStr(shot, Shot.kVideoPrompt, _vprompts[shot.id]?.text,
                   bs?.videoPrompt ?? '');
               _flushShotStr(shot, Shot.kVideoPromptKo,
@@ -1138,11 +1090,6 @@ class StoryboardProvider extends ChangeNotifier {
           if (!shot.overrides.containsKey(key)) _setCtrl(c, v);
         }
 
-        refresh(Shot.kStartPrompt, _startPrompts[shot.id], bs?.startPrompt ?? '');
-        refresh(Shot.kStartPromptKo, _startPromptKos[shot.id],
-            bs?.startPromptKo ?? '');
-        refresh(Shot.kEndPrompt, _endPrompts[shot.id], bs?.endPrompt ?? '');
-        refresh(Shot.kEndPromptKo, _endPromptKos[shot.id], bs?.endPromptKo ?? '');
         refresh(Shot.kVideoPrompt, _vprompts[shot.id], bs?.videoPrompt ?? '');
         refresh(Shot.kVideoPromptKo, _vpromptKos[shot.id],
             bs?.videoPromptKo ?? '');
@@ -1899,11 +1846,7 @@ class StoryboardProvider extends ChangeNotifier {
   // ───────── 생성(샷) ─────────
 
   TextEditingController? _promptCtrlFor(String shotId, GenMode mode) =>
-      switch (mode) {
-        GenMode.imageStart => _startPrompts[shotId],
-        GenMode.imageEnd => _endPrompts[shotId],
-        GenMode.videoLow => _vprompts[shotId],
-      };
+      mode == GenMode.videoLow ? _vprompts[shotId] : null;
 
   /// [backend] 영상 생성에만 의미 있음 — 생략하면 **이 샷이 놓인 트랙의 백엔드**로 뽑는다
   /// (트랙을 가르는 기준이 백엔드라서). 결과는 그 트랙의 영상 슬롯에만 들어가므로,
@@ -1928,10 +1871,9 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call('IA2V(음성 조건 생성)는 자체 서버에서만 됩니다');
       return;
     }
-    final raw = _promptCtrlFor(shot.id, mode)?.text.trim() ?? '';
-    final prompt = _composePrompt(shot, raw, mode);
+    final prompt = _promptCtrlFor(shot.id, mode)?.text.trim() ?? '';
     if (prompt.isEmpty) {
-      messenger?.call('${mode.label} 프롬프트를 입력하세요 (공통 프롬프트도 비어 있음)');
+      messenger?.call('${mode.label} 프롬프트를 입력하세요');
       return;
     }
     final key = busyKey(shot.id, mode);
@@ -2077,9 +2019,9 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 백엔드로 라우팅해 바이트를 받는다. (여기 도달하는 영상 모드는 videoLow=생성뿐)
-  /// 이미지(시작/끝 프레임)는 자체 서버 전용 — 참조 인물이 있으면 FireRed(/edit), 없으면 /image.
-  /// [backend]는 영상에만 의미 있음. 없으면 설정의 기본 영상 백엔드.
+  /// 백엔드로 라우팅해 **영상** 바이트를 받는다. 프레임(시작·끝)은 AI로 만들지 않는다 —
+  /// 불러오거나(외부에서 만든 그림) 앞 샷 끝 프레임에서 가져온다.
+  /// [backend]는 없으면 이 샷이 놓인 트랙의 백엔드.
   Future<Uint8List> _generateBytes(
     Shot shot,
     GenMode mode,
@@ -2087,29 +2029,6 @@ class StoryboardProvider extends ChangeNotifier {
     VideoBackend? backend,
     String progressKey, // 진행 문구를 담을 busyKey — 반복 스낵바 대신 영상칸에 고정 표시
   ) async {
-    if (!mode.isVideo) {
-      final refs = await _refPhotoBytesList(shot);
-      if (refs.isNotEmpty) {
-        final who = shotRefCharacterIds(shot)
-            .map((id) => characterById(id)?.name)
-            .whereType<String>()
-            .where((n) => n.isNotEmpty)
-            .join(', ');
-        final instruction =
-            '아래 참조 인물${who.isEmpty ? '' : '($who)'}을(를) 다음 장면에 자연스럽게 배치하라. '
-            '각 인물의 얼굴·헤어스타일·의상 등 정체성은 그대로 유지할 것. 장면: $prompt';
-        // ⚠️ /edit(FireRed)은 출력 크기를 못 정한다 — 결과가 참조 사진 크기를 따라간다.
-        //    (엔드포인트의 w/h는 '편집할 영역' 크롭용이지 출력 해상도가 아니다.)
-        //    imageRes 비율을 맞추려면 서버 /edit에 출력 w/h 지원이 필요하다.
-        return ApiService(
-          _settings.effectiveServiceUrl,
-        ).generateImageWithRefs(references: refs, prompt: instruction);
-      }
-      final res = sceneOf(shot)?.imageRes ?? _settings.imageRes; // 씬별 해상도
-      return ApiService(
-        _settings.effectiveServiceUrl,
-      ).generateImage(prompt, width: res.width, height: res.height);
-    }
     // 영상 생성(저) = FE2V: 시작·끝 두 프레임이 입력(둘 다 필수).
     switch (backend ?? backendOf(shot)) {
       case VideoBackend.veo:
@@ -2363,27 +2282,7 @@ class StoryboardProvider extends ChangeNotifier {
     save();
   }
 
-  /// 생성에 쓸 최종 프롬프트.
-  /// **장면(시작/끝 이미지)에만 씬 공통을 앞에 붙인다.** 영상은 붙이지 않는다 —
-  /// 세계관·복장·룩은 이미 두 장의 프레임이 들고 있고, 거기에 공통 블록까지 얹으면
-  /// 짧게 쓴 모션 지시가 묻혀 동작이 엉킨다(실측).
-  String _composePrompt(Shot shot, String shotPrompt, GenMode mode) {
-    if (mode == GenMode.videoLow) return shotPrompt.trim();
-    final sc = sceneOf(shot);
-    // 씬 공통과 샷 프롬프트는 빈 줄로 확실히 구분한다 — 쉼표로 이으면 문장 경계가
-    // 뭉개져 어디까지가 공통 블록인지 모델도 사람도 못 가른다.
-    return [
-      (sc?.commonPrompt ?? '').trim(),
-      shotPrompt.trim(),
-    ].where((e) => e.isNotEmpty).join('\n\n');
-  }
-
-  /// 복사 버튼용 — 이 프레임이 생성에 실제로 쓰는 최종 프롬프트(씬 공통 포함).
-  /// 조립 규칙이 바뀌면 [_composePrompt] 한 곳만 고치면 되도록 그대로 태운다.
-  String composedFramePrompt(Shot shot, String shotPrompt, GenMode mode) =>
-      _composePrompt(shot, shotPrompt, mode);
-
-  // ───────── 인물 참조(샷 화면의 캐릭터 레퍼런스) ─────────
+  // ───────── 등장인물(대사 화자) ─────────
 
   Future<void> reloadCharacters() async {
     _characters = await _store.loadCharacters();
@@ -2396,33 +2295,6 @@ class StoryboardProvider extends ChangeNotifier {
       if (c.id == id) return c;
     }
     return null;
-  }
-
-  /// 이 샷의 참조 인물 토글(있으면 제거, 없으면 추가 · 최대 3).
-  /// 파생 샷이면 참조 인물 목록만 이 트랙 것으로 오버라이드된다.
-  Future<void> toggleShotRefCharacter(Shot shot, String id) async {
-    final cur = List<String>.from(shotRefCharacterIds(shot)); // 상속 포함 현재값
-    if (cur.contains(id)) {
-      cur.remove(id);
-    } else if (cur.length < 3) {
-      cur.add(id);
-    }
-    _setShotField(
-        shot, Shot.kRefCharacters, cur, () => shot.refCharacterIds = cur);
-    notifyListeners();
-    save();
-  }
-
-  /// 참조 인물들의 대표사진 바이트(최대 3, 존재하는 것만). 없으면 빈 리스트 → 일반 t2i.
-  Future<List<Uint8List>> _refPhotoBytesList(Shot shot) async {
-    final out = <Uint8List>[];
-    for (final id in shotRefCharacterIds(shot).take(3)) {
-      final cover = characterById(id)?.cover;
-      if (cover == null) continue;
-      final f = File(cover);
-      if (await f.exists()) out.add(await f.readAsBytes());
-    }
-    return out;
   }
 
   // ───────── 배경음(씬 단위 BGM · ACE-Step) ─────────
@@ -2543,7 +2415,7 @@ class StoryboardProvider extends ChangeNotifier {
   int get inspectorTabReq => _inspectorTabReq;
   int get inspectorTabReqSeq => _inspectorTabReqSeq;
 
-  /// 캔버스 등 바깥에서 인스펙터의 특정 탭을 연다(0=비트, 1=장면, 2=영상, 3=씬, 4=배경음).
+  /// 캔버스 등 바깥에서 인스펙터의 특정 탭을 연다(0=비트, 1=프레임, 2=영상, 3=트랙, 4=씬).
   void openInspectorTab(int i) {
     _inspectorTabReq = i;
     _inspectorTabReqSeq++;
@@ -3034,18 +2906,6 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _directions.values) {
-      c.dispose();
-    }
-    for (final c in _startPrompts.values) {
-      c.dispose();
-    }
-    for (final c in _startPromptKos.values) {
-      c.dispose();
-    }
-    for (final c in _endPrompts.values) {
-      c.dispose();
-    }
-    for (final c in _endPromptKos.values) {
       c.dispose();
     }
     for (final c in _vprompts.values) {

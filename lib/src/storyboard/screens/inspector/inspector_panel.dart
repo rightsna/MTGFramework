@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Clipboard
 
 import '../../models/shot.dart';
 import '../../models/dialogue_beat.dart';
@@ -39,7 +38,6 @@ part 'scene/scene_common_field.dart';
 part 'track/track_tab.dart';
 part 'track/track_default_voice_field.dart';
 part 'track/track_speed_field.dart';
-part 'bgm/bgm_tab.dart';
 part 'common/chip_label.dart';
 part 'common/no_shot.dart';
 part 'common/center_note.dart';
@@ -76,9 +74,10 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
     super.initState();
     final p = StoryboardScope.read(context);
     _tab = TabController(
-      length: 6,
+      length: 5, // 비트 · 프레임 · 영상 · 트랙 · 씬 (배경음 탭은 씬 탭으로 합쳤다)
       vsync: this,
-      initialIndex: p.settings.inspectorTab.clamp(0, 5),
+      // 저장된 탭이 없어진 '배경음'(5)일 수 있다 — 범위를 넘으면 마지막 탭으로 접는다.
+      initialIndex: p.settings.inspectorTab.clamp(0, 4),
     );
     _tab.addListener(() {
       if (!_tab.indexIsChanging) {
@@ -101,7 +100,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
       _restoredTab = true;
       _lastDialogueId = p.selectedDialogueId;
       _lastShotId = p.selectedShotId;
-      final saved = p.settings.inspectorTab.clamp(0, 5);
+      final saved = p.settings.inspectorTab.clamp(0, 4);
       if (saved != _tab.index) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _tab.index = saved;
@@ -127,7 +126,7 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
       _seenTabReqSeq = p.inspectorTabReqSeq;
       _lastDialogueId = p.selectedDialogueId;
       _lastShotId = p.selectedShotId;
-      final want = p.inspectorTabReq.clamp(0, 5);
+      final want = p.inspectorTabReq.clamp(0, 4);
       if (_tab.index != want) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _tab.animateTo(want);
@@ -150,7 +149,6 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
               Tab(text: '영상'),
               Tab(text: '트랙'),
               Tab(text: '씬'),
-              Tab(text: '배경음'),
             ],
           ),
           Expanded(
@@ -164,7 +162,6 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
                   shot == null ? const _NoShot() : _VideoTab(shot: shot),
                   const _TrackTab(),
                   const _SceneSettingsTab(),
-                  const _BgmTab(),
                 ],
               ),
             ),

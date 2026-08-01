@@ -9,14 +9,12 @@ class _PromptPair extends StatelessWidget {
     required this.controller,
     required this.koController,
     required this.hint,
-    this.trailing,
   });
 
   final String label;
   final TextEditingController controller; // 원문(생성에 실제로 쓰임)
   final TextEditingController koController; // 번역(확인용)
   final String hint;
-  final Widget? trailing; // 라벨 우측(복사 버튼 등)
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +34,6 @@ class _PromptPair extends StatelessWidget {
               onChanged: p.setPromptShowKo,
             ),
             const Spacer(),
-            ?trailing,
           ],
         ),
         const SizedBox(height: 6),

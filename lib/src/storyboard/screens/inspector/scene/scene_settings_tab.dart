@@ -1,8 +1,7 @@
 part of '../inspector_panel.dart';
 
-/// 씬 탭 — 선택 씬 전체 설정(제목·생성 설정·일괄 생성·삭제). 배경음은 별도 '배경음' 탭.
-
-/// 씬 탭 — 선택 씬의 것들을 한곳에: 생성 설정(해상도) · 삭제. (제목은 캔버스 바.)
+/// 씬 탭 — 선택 씬의 것들을 한곳에: 프레임(해상도·공통 프롬프트) · 배경음 · 정리/삭제.
+/// (제목은 캔버스 상단 바. 배경음 전용 탭은 없앴다 — 씬 단위 값이라 여기로 합쳤다.)
 class _SceneSettingsTab extends StatelessWidget {
   const _SceneSettingsTab();
 
@@ -25,19 +24,19 @@ class _SceneSettingsTab extends StatelessWidget {
               key: ValueKey('scene_note_${sc.id}'),
               controller: p.sceneNoteCtrl(sc.id)),
           const SizedBox(height: 16),
-          // 프레임 해상도는 **씬 단위** — 프레임은 트랙끼리 공유(상속)하니 씬에 두는 게 맞다.
+          // 프레임(시작·끝 장면)에 관한 씬 단위 값들 — 해상도 + 공통 프롬프트.
+          // 프레임은 트랙끼리 공유(상속)하니 씬에 두는 게 맞다.
           // (영상 해상도·기본 성우는 '트랙' 탭으로 옮겼다.)
           _GroupCard(
             icon: Icons.aspect_ratio,
-            title: '프레임 해상도',
+            title: '프레임',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _SectionLabel('프레임 해상도 (시작·끝 장면)'),
+                _SectionLabel('해상도 (시작·끝 장면)'),
                 const SizedBox(height: 2),
                 const Text(
-                  'FE2V 입력이라 영상과 비율을 맞추세요. '
-                  '인물참조가 있는 샷은 무시되고 참조 사진 크기로 나옵니다.',
+                  'FE2V 입력이라 영상과 비율을 맞추세요.',
                   style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
                 ),
                 const SizedBox(height: 6),
@@ -53,10 +52,22 @@ class _SceneSettingsTab extends StatelessWidget {
                       ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                _SectionLabel('공통 프롬프트'),
+                const SizedBox(height: 2),
+                const Text(
+                  '이 씬 전체의 세계관·장소·룩을 적어 두는 칸입니다. 지금은 생성 프롬프트에 '
+                  '자동으로 붙지 않습니다 — 영상 프롬프트에 얹으면 짧은 모션 지시가 묻혀서요.',
+                  style: TextStyle(fontSize: 11, color: Colors.white38, height: 1.4),
+                ),
+                const SizedBox(height: 6),
+                _SceneCommonField(key: ValueKey('common_${sc.id}')),
               ],
             ),
           ),
-          // 배경음은 별도 '배경음' 탭으로 옮겼다.
+          const SizedBox(height: 16),
+          // 배경음 — 씬 단위 값이라 여기 있는 게 맞다(전용 탭은 없앴다).
+          const BgmSection(),
           const SizedBox(height: 24),
           // 구조는 두고 생성물만 비우기 — 다시 뽑기 전 초기화용.
           OutlinedButton.icon(

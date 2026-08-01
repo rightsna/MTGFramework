@@ -39,11 +39,6 @@ enum StillEffect {
 class Shot {
   // ── 오버라이드 키 (파생 샷의 [overrides] 맵에서 쓰는 필드 이름) ──
   static const kTitle = 'title';
-  static const kRefCharacters = 'refCharacters';
-  static const kStartPrompt = 'startPrompt';
-  static const kStartPromptKo = 'startPromptKo';
-  static const kEndPrompt = 'endPrompt';
-  static const kEndPromptKo = 'endPromptKo';
   static const kVideoPrompt = 'videoPrompt';
   static const kVideoPromptKo = 'videoPromptKo';
   static const kVideoNeg = 'videoNegativePrompt';
@@ -60,11 +55,6 @@ class Shot {
 
   // ── 기준 샷(baseId==null)의 타입 필드. 파생 샷에서는 쓰지 않는다(overrides로 간다). ──
   String title;
-  List<String> refCharacterIds; // 이 샷 화면의 참조 인물 id들(FireRed 멀티, 최대 3)
-  String startPrompt;
-  String startPromptKo; // 확인용 한국어 번역, 생성엔 안 쓰임
-  String endPrompt;
-  String endPromptKo;
   String videoPrompt; // 생성에 실제로 쓰이는 원문
   String videoPromptKo;
   String videoNegativePrompt; // **빼고 싶은 것만** — 부정은 전부 여기로
@@ -98,11 +88,6 @@ class Shot {
   Shot({
     required this.id,
     this.title = '',
-    List<String>? refCharacterIds,
-    this.startPrompt = '',
-    this.startPromptKo = '',
-    this.endPrompt = '',
-    this.endPromptKo = '',
     this.videoPrompt = '',
     this.videoPromptKo = '',
     this.videoNegativePrompt = '',
@@ -119,8 +104,7 @@ class Shot {
     this.sfx,
     this.baseId,
     Map<String, Object?>? overrides,
-  })  : refCharacterIds = refCharacterIds ?? [],
-        overrides = overrides ?? {};
+  }) : overrides = overrides ?? {};
 
   /// 파생 트랙의 샷인지(기준 트랙이면 false).
   bool get isDerived => baseId != null;
@@ -138,14 +122,6 @@ class Shot {
   }
 
   String resolvedTitle(Shot? b) => _r(kTitle, b, (s) => s.title);
-  List<String> resolvedRefCharacterIds(Shot? b) =>
-      _r(kRefCharacters, b, (s) => s.refCharacterIds);
-  String resolvedStartPrompt(Shot? b) => _r(kStartPrompt, b, (s) => s.startPrompt);
-  String resolvedStartPromptKo(Shot? b) =>
-      _r(kStartPromptKo, b, (s) => s.startPromptKo);
-  String resolvedEndPrompt(Shot? b) => _r(kEndPrompt, b, (s) => s.endPrompt);
-  String resolvedEndPromptKo(Shot? b) =>
-      _r(kEndPromptKo, b, (s) => s.endPromptKo);
   String resolvedVideoPrompt(Shot? b) => _r(kVideoPrompt, b, (s) => s.videoPrompt);
   String resolvedVideoPromptKo(Shot? b) =>
       _r(kVideoPromptKo, b, (s) => s.videoPromptKo);
@@ -210,17 +186,8 @@ class Shot {
     return {
       'id': id,
       'title': title,
-      'refCharacters': refCharacterIds,
-      'startScene': {
-        'prompt': startPrompt,
-        'promptKo': startPromptKo,
-        'image': mediaName(startImagePath),
-      },
-      'endScene': {
-        'prompt': endPrompt,
-        'promptKo': endPromptKo,
-        'image': mediaName(endImagePath),
-      },
+      'startScene': {'image': mediaName(startImagePath)},
+      'endScene': {'image': mediaName(endImagePath)},
       'video': {
         'prompt': videoPrompt,
         'promptKo': videoPromptKo,
@@ -260,20 +227,11 @@ class Shot {
     final baseId = j['base'] as String?;
     if (baseId != null) {
       final video = (j['video'] as Map?)?.cast<String, dynamic>();
-      // 새 형식은 'overrides'. 옛 형식은 상속 샷=video만, 분리 샷=전체 필드+detached:true.
-      final Map<String, Object?> overrides;
-      if (j.containsKey('overrides')) {
-        overrides = _overridesFromJson(
-            (j['overrides'] as Map?)?.cast<String, dynamic>(), dir);
-      } else if (j['detached'] == true) {
-        overrides = _migrateDetached(j, dir); // 옛 분리 샷 내용을 오버라이드로 이관
-      } else {
-        overrides = {}; // 옛 상속 샷 = 아무것도 오버라이드 안 함
-      }
       return Shot(
         id: j['id'] as String,
         baseId: baseId,
-        overrides: overrides,
+        overrides: _overridesFromJson(
+            (j['overrides'] as Map?)?.cast<String, dynamic>(), dir),
         videoActualSeconds: (video?['actualSeconds'] as num?)?.toDouble(),
         videoPath: mediaPath(dir, video?['file']),
         videoJobId: video?['jobId'] as String?,
@@ -286,11 +244,6 @@ class Shot {
     return Shot(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
-      refCharacterIds: (j['refCharacters'] as List?)?.cast<String>(),
-      startPrompt: (start?['prompt'] as String?) ?? '',
-      startPromptKo: (start?['promptKo'] as String?) ?? '',
-      endPrompt: (end?['prompt'] as String?) ?? '',
-      endPromptKo: (end?['promptKo'] as String?) ?? '',
       videoPrompt: (video?['prompt'] as String?) ?? '',
       videoPromptKo: (video?['promptKo'] as String?) ?? '',
       videoNegativePrompt: (video?['negativePrompt'] as String?) ?? '',
@@ -311,40 +264,6 @@ class Shot {
     );
   }
 
-  /// 옛 **분리(detached) 샷**의 전체 필드를 새 overrides 맵으로 이관한다(내용 유실 방지).
-  /// 옛 분리 샷은 기준 샷과 같은 형식(startScene/endScene/video)으로 자기 내용을 통째로 저장했다.
-  static Map<String, Object?> _migrateDetached(
-      Map<String, dynamic> j, String dir) {
-    final start = (j['startScene'] as Map?)?.cast<String, dynamic>();
-    final end = (j['endScene'] as Map?)?.cast<String, dynamic>();
-    final video = (j['video'] as Map?)?.cast<String, dynamic>();
-    final ov = <String, Object?>{
-      kTitle: (j['title'] as String?) ?? '',
-      kRefCharacters: (j['refCharacters'] as List?)?.cast<String>() ?? <String>[],
-      kStartPrompt: (start?['prompt'] as String?) ?? '',
-      kStartPromptKo: (start?['promptKo'] as String?) ?? '',
-      kEndPrompt: (end?['prompt'] as String?) ?? '',
-      kEndPromptKo: (end?['promptKo'] as String?) ?? '',
-      kVideoPrompt: (video?['prompt'] as String?) ?? '',
-      kVideoPromptKo: (video?['promptKo'] as String?) ?? '',
-      kVideoNeg: (video?['negativePrompt'] as String?) ?? '',
-      kVideoSeconds: (video?['seconds'] as num?)?.toDouble() ?? 5,
-      kVideoMode: _readVideoMode(video),
-      kStillEffect: StillEffect.values.firstWhere(
-          (e) => e.name == video?['stillEffect'],
-          orElse: () => StillEffect.none),
-      kNote: (j['note'] as String?) ?? '',
-      kVideoNote: (video?['note'] as String?) ?? '',
-    };
-    // 프레임 파일은 있을 때만 오버라이드(없으면 상속으로 두는 게 낫다).
-    final si = mediaPath(dir, start?['image']);
-    if (si != null) ov[kStartImage] = si;
-    final ei = mediaPath(dir, end?['image']);
-    if (ei != null) ov[kEndImage] = ei;
-    return ov;
-  }
-
-  /// overrides JSON을 메모리 맵으로 — 이미지 파일명→절대경로, enum name→값.
   static Map<String, Object?> _overridesFromJson(
       Map<String, dynamic>? j, String dir) {
     final out = <String, Object?>{};
@@ -362,8 +281,6 @@ class Shot {
           out[e.key] = StillEffect.values.firstWhere(
               (v) => v.name == e.value,
               orElse: () => StillEffect.none);
-        case kRefCharacters:
-          out[e.key] = (e.value as List?)?.cast<String>() ?? <String>[];
         case kVideoSeconds:
           out[e.key] = (e.value as num?)?.toDouble();
         case kSfx:

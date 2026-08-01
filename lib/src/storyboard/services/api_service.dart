@@ -92,48 +92,6 @@ class ApiService {
     );
   }
 
-  /// 텍스트→이미지 (/image). 시작/끝 스크린샷 생성용.
-  /// [width]/[height]는 함께 지정(둘 다 8의 배수). 0이면 서버 워크플로 기본(1024×1024 정사각).
-  Future<Uint8List> generateImage(
-    String prompt, {
-    int width = 0,
-    int height = 0,
-  }) async {
-    final r = await http.post(
-      Uri.parse('$_base/image'),
-      headers: const {'Content-Type': 'application/json', ..._ngrok},
-      body: jsonEncode({
-        'prompt': prompt,
-        if (width > 0 && height > 0) 'width': width,
-        if (width > 0 && height > 0) 'height': height,
-      }),
-    );
-    _check(r.statusCode, r.bodyBytes);
-    return r.bodyBytes;
-  }
-
-  /// 인물 레퍼런스 기반 장면 생성 (/edit, FireRed 멀티 레퍼런스). 참조 이미지 1~3장 + 지시문 →
-  /// 각 인물 정체성(얼굴·의상)을 유지하며 지시문대로 장면을 생성한다. (w/h 미지정=전체)
-  /// image(필수) + image2·image3(선택)로 보낸다.
-  Future<Uint8List> generateImageWithRefs({
-    required List<Uint8List> references,
-    required String prompt,
-    bool translate = false,
-  }) async {
-    final req = http.MultipartRequest('POST', Uri.parse('$_base/edit'))
-      ..headers.addAll(_ngrok)
-      ..fields['prompt'] = prompt
-      ..fields['translate'] = translate ? 'true' : 'false';
-    for (var i = 0; i < references.length && i < 3; i++) {
-      final field = i == 0 ? 'image' : 'image${i + 1}';
-      req.files.add(http.MultipartFile.fromBytes(field, references[i],
-          filename: '$field.png'));
-    }
-    final r = await http.Response.fromStream(await req.send());
-    _check(r.statusCode, r.bodyBytes);
-    return r.bodyBytes;
-  }
-
   /// 텍스트→배경음악 (/bgm, ACE-Step 인스트루멘탈). 스타일 태그 + 길이(초) → mp3 바이트.
   Future<Uint8List> generateBgm({
     required String prompt,

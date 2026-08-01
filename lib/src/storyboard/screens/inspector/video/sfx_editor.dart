@@ -44,73 +44,6 @@ class _SfxEditorState extends State<_SfxEditor> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _SectionLabel('소리 묘사'),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _prompt,
-            minLines: 2,
-            maxLines: 6,
-            style: const TextStyle(fontSize: 14, height: 1.4),
-            decoration: const InputDecoration(
-              hintText: '예: deep cinematic impact boom, sub-bass rumble, tense',
-              hintStyle: _hintStyle,
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            onChanged: (v) {
-              p.setSfxPrompt(shot, v);
-              setState(() {}); // 생성 버튼 활성 갱신
-            },
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            '상황·질감을 영어로 묘사할수록 잘 나옵니다 (일레븐랩스 효과음)',
-            style: TextStyle(fontSize: 11, color: Colors.white38),
-          ),
-          const SizedBox(height: 14),
-          // 길이(초) — 일레븐랩스 0.5~22초.
-          Row(
-            children: [
-              const _SectionLabel('길이'),
-              const Spacer(),
-              Text('${_dur.toStringAsFixed(1)}초',
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-          ),
-          Slider(
-            value: _dur,
-            min: 0.5,
-            max: 22,
-            divisions: 215, // 0.1초 단위
-            label: '${_dur.toStringAsFixed(1)}초',
-            onChanged: (v) => setState(() => _dur = v),
-            onChangeEnd: (v) => p.setSfxDuration(shot, v),
-          ),
-          // 프롬프트 충실도(0~1) — 높을수록 묘사에 충실, 낮을수록 다양.
-          Row(
-            children: [
-              const _SectionLabel('프롬프트 충실도'),
-              const Spacer(),
-              Text(_infl.toStringAsFixed(2),
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w600)),
-            ],
-          ),
-          Slider(
-            value: _infl,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            label: _infl.toStringAsFixed(2),
-            onChanged: (v) => setState(() => _infl = v),
-            onChangeEnd: (v) => p.setSfxInfluence(shot, v),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-          _SectionLabel('효과음'),
-          const SizedBox(height: 6),
           AudioBox(
             path: p.sfxPathOf(shot),
             emptyText: '효과음 없음 — 불러오거나 생성하세요',
@@ -141,13 +74,90 @@ class _SfxEditorState extends State<_SfxEditor> {
           ),
           const SizedBox(height: 14),
           const Divider(height: 1),
+          const SizedBox(height: 14),
+          _SectionLabel('소리 묘사'),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _prompt,
+            minLines: 2,
+            maxLines: 6,
+            style: const TextStyle(fontSize: 14, height: 1.4),
+            decoration: const InputDecoration(
+              hintText: '예: deep cinematic impact boom, sub-bass rumble, tense',
+              hintStyle: _hintStyle,
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) {
+              p.setSfxPrompt(shot, v);
+              setState(() {}); // 생성 버튼 활성 갱신
+            },
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '상황·질감을 영어로 묘사할수록 잘 나옵니다 (일레븐랩스 효과음)',
+            style: TextStyle(fontSize: 11, color: Colors.white38),
+          ),
+          const SizedBox(height: 14),
+          // 길이(초) — 일레븐랩스 0.5~22초.
+          Row(
+            children: [
+              const _SectionLabel('길이'),
+              const Spacer(),
+              Text(
+                '${_dur.toStringAsFixed(1)}초',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _dur,
+            min: 0.5,
+            max: 22,
+            divisions: 215, // 0.1초 단위
+            label: '${_dur.toStringAsFixed(1)}초',
+            onChanged: (v) => setState(() => _dur = v),
+            onChangeEnd: (v) => p.setSfxDuration(shot, v),
+          ),
+          // 프롬프트 충실도(0~1) — 높을수록 묘사에 충실, 낮을수록 다양.
+          Row(
+            children: [
+              const _SectionLabel('프롬프트 충실도'),
+              const Spacer(),
+              Text(
+                _infl.toStringAsFixed(2),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: _infl,
+            min: 0,
+            max: 1,
+            divisions: 20,
+            label: _infl.toStringAsFixed(2),
+            onChanged: (v) => setState(() => _infl = v),
+            onChangeEnd: (v) => p.setSfxInfluence(shot, v),
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+
           const SizedBox(height: 12),
           Row(
             children: const [
               Icon(Icons.graphic_eq, size: 14, color: accent2),
               SizedBox(width: 6),
-              Text('AI로 생성 (선택)',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(
+                'AI로 생성 (선택)',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -177,8 +187,8 @@ class _SfxEditorState extends State<_SfxEditor> {
               _genning
                   ? '생성 중…'
                   : has
-                      ? '효과음 재생성'
-                      : '효과음 생성',
+                  ? '효과음 재생성'
+                  : '효과음 생성',
             ),
           ),
         ],

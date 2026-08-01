@@ -8,6 +8,7 @@ import '../../services/elevenlabs_service.dart';
 import '../../services/movie_settings_store.dart';
 import '../../services/still_image.dart';
 import '../../services/storyboard_store.dart';
+import '../common/image_zoom_dialog.dart';
 import '../ui.dart';
 
 /// 인물 관리 전체 화면(푸시 라우트). 왼쪽 인물 목록 + 오른쪽 상세(대표사진·이름·설명·사진 갤러리).
@@ -401,7 +402,7 @@ class _CharacterManagerScreenState extends State<CharacterManagerScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _CoverImage(path: c.cover),
+              _CoverImage(path: c.cover, name: c.name),
               const SizedBox(width: 20),
               Expanded(
                 child: Column(

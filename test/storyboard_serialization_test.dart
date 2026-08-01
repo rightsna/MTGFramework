@@ -43,9 +43,6 @@ void main() {
             shots: [
               Shot(
                 id: 'clip_1',
-                refCharacterIds: ['char_miles'],
-                startPrompt: '마일스 입을 뗀다, 클로즈업',
-                endPrompt: '눈을 감는다',
                 videoPrompt: '카메라 천천히 전진',
                 videoSeconds: 3,
                 startImagePath: '$dir/clip_1_start.png',
@@ -54,8 +51,6 @@ void main() {
               ),
               Shot(
                 id: 'clip_2',
-                refCharacterIds: ['char_sheriff'],
-                startPrompt: '보안관 무표정 리액션',
                 videoSeconds: 3,
               ),
             ],
@@ -63,7 +58,7 @@ void main() {
           // 무음 대사(대사 없음) — establishing 샷 1개.
           DialogueBeat(
             id: 'shot_2',
-            shots: [Shot(id: 'clip_3', startPrompt: '모텔 외경')],
+            shots: [Shot(id: 'clip_3')],
           ),
           ]),
         ],
@@ -104,12 +99,9 @@ void main() {
     final clips1 = s1['shots'] as List;
     expect(clips1.length, 2);
     final c1 = clips1.first as Map;
-    expect(c1['refCharacters'], ['char_miles']);
-    expect(c1['startScene'], {
-      'prompt': '마일스 입을 뗀다, 클로즈업',
-      'promptKo': '',
-      'image': 'clip_1_start.png',
-    });
+    // 프레임은 그림만 남는다 — 프롬프트·인물참조(로컬 이미지 생성)는 기능째 걷어냈다.
+    expect(c1['startScene'], {'image': 'clip_1_start.png'});
+    expect(c1.containsKey('refCharacters'), isFalse);
     // mode = 영상 생성 방식(fe2v/i2v/still). 기본은 fe2v. stillEffect = 스틸컷 켄번스(기본 none).
     // negativePrompt = 빼고 싶은 것만 적는 칸(비면 서버 워크플로 기본 네거티브).
     expect(c1['video'], {
@@ -162,7 +154,6 @@ void main() {
 
     expect(s1.shots.length, 2);
     final c1 = s1.shots.first;
-    expect(c1.refCharacterIds, ['char_miles']);
     expect(c1.endImagePath, '$dir/clip_1_end.png');
     expect(c1.startImagePath, '$dir/clip_1_start.png');
     expect(c1.videoPath, '$dir/clip_1_vlow.mp4');
@@ -402,10 +393,9 @@ void main() {
     // 끝 이미지/프롬프트가 보존된다(FE2V 필수 프레임).
     final withEnd = Shot.fromJson({
       'id': 'y',
-      'startScene': {'prompt': 'a', 'image': null},
-      'endScene': {'prompt': '문 닫힘', 'image': 'y_end.png'},
+      'startScene': {'image': null},
+      'endScene': {'image': 'y_end.png'},
     }, dir);
-    expect(withEnd.endPrompt, '문 닫힘');
     expect(withEnd.endImagePath, '$dir/y_end.png');
   });
 

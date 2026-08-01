@@ -60,14 +60,15 @@ class _CharTile extends StatelessWidget {
   }
 }
 
-/// 상세 상단의 대표사진(큰 이미지).
+/// 상세 상단의 대표사진(큰 이미지). **누르면 확대 팝업** — 작은 칸에선 얼굴이 안 보인다.
 class _CoverImage extends StatelessWidget {
-  const _CoverImage({required this.path});
+  const _CoverImage({required this.path, this.name});
   final String? path;
+  final String? name;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final img = Container(
       width: 160,
       height: 160,
       decoration: BoxDecoration(
@@ -83,6 +84,19 @@ class _CoverImage extends StatelessWidget {
               gaplessPlayback: true,
               errorBuilder: (_, _, _) => const _CoverPlaceholder())
           : const _CoverPlaceholder(),
+    );
+    if (path == null) return img;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => showImageZoomDialog(
+          context,
+          path: path!,
+          version: 0,
+          title: (name ?? '').trim().isEmpty ? '대표사진' : name!.trim(),
+        ),
+        child: Tooltip(message: '크게 보기', child: img),
+      ),
     );
   }
 }

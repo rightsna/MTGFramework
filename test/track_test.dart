@@ -39,7 +39,6 @@ void main() {
     // 트랙 1의 재료를 채워 둔다(프롬프트·프레임·영상). 편집칸→save로 기준 타입 필드에 굳힌다.
     for (final s in beat.shots) {
       p.videoCtrl(s.id).text = '카메라가 밀려든다';
-      p.startCtrl(s.id).text = '복도 끝';
       s.startImagePath = (await file('${s.id}_start.png')).path;
       s.endImagePath = (await file('${s.id}_end.png')).path;
       s.videoPath = (await file('${s.id}_vlow.mp4')).path;
@@ -65,7 +64,6 @@ void main() {
       expect(d.videoPrompt, '', reason: '타입 필드에 복사해 들고 있지 않는다');
       // 읽을 땐(리졸버) 기준 트랙 값을 상속한다.
       expect(p.shotVideoPrompt(d), base[i].videoPrompt);
-      expect(p.shotStartPrompt(d), base[i].startPrompt);
       expect(p.shotStartImage(d), base[i].startImagePath);
       // 편집칸도 상속 값을 시드로 보여 준다.
       expect(p.videoCtrl(d.id).text, '카메라가 밀려든다');
@@ -105,8 +103,7 @@ void main() {
     expect(derived.overrides.keys, contains('videoPrompt'));
     expect(p.shotVideoPrompt(derived), '핸드헬드로 흔들린다');
     // 나머지 필드는 여전히 상속(오버라이드 안 됨).
-    expect(derived.overrides.containsKey('startPrompt'), isFalse);
-    expect(p.shotStartPrompt(derived), '복도 끝');
+    expect(derived.overrides.containsKey('videoSeconds'), isFalse);
     // 트랙 1은 물들지 않는다.
     p.selectTrack(0);
     expect(p.shotVideoPrompt(p.dialogues.single.shots.first), '카메라가 밀려든다');
@@ -212,9 +209,8 @@ void main() {
     expect(sc.tracks[1].name, 'Veo 3.1');
     final back = sc.tracks[1].beats.single.shots.first;
     expect(back.overrides.keys, contains('videoPrompt'), reason: '오버라이드는 남는다');
-    expect(back.overrides.containsKey('startPrompt'), isFalse, reason: '상속 필드는 저장 안 됨');
+    expect(back.overrides.containsKey('note'), isFalse, reason: '상속 필드는 저장 안 됨');
     expect(p2.shotVideoPrompt(back), '핸드헬드');
-    expect(p2.shotStartPrompt(back), '복도 끝', reason: '상속 필드는 기준에서 다시 읽힌다');
     expect(back.videoPath, derived.videoPath, reason: '뽑아 둔 영상은 트랙에 남는다');
     p2.dispose();
   });
