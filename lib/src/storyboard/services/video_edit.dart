@@ -286,7 +286,11 @@ class VideoEdit {
     if (ffmpeg == null) return path;
     final cur = await _mediaDuration(path);
     if (cur <= 0 || cur >= seconds - 0.02) return path; // 이미 충분하면 손대지 않는다
-    final out = '$path.pad${seconds.toStringAsFixed(2)}.mp3';
+    // 패딩본은 **임시폴더**에 둔다 — 프로젝트 폴더에 두면 아무도 참조하지 않는
+    // `*.pad3.00.mp3` 중간 파일이 계속 쌓인다(2026-08-02 정리에서 발견).
+    final out = '${Directory.systemTemp.path}/mtg_pad_'
+        '${path.hashCode.toUnsigned(32).toRadixString(16)}_'
+        '${seconds.toStringAsFixed(2)}.mp3';
     if (File(out).existsSync()) return out;
     final r = await Process.run(ffmpeg, [
       '-y',
