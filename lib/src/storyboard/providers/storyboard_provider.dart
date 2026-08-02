@@ -30,7 +30,13 @@ import '../services/video_edit.dart';
 class StoryboardProvider extends ChangeNotifier {
   StoryboardProvider({required this.projectDirPath}) {
     _store = StoryboardStore(projectDirPath);
-    _load();
+    // 읽기는 **지금 프레임을 그린 뒤에** 시작한다 — 프로젝트를 고르자마자 창·패널이 먼저 뜨고,
+    // 씬 파싱·편집칸 만들기는 그다음부터다. 같은 프레임에 몰면 화면이 늦게 뜬다.
+    // (프레임 파이프라인은 vsync 콜백 안에서 동기로 돌기 때문에, 0ms 타이머는 그 뒤에 깨어난다.
+    //  addPostFrameCallback과 달리 위젯 트리 밖에서 만들어도 확실히 돈다.)
+    Future<void>.delayed(Duration.zero, () {
+      if (!_disposed) _load();
+    });
   }
 
   /// 이 프로젝트의 폴더(scene*.json + 미디어가 여기 저장된다).
@@ -2764,11 +2770,14 @@ class StoryboardProvider extends ChangeNotifier {
     }
   }
 
-  /// 앞 샷에서 가져올 수 있는지 — 끝 프레임이나 영상이 있어야 한다(버튼 활성 판단).
+  /// 앞 샷에서 가져올 수 있는지 — 끝 프레임이나 영상이 **잡혀 있는지**(버튼 활성 판단).
+  /// 파일이 실제로 있는지는 여기서 안 본다: 이 값은 **매 리빌드마다** 필요한데 디스크를
+  /// 두드리면 그 비용이 그리기 경로에 눌러앉는다. 파일이 사라졌으면 눌렀을 때
+  /// [startFromPrevShot]이 이유를 말해 준다.
   bool canStartFromPrevShot(Shot shot) {
     final prev = prevShotOf(shot);
     if (prev == null) return false;
-    return _hasFile(shotEndImage(prev)) || _hasFile(videoPathOf(prev));
+    return shotEndImage(prev) != null || videoPathOf(prev) != null;
   }
 
   Future<Uint8List?> _startFrameBytes(Shot shot) async {
@@ -2853,9 +2862,20 @@ class StoryboardProvider extends ChangeNotifier {
 
   /// 내보낼 게 있는지 — 이미 뽑힌 영상이 하나라도 있거나, 내보내기가 직접 구울 수 있는
   /// 스틸컷이 하나라도 있으면 참(내보내기 버튼 활성 판단).
+  /// 내보낼 게 있는지(버튼 활성 판단) — **경로가 잡혀 있는지**만 본다.
+  /// 리졸버의 같은 이름 메서드는 파일 존재까지 확인하지만(내보내기 본체가 쓴다), 화면은
+  /// 매 리빌드마다 이걸 물어서 샷 수만큼 디스크를 두드리게 된다. 실제 유무는 내보낼 때 본다.
   bool trackHasVideo(VideoTrack track) {
-    final sc = sceneOfTrack(track);
-    return sc != null && SceneResolver(sc).trackHasVideo(track);
+    for (final beat in track.beats) {
+      for (final s in beat.shots) {
+        if (videoPathOf(s) != null) return true;
+        // 스틸컷은 내보내기가 직접 구울 수 있다 — 시작 프레임이 잡혀 있으면 거리가 있는 셈.
+        if (shotVideoMode(s) == VideoMode.still && startPathOf(s) != null) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// **트랙 하나**를 하나의 mp4로 내보낸다 — 그 트랙의 영상에 대사 음성·효과음·배경음까지 합쳐서.

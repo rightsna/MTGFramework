@@ -133,22 +133,12 @@ class _AudioPlayer extends StatefulWidget {
 }
 
 class _AudioPlayerState extends State<_AudioPlayer> {
-  late final VideoPlayerController _ctrl;
+  /// **재생을 누를 때** 만든다. 예전엔 위젯이 뜨자마자 AVPlayer를 열었는데, 비트 탭처럼
+  /// 오디오 칸이 여럿인 화면에선 그게 곧 진입 지연이었다(파일 열기 + 디코더 초기화).
+  VideoPlayerController? _ctrl;
   bool _ready = false;
+  bool _loading = false;
   Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = VideoPlayerController.file(File(widget.path));
-    _ctrl.initialize().then((_) {
-      if (!mounted) return;
-      setState(() => _ready = true);
-    }).catchError((Object e) {
-      if (mounted) setState(() => _error = e);
-    });
-    _ctrl.addListener(_onTick);
-  }
 
   void _onTick() {
     if (mounted) setState(() {});
@@ -156,14 +146,42 @@ class _AudioPlayerState extends State<_AudioPlayer> {
 
   @override
   void dispose() {
-    _ctrl.removeListener(_onTick);
-    _ctrl.dispose();
+    _ctrl?.removeListener(_onTick);
+    _ctrl?.dispose();
     super.dispose();
   }
 
+  /// 처음 누르면 여기서 열고 바로 재생한다.
+  Future<void> _loadAndPlay() async {
+    if (_loading) return;
+    setState(() => _loading = true);
+    final c = VideoPlayerController.file(File(widget.path));
+    try {
+      await c.initialize();
+      if (!mounted) {
+        await c.dispose();
+        return;
+      }
+      c.addListener(_onTick);
+      setState(() {
+        _ctrl = c;
+        _ready = true;
+        _loading = false;
+      });
+      await c.play();
+    } catch (e) {
+      await c.dispose();
+      if (mounted) setState(() => _error = e);
+    }
+  }
+
   void _toggle() {
-    if (!_ready) return;
-    _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play();
+    final c = _ctrl;
+    if (!_ready || c == null) {
+      _loadAndPlay();
+      return;
+    }
+    c.value.isPlaying ? c.pause() : c.play();
     setState(() {});
   }
 
@@ -190,24 +208,29 @@ class _AudioPlayerState extends State<_AudioPlayer> {
         ),
       );
     }
-    if (!_ready) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    final v = _ctrl.value;
-    final dur = v.duration;
-    final pos = v.position > dur ? dur : v.position;
+    final c = _ctrl;
+    // 아직 안 연 상태 — 재생 버튼만 두고, 누르면 그때 연다(길이는 열어야 안다).
+    final v = c?.value;
+    final dur = v?.duration ?? Duration.zero;
+    final pos = (v == null || v.position > dur) ? dur : v.position;
     final max = dur.inMilliseconds == 0 ? 1.0 : dur.inMilliseconds.toDouble();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
         children: [
           IconButton(
-            onPressed: _toggle,
+            onPressed: _loading ? null : _toggle,
             iconSize: 38,
             color: accent2,
-            icon: Icon(v.isPlaying
-                ? Icons.pause_circle_filled
-                : Icons.play_circle_filled),
+            icon: _loading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon((v?.isPlaying ?? false)
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled),
           ),
           Expanded(
             child: Column(
@@ -225,8 +248,10 @@ class _AudioPlayerState extends State<_AudioPlayer> {
                     value: pos.inMilliseconds.clamp(0, max.toInt()).toDouble(),
                     max: max,
                     activeColor: accent2,
-                    onChanged: (ms) =>
-                        _ctrl.seekTo(Duration(milliseconds: ms.round())),
+                    // 아직 안 연 상태면 끌 게 없다(누르면 열린다).
+                    onChanged: c == null
+                        ? null
+                        : (ms) => c.seekTo(Duration(milliseconds: ms.round())),
                   ),
                 ),
                 Padding(
@@ -234,10 +259,10 @@ class _AudioPlayerState extends State<_AudioPlayer> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(_fmt(pos),
+                      Text(c == null ? '--:--' : _fmt(pos),
                           style: const TextStyle(
                               fontSize: 11, color: Colors.white54)),
-                      Text(_fmt(dur),
+                      Text(c == null ? '--:--' : _fmt(dur),
                           style: const TextStyle(
                               fontSize: 11, color: Colors.white54)),
                     ],

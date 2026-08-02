@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderProxyBox;
 
@@ -103,8 +105,23 @@ class _CanvasViewState extends State<CanvasView> {
   /// 줌·팬 상태 — **어느 카드가 화면에 있는지** 계산하는 근거다([_CanvasViewport]).
   final TransformationController _tc = TransformationController();
 
+  /// 카드를 그리기 시작했는지 — 프로젝트를 연 직후 **1초는 비워 둔다**.
+  /// 여는 순간 씬 로드·화면 구성과 카드 수십 장 짓기가 한꺼번에 몰려 버벅였다.
+  /// 창을 먼저 띄우고 카드는 그다음에 올린다(그 사이 '불러오는 중' 표시).
+  bool _cardsReady = false;
+  Timer? _readyTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _readyTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _cardsReady = true);
+    });
+  }
+
   @override
   void dispose() {
+    _readyTimer?.cancel();
     _tc.dispose();
     super.dispose();
   }
@@ -126,7 +143,26 @@ class _CanvasViewState extends State<CanvasView> {
     return Column(
       children: [
         const _SceneTitleBar(),
-        Expanded(child: _canvasBody(context, p)),
+        Expanded(
+          child: _cardsReady
+              ? _canvasBody(context, p)
+              : const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(height: 10),
+                      Text('불러오는 중…',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.white38)),
+                    ],
+                  ),
+                ),
+        ),
       ],
     );
   }

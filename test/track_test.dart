@@ -362,10 +362,19 @@ void main() {
     expect(p.trackHasVideo(p.tracks.first), isTrue,
         reason: '★ 스틸컷은 내보내기가 직접 구울 수 있으니 "영상 없음"이 아니다');
 
-    // 시작 프레임까지 없으면(연동으로 물려받는 앞 샷 끝장면도 없으면) 정말 내보낼 게 없다.
+    // 화면용 판단은 **경로가 잡혀 있는지**만 본다(리빌드마다 디스크를 두드리지 않으려고) —
+    // 파일을 지워도 참이고, 실제 유무는 내보낼 때 리졸버가 본다.
     for (final s in beat.shots) {
       File(s.startImagePath!).deleteSync();
       File(s.endImagePath!).deleteSync();
+    }
+    expect(p.trackHasVideo(p.tracks.first), isTrue,
+        reason: '화면 판단은 경로 기준 — 파일 유무는 내보내기가 확인한다');
+
+    // 시작 프레임 경로까지 없으면 정말 내보낼 게 없다.
+    for (final s in beat.shots) {
+      s.startImagePath = null;
+      s.endImagePath = null;
     }
     expect(p.trackHasVideo(p.tracks.first), isFalse);
   });

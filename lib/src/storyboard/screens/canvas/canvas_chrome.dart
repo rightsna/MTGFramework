@@ -115,17 +115,26 @@ class _ScenePreviewButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
-    final playlist = p.scenePlaylist();
+    // 재생 목록은 **누를 때** 만든다. 빌드에서 만들면 샷마다 파일 존재 확인(디스크 접근)이
+    // 캔버스가 다시 그려질 때마다 돈다 — 씬이 클수록 그대로 비용이 된다.
+    final hasShots = (p.selectedScene?.shotCount ?? 0) > 0;
     return IconButton(
-      tooltip: playlist.isEmpty ? '미리볼 샷이 없습니다' : '씬 미리보기 (처음부터)',
-      onPressed: playlist.isEmpty
+      tooltip: hasShots ? '씬 미리보기 (처음부터)' : '미리볼 샷이 없습니다',
+      onPressed: !hasShots
           ? null
-          : () => showVideoPlayDialog(
+          : () {
+              final playlist = p.scenePlaylist();
+              if (playlist.isEmpty) {
+                p.messenger?.call('미리볼 샷이 없습니다');
+                return;
+              }
+              showVideoPlayDialog(
                 context,
                 playlist: playlist,
                 bgmPath: p.scenePlayBgmPath,
                 speed: p.scenePlaySpeed,
-              ),
+              );
+            },
       icon: const Icon(Icons.play_circle_outline, size: 22),
       color: accent2,
     );

@@ -67,14 +67,11 @@ class OutputPreview extends StatelessWidget {
         final dpr = MediaQuery.devicePixelRatioOf(context);
         // 폭이 무한(스크롤 안 등)일 땐 적당한 상한으로 — 그래도 원본보단 훨씬 작다.
         final w = box.hasBoundedWidth ? box.maxWidth : 400.0;
-        final img = Image.file(
-          File(p),
+        final img = LazyFileImage(
           key: ValueKey('$p:$version'),
+          path: p,
           fit: fit,
-          gaplessPlayback: true,
           cacheWidth: (w * dpr).clamp(64, 2048).round(),
-          errorBuilder: (_, _, _) =>
-              const Center(child: Icon(Icons.broken_image_outlined)),
         );
         if (onImageTap == null) return img;
         return GestureDetector(
@@ -83,6 +80,100 @@ class OutputPreview extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+/// 파일 이미지를 **한 프레임에 몰아서 열지 않는** 로더.
+///
+/// 캔버스 한 화면에 썸네일이 십수 장인데, 그 위젯들이 한꺼번에 만들어지면 파일 열기·디코드
+/// 요청이 한 프레임에 몰려 진입 순간 걸린다. 여기선 [_ImageAdmission]에서 자리를 받은
+/// 것부터 순서대로 열고, 아직 차례가 아닌 칸은 빈 박스로 둔다(레이아웃은 그대로).
+class LazyFileImage extends StatefulWidget {
+  const LazyFileImage({
+    super.key,
+    required this.path,
+    required this.fit,
+    required this.cacheWidth,
+  });
+
+  final String path;
+  final BoxFit fit;
+  final int cacheWidth;
+
+  @override
+  State<LazyFileImage> createState() => _LazyFileImageState();
+}
+
+class _LazyFileImageState extends State<LazyFileImage> {
+  bool _admitted = false;
+  VoidCallback? _cancel;
+
+  @override
+  void initState() {
+    super.initState();
+    _request();
+  }
+
+  void _request() {
+    _cancel = _ImageAdmission.request(() {
+      if (mounted) setState(() => _admitted = true);
+    });
+  }
+
+  @override
+  void didUpdateWidget(LazyFileImage old) {
+    super.didUpdateWidget(old);
+    if (old.path != widget.path) {
+      _cancel?.call();
+      _admitted = false;
+      _request();
+    }
+  }
+
+  @override
+  void dispose() {
+    _cancel?.call(); // 화면 밖으로 나간 칸은 대기열에서 빠진다
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_admitted) return const SizedBox.expand();
+    return Image.file(
+      File(widget.path),
+      fit: widget.fit,
+      gaplessPlayback: true,
+      cacheWidth: widget.cacheWidth,
+      errorBuilder: (_, _, _) =>
+          const Center(child: Icon(Icons.broken_image_outlined)),
+    );
+  }
+}
+
+/// 이미지 열기 **입장 순서** — 프레임당 [_perFrame]장씩만 들여보낸다.
+/// (전역이라 캔버스·인스펙터가 같은 예산을 나눠 쓴다. 화면에서 사라진 요청은 취소된다.)
+class _ImageAdmission {
+  static const _perFrame = 3;
+  static final List<VoidCallback> _queue = [];
+  static bool _scheduled = false;
+
+  /// [onAdmit]을 대기열에 넣고, 취소 함수를 돌려준다.
+  static VoidCallback request(VoidCallback onAdmit) {
+    _queue.add(onAdmit);
+    _schedule();
+    return () => _queue.remove(onAdmit);
+  }
+
+  static void _schedule() {
+    if (_scheduled || _queue.isEmpty) return;
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      for (var i = 0; i < _perFrame && _queue.isNotEmpty; i++) {
+        _queue.removeAt(0)();
+      }
+      _schedule(); // 남았으면 다음 프레임에 이어서
+    });
   }
 }
 
@@ -107,22 +198,32 @@ class _VideoPreview extends StatefulWidget {
 }
 
 class _VideoPreviewState extends State<_VideoPreview> {
-  late final VideoPlayerController _ctrl;
+  /// 영상 디코더는 만드는 것 자체가 비싸다(파일 열기 + 플랫폼 채널). 그래서 이미지와 **같은
+  /// 입장 대기열**([_ImageAdmission])을 거쳐 프레임을 나눠 연다 — 탭을 옮기거나 샷을 고르는
+  /// 순간 여러 개가 한꺼번에 열려 걸리던 걸 막는다.
+  VideoPlayerController? _ctrl;
+  VoidCallback? _cancelAdmission;
   bool _ready = false;
   Object? _error;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = VideoPlayerController.file(File(widget.path));
-    _ctrl.initialize().then((_) {
+    _cancelAdmission = _ImageAdmission.request(_open);
+  }
+
+  void _open() {
+    if (!mounted) return;
+    final c = VideoPlayerController.file(File(widget.path));
+    _ctrl = c;
+    c.initialize().then((_) {
       if (!mounted) return;
-      _ctrl.setLooping(true);
+      c.setLooping(true);
       setState(() => _ready = true);
     }).catchError((Object e) {
       if (mounted) setState(() => _error = e);
     });
-    _ctrl.addListener(_onTick);
+    c.addListener(_onTick);
   }
 
   void _onTick() {
@@ -131,8 +232,9 @@ class _VideoPreviewState extends State<_VideoPreview> {
 
   @override
   void dispose() {
-    _ctrl.removeListener(_onTick);
-    _ctrl.dispose();
+    _cancelAdmission?.call(); // 아직 차례가 안 왔으면 대기열에서 뺀다
+    _ctrl?.removeListener(_onTick);
+    _ctrl?.dispose();
     super.dispose();
   }
 
@@ -142,11 +244,12 @@ class _VideoPreviewState extends State<_VideoPreview> {
       widget.onTapOverride!();
       return;
     }
-    if (!_ready) return;
-    if (_ctrl.value.isPlaying) {
-      _ctrl.pause();
+    final c = _ctrl;
+    if (!_ready || c == null) return;
+    if (c.value.isPlaying) {
+      c.pause();
     } else {
-      _ctrl.play();
+      c.play();
     }
     setState(() {}); // 아이콘 갱신(리스너도 갱신하지만 즉시 반영)
   }
@@ -167,10 +270,11 @@ class _VideoPreviewState extends State<_VideoPreview> {
         ),
       );
     }
-    if (!_ready) {
+    final c = _ctrl;
+    if (!_ready || c == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    final playing = _ctrl.value.isPlaying;
+    final playing = c.value.isPlaying;
     return GestureDetector(
       onTap: _toggle,
       child: Stack(
@@ -180,9 +284,9 @@ class _VideoPreviewState extends State<_VideoPreview> {
             fit: widget.fit,
             clipBehavior: Clip.hardEdge,
             child: SizedBox(
-              width: _ctrl.value.size.width,
-              height: _ctrl.value.size.height,
-              child: VideoPlayer(_ctrl),
+              width: c.value.size.width,
+              height: c.value.size.height,
+              child: VideoPlayer(c),
             ),
           ),
           // 일시정지 상태일 때만 재생 아이콘 오버레이.
