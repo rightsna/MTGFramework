@@ -2095,7 +2095,11 @@ class StoryboardProvider extends ChangeNotifier {
         throw Exception('대사 음성을 먼저 만들어 주세요 — '
             'IA2V는 그 음성에 입을 맞춥니다 (비트 탭에서 음성 생성)');
       }
-      audio = await File(vp!).readAsBytes();
+      // 음성이 요청한 길이보다 짧으면 무음을 덧대 채운다 — IA2V는 오디오 길이가 곧 영상 길이라,
+      // 안 채우면 주문한 초보다 짧게 나와 뒤가 잘린 것처럼 보인다.
+      final padded = await VideoEdit.padAudioToSeconds(
+          vp!, shotVideoSeconds(shot).toDouble());
+      audio = await File(padded).readAsBytes();
     }
     final res = videoResOf(shot); // 영상 해상도는 트랙 단위
     final neg = (_vnegs[shot.id]?.text ?? shotVideoNeg(shot)).trim();

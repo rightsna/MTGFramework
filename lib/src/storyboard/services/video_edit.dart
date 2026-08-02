@@ -275,6 +275,30 @@ class VideoEdit {
 
   /// 미디어(영상·오디오) 길이(초). 실패하면 0. (probe는 비디오 스트림 전용이라 오디오엔 못 쓴다.)
   /// Flutter 없이 길이를 재야 하는 쪽(CLI 내보내기)이 쓰는 공개 입구이기도 하다.
+  /// 음성이 목표 길이보다 짧으면 **뒤에 무음을 덧대** 그 길이로 만든다(길면 그대로 둔다).
+  ///
+  /// 음성 조건 영상(IA2V)은 **오디오 길이가 곧 영상 길이**다 — 2.6초 음성으로 3초를 주문하면
+  /// 서버가 2.6초짜리를 돌려주고 0.4초가 잘린 것처럼 보인다. 그래서 보낼 때 채워서 보낸다.
+  /// 성공하면 새 파일 경로를, 채울 필요가 없거나 ffmpeg이 없으면 원본 경로를 그대로 돌려준다.
+  static Future<String> padAudioToSeconds(String path, double seconds) async {
+    if (seconds <= 0) return path;
+    final ffmpeg = toolPath('ffmpeg');
+    if (ffmpeg == null) return path;
+    final cur = await _mediaDuration(path);
+    if (cur <= 0 || cur >= seconds - 0.02) return path; // 이미 충분하면 손대지 않는다
+    final out = '$path.pad${seconds.toStringAsFixed(2)}.mp3';
+    if (File(out).existsSync()) return out;
+    final r = await Process.run(ffmpeg, [
+      '-y',
+      '-i', path,
+      '-af', 'apad=whole_dur=$seconds',
+      '-t', '$seconds',
+      out,
+    ]);
+    if (r.exitCode != 0 || !File(out).existsSync()) return path;
+    return out;
+  }
+
   static Future<double> mediaSeconds(String path) => _mediaDuration(path);
 
   static Future<double> _mediaDuration(String path) async {
