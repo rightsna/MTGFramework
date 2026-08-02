@@ -48,9 +48,9 @@ void main() {
         ),
       ),
     ));
-    // 캔버스는 창을 먼저 띄우고 **1초 뒤에** 카드를 올린다(첫 진입 버벅임 방지) —
+    // 캔버스는 창을 먼저 띄우고 **0.5초 뒤에** 카드를 올린다(첫 진입 버벅임 방지) —
     // 테스트에선 그 시간을 흘려보내야 카드가 나온다.
-    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
   }
 

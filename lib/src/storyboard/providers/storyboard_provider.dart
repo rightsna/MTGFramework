@@ -46,7 +46,7 @@ class StoryboardProvider extends ChangeNotifier {
   final _settingsStore = MovieSettingsStore();
 
   MovieSettings _settings = const MovieSettings();
-  List<Character> _characters = []; // 프로젝트 등장인물(인물 참조 피커/생성용)
+  List<Character> _characters = []; // 프로젝트 등장인물(대사 화자·보이스 매핑, 인물 관리 화면)
 
   // 컨트롤러: 씬 제목(씬 id) · 대사 제목/메모(대사 id) · 샷 프롬프트(샷 id).
   final Map<String, TextEditingController> _sceneTitles = {};
@@ -724,8 +724,10 @@ class StoryboardProvider extends ChangeNotifier {
           debugPrint('[sweepOrphan] 삭제 실패: $err');
         }
       }
+    } on PathNotFoundException {
+      // 폴더가 통째로 사라진 경우 — 지울 것도 없으니 진짜 조용히 끝낸다(알릴 일이 아니다).
     } catch (err) {
-      // 폴더가 사라졌거나 나열 중 바뀌었으면 조용히 끝낸다.
+      // 나열 도중 폴더가 바뀐 경우 등 — 여기까지 지운 개수만 들고 끝낸다.
       debugPrint('[sweepOrphan] 나열 중단: $err');
     }
     return n;

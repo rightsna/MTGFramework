@@ -105,7 +105,7 @@ class _CanvasViewState extends State<CanvasView> {
   /// 줌·팬 상태 — **어느 카드가 화면에 있는지** 계산하는 근거다([_CanvasViewport]).
   final TransformationController _tc = TransformationController();
 
-  /// 카드를 그리기 시작했는지 — 프로젝트를 연 직후 **1초는 비워 둔다**.
+  /// 카드를 그리기 시작했는지 — 프로젝트를 연 직후 **0.5초는 비워 둔다**.
   /// 여는 순간 씬 로드·화면 구성과 카드 수십 장 짓기가 한꺼번에 몰려 버벅였다.
   /// 창을 먼저 띄우고 카드는 그다음에 올린다(그 사이 '불러오는 중' 표시).
   bool _cardsReady = false;
@@ -114,7 +114,7 @@ class _CanvasViewState extends State<CanvasView> {
   @override
   void initState() {
     super.initState();
-    _readyTimer = Timer(const Duration(seconds: 1), () {
+    _readyTimer = Timer(const Duration(milliseconds: 500), () {
       if (mounted) setState(() => _cardsReady = true);
     });
   }

@@ -20,10 +20,9 @@ class _FrameTab extends StatelessWidget {
           // 프레임 메모 — 이 샷의 프레임 작업용. 영상 탭에는 별도의 영상 메모가 있다.
           _ShotNote(controller: p.shotNoteCtrl(shot.id)),
           const SizedBox(height: 14),
-          // 이 샷의 프레임 생성 설정 — 영상 방식(FE2V/I2V) + 인물 참조를 한 카드에.
+          // 이 샷의 생성 방식(FE2V/I2V/스틸컷/IA2V) — 아래 프레임을 어떻게 쓸지가 여기서 갈리므로 위에 둔다.
           _FrameGenSettings(shot: shot),
           const SizedBox(height: 14),
-          // 결과(프레임)가 위, 그 생성에 쓰이는 설정(인물참조)은 아래.
           _FrameSection(
             title: '시작 프레임',
             icon: Icons.first_page,
