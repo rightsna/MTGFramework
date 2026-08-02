@@ -67,7 +67,6 @@ class _BeatTab extends StatelessWidget {
             onChanged: (_) => p.noteEdited(),
           ),
           const SizedBox(height: 12),
-          _DirectionNote(dialogueId: beat.id),
           const SizedBox(height: 14),
           // 대사 내용·화자·음성은 팝업 대신 이 탭에서 바로 편집한다.
           _DialogueEditor(key: ValueKey('dlg_${beat.id}'), beat: beat),

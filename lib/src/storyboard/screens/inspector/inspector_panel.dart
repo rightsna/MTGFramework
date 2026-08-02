@@ -24,7 +24,6 @@ part 'beat/coverage_badge.dart';
 part 'beat/dialogue_editor.dart';
 part 'video/sfx_editor.dart';
 part 'beat/caption_editor.dart';
-part 'beat/direction_note.dart';
 part 'frame/frame_tab.dart';
 part 'frame/frame_gen_settings.dart';
 part 'frame/video_mode_card.dart';
@@ -154,16 +153,16 @@ class _ShotEditorPanelState extends State<ShotEditorPanel>
           Expanded(
             child: AnimatedBuilder(
               animation: _tab,
-              builder: (context, _) => IndexedStack(
-                index: _tab.index,
-                children: [
-                  const _BeatTab(),
-                  shot == null ? const _NoShot() : _FrameTab(shot: shot),
-                  shot == null ? const _NoShot() : _VideoTab(shot: shot),
-                  const _TrackTab(),
-                  const _SceneSettingsTab(),
-                ],
-              ),
+              // **보고 있는 탭 하나만** 짓는다. 예전엔 IndexedStack이라 안 보이는 탭 넷까지
+              // 매 리빌드마다 함께 지었다 — 인스펙터가 캔버스만큼 무거웠던 이유다.
+              // (입력값은 프로바이더의 컨트롤러에 있어서 탭을 옮겨도 내용은 그대로다.)
+              builder: (context, _) => switch (_tab.index) {
+                0 => const _BeatTab(),
+                1 => shot == null ? const _NoShot() : _FrameTab(shot: shot),
+                2 => shot == null ? const _NoShot() : _VideoTab(shot: shot),
+                3 => const _TrackTab(),
+                _ => const _SceneSettingsTab(),
+              },
             ),
           ),
         ],

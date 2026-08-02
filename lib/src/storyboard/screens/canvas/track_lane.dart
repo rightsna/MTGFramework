@@ -6,10 +6,20 @@ part of 'canvas_view.dart';
 ///
 /// 트랙을 고르는 자리는 따로 없다: 카드나 샷을 누르면 그 줄이 곧 선택 트랙이 된다.
 class _TrackLane extends StatelessWidget {
-  const _TrackLane({required this.track, required this.trackIndex});
+  const _TrackLane({
+    required this.track,
+    required this.trackIndex,
+    required this.canvasY,
+  });
 
   final VideoTrack track;
   final int trackIndex;
+
+  /// 이 줄의 캔버스 y — 화면 밖이면 줄 전체를 안 짓고 자리만 잡는다.
+  final double canvasY;
+
+  /// 줄 높이 기억(트랙 id → 실제 높이). 화면 밖 자리표시자가 같은 높이를 쓰도록.
+  static final Map<String, double> laneHeights = {};
 
   @override
   Widget build(BuildContext context) {
@@ -17,48 +27,63 @@ class _TrackLane extends StatelessWidget {
     final beats = track.beats;
     final isBase = trackIndex == 0;
     final active = p.trackIndex == trackIndex;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      decoration: BoxDecoration(
-        color: active ? const Color(0x0AFFFFFF) : null,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: active ? const Color(0x448B7BFF) : const Color(0x14FFFFFF),
+    final h = laneHeights[track.id] ?? 460;
+    if (!_CanvasViewport.visibleV(context, canvasY, h)) {
+      return SizedBox(height: h);
+    }
+    return _MeasureHeight(
+      onHeight: (v) => laneHeights[track.id] = v,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+        decoration: BoxDecoration(
+          color: active ? const Color(0x0AFFFFFF) : null,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: active ? const Color(0x448B7BFF) : const Color(0x14FFFFFF),
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _TrackHeader(track: track, trackIndex: trackIndex),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (var i = 0; i < beats.length; i++) ...[
-                SizedBox(width: 286, child: _ShotCard(beat: beats[i], index: i)),
-                if (i < beats.length - 1) const _ShotArrow(),
-              ],
-              // 비트 추가는 기준 트랙 줄에서만 — 구조는 트랙끼리 같아야 한다.
-              if (isBase) ...[
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(top: 34),
-                  child: SizedBox(
-                    width: 56,
-                    child: OutlinedButton(
-                      onPressed: p.addDialogue,
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        side: const BorderSide(color: Color(0x33FFFFFF)),
-                      ),
-                      child: const Icon(Icons.add),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _TrackHeader(track: track, trackIndex: trackIndex),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < beats.length; i++) ...[
+                  SizedBox(
+                    width: kCardWidth,
+                    // 카드의 캔버스 x — 폭이 고정이라 순번으로 정확히 나온다(컬링 근거).
+                    child: _ShotCard(
+                      beat: beats[i],
+                      index: i,
+                      canvasX: kLaneLeft + i * (kCardWidth + kArrowWidth),
                     ),
                   ),
-                ),
+                  if (i < beats.length - 1) const _ShotArrow(),
+                ],
+                // 비트 추가는 기준 트랙 줄에서만 — 구조는 트랙끼리 같아야 한다.
+                if (isBase) ...[
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 34),
+                    child: SizedBox(
+                      width: 56,
+                      child: OutlinedButton(
+                        onPressed: p.addDialogue,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          side: const BorderSide(color: Color(0x33FFFFFF)),
+                        ),
+                        child: const Icon(Icons.add),
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -85,13 +110,15 @@ class _TrackHeader extends StatelessWidget {
           Icon(Icons.star_rounded, size: 14, color: color),
           const SizedBox(width: 4),
         ],
-        Text(p.trackLabel(track),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.8,
-              color: color,
-            )),
+        Text(
+          p.trackLabel(track),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+            color: color,
+          ),
+        ),
         const SizedBox(width: 8),
         // 이 줄의 **기본** 백엔드 — 일괄 생성이 쓰는 값이고, 샷마다 다른 걸로 뽑아도 된다.
         // (그래서 결과가 무엇으로 나왔는지는 영상 탭의 결과 옆에 따로 적힌다.)
@@ -103,13 +130,17 @@ class _TrackHeader extends StatelessWidget {
               color: const Color(0x14FFFFFF),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Text(track.backend.shortLabel,
-                style: const TextStyle(fontSize: 10.5, color: Colors.white70)),
+            child: Text(
+              track.backend.shortLabel,
+              style: const TextStyle(fontSize: 10.5, color: Colors.white70),
+            ),
           ),
         ),
         const SizedBox(width: 8),
-        Text('영상 ${track.filledCount}/${track.shotCount}',
-            style: const TextStyle(fontSize: 10.5, color: Colors.white38)),
+        Text(
+          '영상 ${track.filledCount}/${track.shotCount}',
+          style: const TextStyle(fontSize: 10.5, color: Colors.white38),
+        ),
         const SizedBox(width: 2),
         _TrackMenu(track: track),
         // 트랙 삭제는 눈에 보이는 자리에 둔다(비트 삭제와 같은 모양) — 메뉴 안에 숨기면 못 찾는다.
@@ -124,7 +155,8 @@ class _TrackHeader extends StatelessWidget {
               if (await confirmDelete(
                 context,
                 title: '트랙 삭제',
-                body: '"${p.trackLabel(track)}" 트랙을 지웁니다.\n'
+                body:
+                    '"${p.trackLabel(track)}" 트랙을 지웁니다.\n'
                     '이 트랙에서 뽑은 영상 ${track.filledCount}개의 연결이 끊깁니다.',
               )) {
                 await p.removeTrack(track);
@@ -132,8 +164,10 @@ class _TrackHeader extends StatelessWidget {
             },
           ),
         if (!isBase)
-          const Text('· 트랙 1을 그대로 따라갑니다 (영상만 따로)',
-              style: TextStyle(fontSize: 10.5, color: Color(0x55FFFFFF))),
+          const Text(
+            '· 트랙 1을 그대로 따라갑니다 (영상만 따로)',
+            style: TextStyle(fontSize: 10.5, color: Color(0x55FFFFFF)),
+          ),
       ],
     );
   }

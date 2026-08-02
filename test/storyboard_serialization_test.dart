@@ -278,6 +278,26 @@ void main() {
     expect(after.baseTrack.videoRes, VideoRes.p704x1280);
   });
 
+  test('트랙 메모는 트랙 JSON에 적히고 왕복 보존된다', () {
+    final sc = sampleScene();
+    sc.baseTrack.note = '자체 서버 기본 조건 — 이 줄이 기준';
+    final j = sc.toJson();
+    expect(((j['tracks'] as List).first as Map)['note'],
+        '자체 서버 기본 조건 — 이 줄이 기준');
+
+    final after = StoryScene.fromJson(j, dir);
+    expect(after.baseTrack.note, '자체 서버 기본 조건 — 이 줄이 기준');
+    // 메모 없던 옛 트랙은 빈 문자열로 읽힌다.
+    expect(
+        StoryScene.fromJson({
+          'id': 'sc',
+          'tracks': [
+            {'id': 't1'}
+          ],
+        }, dir).baseTrack.note,
+        '');
+  });
+
   test('트랙마다 다른 해상도를 갖는다 — 씬은 프레임 해상도만', () {
     final sc = StoryScene.fromJson({
       'id': 'scene_res',

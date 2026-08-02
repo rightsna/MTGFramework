@@ -2,17 +2,47 @@ part of 'canvas_view.dart';
 
 /// 캔버스의 비트 카드 — 카드 몸통과 그 안(대사 상자·트랙별 샷 줄·샷 썸네일·샷 추가·노트).
 
+/// 카드 폭(고정) · 카드 사이 화살표 폭 · 레인 왼쪽 여백 — 카드의 캔버스 x를 순번만으로
+/// 계산하려고 상수로 둔다([_CanvasViewport] 컬링의 근거).
+const kCardWidth = 286.0;
+const kArrowWidth = 38.0;
+const kLaneLeft = 56.0;
+
 /// 대사 카드: [헤더] + [대사] + [트랙별 샷 줄] + [메모].
 /// [beat]은 **기준 트랙**의 비트다(구조·대사의 정본). 트랙별 샷은 같은 자리의 비트에서 가져온다.
 class _ShotCard extends StatelessWidget {
-  const _ShotCard({required this.beat, required this.index});
+  const _ShotCard({
+    required this.beat,
+    required this.index,
+    required this.canvasX,
+  });
 
   final DialogueBeat beat;
   final int index;
 
+  /// 이 카드의 캔버스 x 위치 — 화면 밖이면 카드를 안 만든다.
+  final double canvasX;
+
+  /// 카드 높이 기억(비트 id → 실제 높이). 화면 밖 자리표시자가 같은 높이를 쓰도록.
+  static final Map<String, double> _cardHeights = {};
+
+  /// 아직 한 번도 안 지어 본 카드의 높이 추정 — 헤더·대사·여백(≈210) + 샷 그리드.
+  double _estimateHeight() {
+    final cells = beat.shots.length + (beat.isDerived ? 0 : 1);
+    final rows = (cells / 3).ceil();
+    const cell = (kCardWidth - 20 - 16) / 3;
+    return 210 + (rows == 0 ? 0 : rows * cell + (rows - 1) * 8);
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = StoryboardScope.of(context);
+    // 화면 밖 카드는 **아예 짓지 않는다** — 자리만 잡아 둔다. 씬 하나에 카드가 수십 장이라
+    // 전부 지으면 첫 프레임이 1.5초씩 걸렸다(실측). 자리 높이는 한 번 지어 본 실제 높이를
+    // 기억해 쓰고, 아직 모르면 샷 수로 추정한다(그리드가 높이 차이의 대부분이라 잘 맞는다).
+    if (!_CanvasViewport.visible(context, canvasX, kCardWidth)) {
+      return SizedBox(height: _cardHeights[beat.id] ?? _estimateHeight());
+    }
     final selected = beat.id == p.selectedDialogueId;
     final card = Card(
       elevation: selected ? 8 : 2,
@@ -91,7 +121,7 @@ class _ShotCard extends StatelessWidget {
           // 샷들 — 3열 정사각 그리드. 높이는 샷 수(행)에 맞춰 자란다.
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
-            child: _ShotsArea(beat: beat),
+            child: _ShotsArea(beat: beat, canvasX: canvasX),
           ),
         ],
       ),
@@ -163,8 +193,39 @@ class _ShotCard extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => p.selectDialogue(beat.id),
-      child: content,
+      // 실제 높이를 재서 기억해 둔다 — 이 카드가 화면 밖으로 나가면 그 높이로 자리를 잡는다.
+      child: _MeasureHeight(
+        onHeight: (h) => _cardHeights[beat.id] = h,
+        child: content,
+      ),
     );
+  }
+}
+
+/// 자식 높이를 레이아웃 뒤에 알려 주는 얇은 래퍼(그리기엔 관여하지 않는다).
+class _MeasureHeight extends SingleChildRenderObjectWidget {
+  const _MeasureHeight({required this.onHeight, required super.child});
+
+  final void Function(double) onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMeasureHeight(onHeight);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMeasureHeight r) =>
+      r.onHeight = onHeight;
+}
+
+class _RenderMeasureHeight extends RenderProxyBox {
+  _RenderMeasureHeight(this.onHeight);
+
+  void Function(double) onHeight;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    onHeight(size.height);
   }
 }
 
@@ -285,12 +346,25 @@ class _DialogueBox extends StatelessWidget {
 /// 대사의 샷들 — **3열 정사각 그리드** + 추가 타일. 탭하면 그 샷 선택(인스펙터가 편집).
 /// shrinkWrap이라 그리드 높이가 행 수(샷 수)에 맞춰 자라고 → 대사 카드 높이도 따라 fit 된다.
 class _ShotsArea extends StatelessWidget {
-  const _ShotsArea({required this.beat});
+  const _ShotsArea({required this.beat, required this.canvasX});
 
   final DialogueBeat beat;
+  final double canvasX;
+
+  /// 샷 그리드 높이 — 3열 정사각이라 샷 수만으로 정확히 나온다. 화면 밖 카드는 이 높이의
+  /// 빈 자리만 두고 썸네일을 안 만든다(레이아웃이 흔들리지 않게 크기는 똑같이).
+  double _gridHeight() {
+    final cells = beat.shots.length + (beat.isDerived ? 0 : 1); // +샷 추가 타일
+    final rows = (cells / 3).ceil();
+    if (rows == 0) return 0;
+    const inner = kCardWidth - 20; // 카드 좌우 padding 10씩
+    final cell = (inner - 8 * 2) / 3; // 열 간격 8 두 번
+    return rows * cell + (rows - 1) * 8;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final visible = _CanvasViewport.visible(context, canvasX, kCardWidth);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -308,26 +382,29 @@ class _ShotsArea extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        GridView.count(
-          crossAxisCount: 3,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          mainAxisSpacing: 8,
-          crossAxisSpacing: 8,
-          childAspectRatio: 1, // 정사각
-          children: [
-            for (var i = 0; i < beat.shots.length; i++)
-              _ShotThumb(
-                key: ValueKey('shot_${beat.shots[i].id}'),
-                beat: beat,
-                shot: beat.shots[i],
-                index: i,
-              ),
-            // 샷 추가는 기준 트랙에서만 — 구조는 트랙끼리 같아야 한다.
-            if (!beat.isDerived)
-              _AddShotTile(key: const ValueKey('addShot'), beat: beat),
-          ],
-        ),
+        if (!visible)
+          SizedBox(height: _gridHeight())
+        else
+          GridView.count(
+            crossAxisCount: 3,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 1, // 정사각
+            children: [
+              for (var i = 0; i < beat.shots.length; i++)
+                _ShotThumb(
+                  key: ValueKey('shot_${beat.shots[i].id}'),
+                  beat: beat,
+                  shot: beat.shots[i],
+                  index: i,
+                ),
+              // 샷 추가는 기준 트랙에서만 — 구조는 트랙끼리 같아야 한다.
+              if (!beat.isDerived)
+                _AddShotTile(key: const ValueKey('addShot'), beat: beat),
+            ],
+          ),
       ],
     );
   }

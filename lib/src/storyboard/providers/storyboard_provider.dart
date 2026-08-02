@@ -46,13 +46,13 @@ class StoryboardProvider extends ChangeNotifier {
   final Map<String, TextEditingController> _sceneTitles = {};
   final Map<String, TextEditingController> _dialogueTitles = {};
   final Map<String, TextEditingController> _notes = {};
-  final Map<String, TextEditingController> _directions = {};
   final Map<String, TextEditingController> _vprompts = {};
   final Map<String, TextEditingController> _vpromptKos = {};
   final Map<String, TextEditingController> _vnegs = {};
   final Map<String, TextEditingController> _shotNotes = {};
   final Map<String, TextEditingController> _videoNotes = {};
   final Map<String, TextEditingController> _sceneNotes = {};
+  final Map<String, TextEditingController> _trackNotes = {};
   final Set<String> _busy = {}; // '<shotId>:<mode>' 또는 '<dialogueId>:voice' 등 진행 중
   final Map<String, String> _progress = {}; // 진행 중 상태 문구(busyKey별) — 영상칸에 고정 표시
   final Map<String, int> _ver = {}; // 미리보기 캐시 버전
@@ -274,6 +274,7 @@ class StoryboardProvider extends ChangeNotifier {
     if (sc == null || sc.tracks.length <= 1) return;
     if (identical(track, sc.baseTrack)) return;
     sc.tracks.remove(track);
+    _trackNotes.remove(track.id)?.dispose();
     for (final beat in track.beats) {
       _disposeDialogueControllers(beat.id);
       for (final shot in beat.shots) {
@@ -378,7 +379,6 @@ class StoryboardProvider extends ChangeNotifier {
 
   String beatTitle(DialogueBeat b) => b.resolvedTitle(baseBeatOf(b));
   String beatNote(DialogueBeat b) => b.resolvedNote(baseBeatOf(b));
-  String beatDirection(DialogueBeat b) => b.resolvedDirection(baseBeatOf(b));
 
   /// 이 비트 자리에 **보여 줄 대본**(화자·텍스트). null = 무음 대사.
   ({String? speakerId, String text})? beatScript(DialogueBeat b) =>
@@ -621,14 +621,16 @@ class StoryboardProvider extends ChangeNotifier {
   TextEditingController titleCtrl(String dialogueId) =>
       _dialogueTitles[dialogueId]!;
   TextEditingController noteCtrl(String dialogueId) => _notes[dialogueId]!;
-  TextEditingController directionCtrl(String dialogueId) =>
-      _directions[dialogueId]!;
   TextEditingController videoCtrl(String shotId) => _vprompts[shotId]!;
   TextEditingController videoKoCtrl(String shotId) => _vpromptKos[shotId]!;
   TextEditingController videoNegCtrl(String shotId) => _vnegs[shotId]!;
   TextEditingController shotNoteCtrl(String shotId) => _shotNotes[shotId]!;
   TextEditingController videoNoteCtrl(String shotId) => _videoNotes[shotId]!;
   TextEditingController sceneNoteCtrl(String sceneId) => _sceneNotes[sceneId]!;
+
+  /// 트랙 메모 편집칸 — 씬·샷 메모와 같은 성격(생성에 안 물림).
+  TextEditingController trackNoteCtrl(String trackId) =>
+      _trackNotes.putIfAbsent(trackId, () => TextEditingController());
 
   bool isBusy(String key) => _busy.contains(key);
   int verOf(String key) => _ver[key] ?? 0;
@@ -767,12 +769,18 @@ class StoryboardProvider extends ChangeNotifier {
     _settings = await _settingsStore.load();
     _settingsLoaded = true;
     await _readFromDisk(keepSelection: false);
-    checkConnection();
-    _statusTimer ??= Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => checkConnection(),
-    );
-    _startReconciler(); // 저장돼 있던 진행 중 영상 job을 이어받는다
+    // 서버 확인·job 이어받기·옛 영상 길이 채우기는 **첫 화면이 그려진 뒤로 미룬다** —
+    // 셋 다 화면을 그리는 데 필요 없는데, 여는 순간 같이 돌면 첫 프레임과 자원을 다툰다.
+    Future<void>.delayed(const Duration(milliseconds: 800), () {
+      if (_disposed) return;
+      checkConnection();
+      _statusTimer ??= Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => checkConnection(),
+      );
+      _startReconciler();
+      unawaited(_backfillActualSeconds());
+    });
   }
 
   /// 디스크에서 씬·인물을 다시 읽어 화면을 갈아끼운다 — **다른 곳(에디터·다른 세션)에서 파일이
@@ -795,16 +803,12 @@ class StoryboardProvider extends ChangeNotifier {
       _sceneTitles[scene.id] = TextEditingController(text: scene.title);
       _sceneNotes[scene.id] = TextEditingController(text: scene.note);
       for (final track in scene.tracks) {
-        for (final beat in track.beats) {
-          _addDialogueControllers(beat); // 파생 비트도 자기 편집칸(상속 값 시드)
-          for (final shot in beat.shots) {
-            _addShotControllers(shot);
-          }
-        }
+        _trackNotes[track.id] = TextEditingController(text: track.note);
       }
-      // 구조(비트·샷 개수/순서)만 기준 트랙에 맞춘다 — 값은 파일에 있는 그대로(복사 없음).
-      _syncTracks(scene);
     }
+    // 비트·샷 편집칸과 파생 트랙 구조 맞추기는 **보고 있는 씬에 대해서만** 한다
+    // ([_ensureSceneReady]) — 프로젝트 전체를 미리 세우면 씬이 스무 개인 프로젝트에서
+    // 처음 열 때 편집칸 만 개를 한꺼번에 만들게 된다(들어가자마자 버벅이던 이유).
 
     // 리프레시: 파일명이 같아도 내용이 바뀌었을 수 있다(외부 편집). Flutter 이미지 캐시는
     // 경로 기준이라 안 비우면 옛 그림이 그대로 뜬다 — 캐시를 비우고 미리보기 버전을 올려
@@ -816,9 +820,11 @@ class StoryboardProvider extends ChangeNotifier {
       _bumpAllPreviewVersions(scenes);
     }
 
+    _readyScenes.clear(); // 새로 읽었으니 준비 상태도 초기화
     final keep = keepSelection && scenes.any((s) => s.id == prevScene);
     if (keep) {
       _selectedSceneId = prevScene;
+      _ensureSceneReady(selectedScene); // 보게 될 씬만 편집칸·구조를 세운다
       final beats = selectedTrack?.beats ?? const <DialogueBeat>[];
       _selectedDialogueId =
           beats.any((b) => b.id == prevBeat) ? prevBeat : beats.firstOrNull?.id;
@@ -830,6 +836,7 @@ class StoryboardProvider extends ChangeNotifier {
           ? firstScene.beats.first
           : null;
       _selectedSceneId = firstScene?.id;
+      _ensureSceneReady(firstScene);
       _selectedDialogueId = firstShot?.id;
       _selectedShotId = (firstShot != null && firstShot.shots.isNotEmpty)
           ? firstShot.shots.first.id
@@ -842,7 +849,7 @@ class StoryboardProvider extends ChangeNotifier {
       messenger?.call('같은 id의 씬이 겹쳐 있어 하나를 새 id로 분리했습니다');
       unawaited(save());
     }
-    unawaited(_backfillActualSeconds()); // 옛 영상의 실제 길이를 뒤에서 채운다
+    // (옛 영상 길이 채우기는 [_load]에서 첫 화면 뒤로 미뤄 부른다.)
   }
 
   /// 프로젝트 전체에서 **id가 유일**하도록 보장한다. 중복이면 나중에 본 쪽을 새 id로 바꾸고,
@@ -898,9 +905,9 @@ class StoryboardProvider extends ChangeNotifier {
     for (final m in [
       _sceneTitles,
       _sceneNotes,
+      _trackNotes,
       _dialogueTitles,
       _notes,
-      _directions,
       _vprompts,
       _vpromptKos,
       _vnegs,
@@ -974,15 +981,32 @@ class StoryboardProvider extends ChangeNotifier {
     _dialogueTitles[beat.id] =
         TextEditingController(text: beat.resolvedTitle(base));
     _notes[beat.id] = TextEditingController(text: beat.resolvedNote(base));
-    _directions[beat.id] =
-        TextEditingController(text: beat.resolvedDirection(base));
   }
 
   void _disposeDialogueControllers(String dialogueId) {
     _dialogueTitles.remove(dialogueId)?.dispose();
     _notes.remove(dialogueId)?.dispose();
-    _directions.remove(dialogueId)?.dispose();
   }
+
+  /// 이 씬을 **편집할 수 있는 상태**로 만든다 — 비트·샷 편집칸을 세우고 파생 트랙 구조를 맞춘다.
+  /// 한 번 준비한 씬은 [_readyScenes]에 남아 다시 안 만든다. 화면에 올라오는 씬에만 드는 비용이라
+  /// 프로젝트가 커져도 처음 여는 속도가 씬 개수에 끌려가지 않는다.
+  void _ensureSceneReady(StoryScene? scene) {
+    if (scene == null || !_readyScenes.add(scene.id)) return;
+    for (final track in scene.tracks) {
+      for (final beat in track.beats) {
+        _addDialogueControllers(beat); // 파생 비트도 자기 편집칸(상속 값 시드)
+        for (final shot in beat.shots) {
+          _addShotControllers(shot);
+        }
+      }
+    }
+    // 구조(비트·샷 개수/순서)만 기준 트랙에 맞춘다 — 값은 파일에 있는 그대로(복사 없음).
+    _syncTracks(scene);
+  }
+
+  /// 편집칸까지 세워 둔 씬 id들 — 다시 준비하지 않기 위한 표시.
+  final Set<String> _readyScenes = {};
 
   /// 샷 편집칸 생성 — 상속 해석값을 시드로. [base] 생략 시 씬에서 찾는다.
   void _addShotControllers(Shot shot, [Shot? base]) {
@@ -1010,6 +1034,7 @@ class StoryboardProvider extends ChangeNotifier {
       scene.title = _sceneTitles[scene.id]?.text ?? scene.title;
       scene.note = _sceneNotes[scene.id]?.text ?? scene.note;
       for (final track in scene.tracks) {
+        track.note = _trackNotes[track.id]?.text ?? track.note;
         // 파생 트랙은 플러시 전에 **상속 중인**(오버라이드 안 함·편집 중 아님) 편집칸을 지금의
         // 기준 값으로 맞춘다. 기준 트랙(tracks[0])이 먼저 플러시되므로 이 시점 기준 값은 최신이다.
         // 이걸 안 하면 옛 시드가 남은 상속 편집칸이 새 기준값과 달라 보여 잘못 오버라이드로 굳는다.
@@ -1017,20 +1042,17 @@ class StoryboardProvider extends ChangeNotifier {
           _refreshInheritedDerived(track);
         }
         for (final beat in track.beats) {
-          // 편집칸(제목·메모·연출) 플러시 — 기준 비트는 타입 필드에, 파생 비트는 기준과 다르면
+          // 편집칸(제목·메모) 플러시 — 기준 비트는 타입 필드에, 파생 비트는 기준과 다르면
           // overrides로(같으면 상속 유지). 트랙1은 파생 편집으로 절대 바뀌지 않는다.
           if (!beat.isDerived) {
             beat.title = _dialogueTitles[beat.id]?.text ?? beat.title;
             beat.note = _notes[beat.id]?.text ?? beat.note;
-            beat.direction = _directions[beat.id]?.text ?? beat.direction;
           } else {
             final bb = baseBeatOf(beat);
             _flushBeatStr(beat, DialogueBeat.kTitle,
                 _dialogueTitles[beat.id]?.text, bb?.title ?? '');
             _flushBeatStr(beat, DialogueBeat.kNote, _notes[beat.id]?.text,
                 bb?.note ?? '');
-            _flushBeatStr(beat, DialogueBeat.kDirection,
-                _directions[beat.id]?.text, bb?.direction ?? '');
           }
           for (final shot in beat.shots) {
             if (!shot.isDerived) {
@@ -1079,9 +1101,6 @@ class StoryboardProvider extends ChangeNotifier {
         if (!beat.overrides.containsKey(DialogueBeat.kNote)) {
           _setCtrl(_notes[beat.id], bb?.note ?? '');
         }
-        if (!beat.overrides.containsKey(DialogueBeat.kDirection)) {
-          _setCtrl(_directions[beat.id], bb?.direction ?? '');
-        }
       }
       for (final shot in beat.shots) {
         if (shot.id == _selectedShotId) continue; // 편집 중인 샷은 그대로
@@ -1127,6 +1146,7 @@ class StoryboardProvider extends ChangeNotifier {
     final scene = StoryScene(id: id, imageRes: _settings.imageRes);
     scene.baseTrack.videoRes = _settings.videoRes; // 마지막 쓰던 값으로 시작
     _scenes.add(scene);
+    _readyScenes.add(id); // 새 씬은 지금 만든 것이라 이미 준비된 상태
     _selectedSceneId = id;
     _selectedDialogueId = null;
     _selectedShotId = null;
@@ -1140,6 +1160,7 @@ class StoryboardProvider extends ChangeNotifier {
     _sceneTitles.remove(scene.id)?.dispose();
     _sceneNotes.remove(scene.id)?.dispose();
     for (final track in scene.tracks) {
+      _trackNotes.remove(track.id)?.dispose();
       for (final beat in track.beats) {
         _disposeDialogueControllers(beat.id);
         for (final shot in beat.shots) {
@@ -1230,6 +1251,7 @@ class StoryboardProvider extends ChangeNotifier {
     _sceneTitles[copy.id] = TextEditingController(text: copy.title);
     _sceneNotes[copy.id] = TextEditingController(text: copy.note);
     for (final track in copy.tracks) {
+      _trackNotes[track.id] = TextEditingController(text: track.note);
       for (final beat in track.beats) {
         _addDialogueControllers(beat);
         for (final shot in beat.shots) {
@@ -1238,6 +1260,7 @@ class StoryboardProvider extends ChangeNotifier {
       }
     }
     _syncTracks(copy); // 구조만 재확인(값 복사 없음)
+    _readyScenes.add(copy.id); // 편집칸을 방금 다 세웠다
 
     _scenes.add(copy);
     _selectSceneInternal(copy.id);
@@ -1300,6 +1323,7 @@ class StoryboardProvider extends ChangeNotifier {
   void _selectSceneInternal(String? id) {
     _selectedSceneId = id;
     final scene = selectedScene;
+    _ensureSceneReady(scene); // 이 씬을 처음 보는 것이면 여기서 편집칸·구조를 세운다
     final beats = selectedTrack?.beats ?? const <DialogueBeat>[];
     final firstShot = (scene != null && beats.isNotEmpty) ? beats.first : null;
     _selectedDialogueId = firstShot?.id;
@@ -1888,6 +1912,7 @@ class StoryboardProvider extends ChangeNotifier {
       notifyListeners();
       try {
         await _submitVideoJob(shot, prompt); // shot.videoJobId 설정 + 즉시 save
+        _startReconciler(); // 이제 이어받을 job이 생겼다(로드 때 없었으면 타이머가 없다)
         _setProgress(key, '생성 중… (백그라운드)');
       } catch (e, st) {
         debugPrint('[video-submit] $key 실패: $e\n$st');
@@ -2145,6 +2170,10 @@ class StoryboardProvider extends ChangeNotifier {
   /// 리컨실러가 서버에 확인해서 **실제로 running일 때만** 켠다(오프라인이면 스피너가 안 뜬다).
   /// [_load] 끝에서 한 번 호출된다.
   void _startReconciler() {
+    // 이어받을 job이 하나도 없으면 타이머를 걸지 않는다 — 생성이 시작될 때 다시 부른다.
+    final hasJob = _scenes.any((sc) => sc.tracks.any((t) => t.beats
+        .any((b) => b.shots.any((s) => s.videoJobId != null))));
+    if (!hasJob) return;
     _reconcileTimer ??=
         Timer.periodic(const Duration(seconds: 5), (_) => _reconcile());
     _reconcile(); // 시작 즉시 한 번
@@ -2896,8 +2925,11 @@ class StoryboardProvider extends ChangeNotifier {
   }
 
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _statusTimer?.cancel();
     _reconcileTimer?.cancel();
     for (final c in _sceneTitles.values) {
@@ -2907,9 +2939,6 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _notes.values) {
-      c.dispose();
-    }
-    for (final c in _directions.values) {
       c.dispose();
     }
     for (final c in _vprompts.values) {
@@ -2925,6 +2954,9 @@ class StoryboardProvider extends ChangeNotifier {
       c.dispose();
     }
     for (final c in _sceneNotes.values) {
+      c.dispose();
+    }
+    for (final c in _trackNotes.values) {
       c.dispose();
     }
     for (final c in _vnegs.values) {

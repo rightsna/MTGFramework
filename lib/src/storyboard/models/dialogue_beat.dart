@@ -12,7 +12,7 @@ import 'caption.dart';
 /// ## 트랙 상속(파생 비트)
 /// 첫 트랙이 **기준 트랙**이고, 그 비트가 대본·연출의 원본이다([baseId]=null).
 /// 트랙을 추가하면 파생 비트가 생기는데 — **파생 비트는 진짜로 비어 있다**. 타입 필드
-/// (title/note/direction/dialogue의 대본/caption)를 쓰지 않고, 사용자가 **손댄 필드만**
+/// (title/note/dialogue의 대본/caption)를 쓰지 않고, 사용자가 **손댄 필드만**
 /// [overrides] 맵에 하나씩 담는다({} → {'text': '...'}). 그래서 파생 비트가 기준 비트의
 /// 값을 **복사해 들고 있는 일이 없다** — 트랙1이 파생 편집으로 바뀌는 사고가 구조적으로 불가능.
 ///
@@ -30,7 +30,6 @@ class DialogueBeat {
   // ── 오버라이드 키 (파생 비트의 [overrides] 맵에서 쓰는 필드 이름) ──
   static const kTitle = 'title';
   static const kNote = 'note';
-  static const kDirection = 'direction';
   static const kText = 'text'; // 대사 텍스트
   static const kSpeaker = 'speaker'; // 화자(Character.id, null=내레이션)
   static const kSilent = 'silent'; // true = 이 트랙은 무음(기준이 말해도 대사 없음)
@@ -41,7 +40,6 @@ class DialogueBeat {
   // ── 기준 비트(baseId==null)의 타입 필드 — 대본·연출의 원본. 파생 비트에서는 쓰지 않는다. ──
   String title; // 대사 제목 (비우면 '대사 n' 으로 표시)
   String note; // 사용자 메모(특이사항) — 프롬프트와 무관, 생성에 안 쓰임
-  String direction; // 연출 노트 — 이 비트에서 무엇을 표현할지. 자동 생성엔 안 물림
   Dialogue? dialogue; // 이 대사의 내용(0 또는 1). null = 무음 대사
   Caption? caption; // 이 비트의 자막(0 또는 1). null = 없음
 
@@ -58,7 +56,6 @@ class DialogueBeat {
     required this.id,
     this.title = '',
     this.note = '',
-    this.direction = '',
     this.dialogue,
     this.caption,
     List<Shot>? shots,
@@ -85,11 +82,6 @@ class DialogueBeat {
           ? (overrides[kNote] as String? ?? '')
           : (base?.note ?? ''));
 
-  String resolvedDirection(DialogueBeat? base) => !isDerived
-      ? direction
-      : (overrides.containsKey(kDirection)
-          ? (overrides[kDirection] as String? ?? '')
-          : (base?.direction ?? ''));
 
   /// 화면에 **보여 줄 대본**(화자·텍스트). 음성은 여기 담지 않는다([resolvedVoice] 참고).
   /// null = 무음 대사(대본 없음).
@@ -166,7 +158,6 @@ class DialogueBeat {
       'id': id,
       'title': title,
       'note': note,
-      'direction': direction,
       'dialogue': dialogue?.toJson(), // null = 무음 대사
       'caption': caption?.toJson(), // null = 자막 없음
       'shots': shots.map((c) => c.toJson()).toList(),
@@ -217,7 +208,6 @@ class DialogueBeat {
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
       note: (j['note'] as String?) ?? '',
-      direction: (j['direction'] as String?) ?? '',
       dialogue: dlg == null ? null : Dialogue.fromJson(dlg, dir),
       caption: cap == null ? null : Caption.fromJson(cap),
       shots: ((j['shots'] as List?) ?? const [])

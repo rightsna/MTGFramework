@@ -28,6 +28,10 @@ class VideoTrack {
   String defaultVoiceId; // 이 트랙의 기본 성우(내레이션·화자 미지정 대사용). 비면 미지정
   String defaultVoiceName; // 사람이 읽는 기본 성우 이름(라벨)
 
+  /// 트랙 메모 — 이 트랙을 어떤 조건으로 뽑는지·무엇을 비교 중인지 적어 두는 칸.
+  /// 생성에는 안 물린다(씬·샷 메모와 같은 성격).
+  String note;
+
   /// 이 트랙의 재생 배속(1.0~2.0). 미리보기와 내보내기에 똑같이 걸린다 —
   /// 영상·대사·효과음이 함께 빨라지고(배경음은 그대로 전체에 깔린다), 길이는 1/배속이 된다.
   double speed;
@@ -38,6 +42,7 @@ class VideoTrack {
     this.backend = VideoBackend.serviceApi,
     List<DialogueBeat>? beats,
     this.videoRes = VideoRes.p352x640,
+    this.note = '',
     this.defaultVoiceId = '',
     this.defaultVoiceName = '',
     this.speed = 1.0,
@@ -56,6 +61,7 @@ class VideoTrack {
         'backend': backend.name,
         'res': {'video': videoRes.name},
         'voice': {'id': defaultVoiceId, 'name': defaultVoiceName},
+        'note': note,
         'speed': speed,
         'beats': beats.map((b) => b.toJson()).toList(),
       };
@@ -76,6 +82,7 @@ class VideoTrack {
         (e) => e.name == res?['video'],
         orElse: () => VideoRes.p352x640,
       ),
+      note: (j['note'] as String?) ?? '',
       defaultVoiceId: (voice?['id'] as String?) ?? '',
       defaultVoiceName: (voice?['name'] as String?) ?? '',
       // 배속 없던 옛 데이터는 1배속.

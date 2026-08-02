@@ -38,6 +38,7 @@ class _CharTile extends StatelessWidget {
                   ? Image.file(File(cover),
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
+                      cacheWidth: 80, // 40px 칸 — 원본을 통째로 풀 이유가 없다
                       errorBuilder: (_, _, _) =>
                           const Icon(Icons.person, size: 20, color: Colors.white24))
                   : const Icon(Icons.person, size: 20, color: Colors.white24),
@@ -82,6 +83,7 @@ class _CoverImage extends StatelessWidget {
           ? Image.file(File(path!),
               fit: BoxFit.cover,
               gaplessPlayback: true,
+              cacheWidth: 320, // 160px 칸 (확대 팝업은 원본 그대로)
               errorBuilder: (_, _, _) => const _CoverPlaceholder())
           : const _CoverPlaceholder(),
     );
@@ -143,6 +145,7 @@ class _PhotoThumb extends StatelessWidget {
               child: Image.file(File(path),
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
+                  cacheWidth: 192, // 96px 칸
                   errorBuilder: (_, _, _) =>
                       const Icon(Icons.broken_image_outlined)),
             ),

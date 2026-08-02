@@ -58,19 +58,30 @@ class OutputPreview extends StatelessWidget {
         onTapOverride: onVideoTap,
       );
     }
-    // 이미지(PNG/JPG/애니메이션 WebP)
-    final img = Image.file(
-      File(p),
-      key: ValueKey('$p:$version'),
-      fit: fit,
-      gaplessPlayback: true,
-      errorBuilder: (_, _, _) =>
-          const Center(child: Icon(Icons.broken_image_outlined)),
-    );
-    if (onImageTap == null) return img;
-    return GestureDetector(
-      onTap: onImageTap,
-      child: MouseRegion(cursor: SystemMouseCursors.zoomIn, child: img),
+    // 이미지(PNG/JPG/애니메이션 WebP) — **그려질 크기로만 디코드**한다.
+    // 원본 그대로 풀면 704×1280 한 장이 3.4MB(픽셀×4바이트)라, 캔버스 한 씬(썸네일 100장)에
+    // 수백 MB가 잡히고 Flutter 이미지 캐시(기본 100MB)를 넘겨 쫓겨났다 다시 푸는 일이 반복된다
+    // — 프로젝트 처음 열 때 버벅이던 원인. 확대 팝업은 따로라 원본 화질 그대로다.
+    return LayoutBuilder(
+      builder: (context, box) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        // 폭이 무한(스크롤 안 등)일 땐 적당한 상한으로 — 그래도 원본보단 훨씬 작다.
+        final w = box.hasBoundedWidth ? box.maxWidth : 400.0;
+        final img = Image.file(
+          File(p),
+          key: ValueKey('$p:$version'),
+          fit: fit,
+          gaplessPlayback: true,
+          cacheWidth: (w * dpr).clamp(64, 2048).round(),
+          errorBuilder: (_, _, _) =>
+              const Center(child: Icon(Icons.broken_image_outlined)),
+        );
+        if (onImageTap == null) return img;
+        return GestureDetector(
+          onTap: onImageTap,
+          child: MouseRegion(cursor: SystemMouseCursors.zoomIn, child: img),
+        );
+      },
     );
   }
 }

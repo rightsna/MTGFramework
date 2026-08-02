@@ -1,5 +1,63 @@
 part of '../inspector_panel.dart';
 
+/// 효과음 손잡이 하나 — 라벨 + 현재값 + 슬라이더. 길이·충실도를 한 줄에 나란히 놓으려고
+/// 같은 모양으로 묶었다(칸이 좁아 라벨과 값이 겹치지 않게 값은 오른쪽 끝에).
+class _SfxSlider extends StatelessWidget {
+  const _SfxSlider({
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.divisions,
+    required this.text,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final int divisions;
+  final String text;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Flexible(child: _SectionLabel(label)),
+            const SizedBox(width: 6),
+            Text(text,
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        ),
+        SliderTheme(
+          // 좁은 칸에 두 개가 들어가므로 좌우 여백을 줄여 슬라이더 폭을 살린다.
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 3,
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+          ),
+          child: Slider(
+            value: value,
+            min: min,
+            max: max,
+            divisions: divisions,
+            label: text,
+            onChanged: onChanged,
+            onChangeEnd: onChangeEnd,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// 효과음(SFX) 편집 — 소리 묘사 + 길이·충실도 + 생성/불러오기. 대사와 달리 **화자가 없다**.
 /// 효과음은 **샷**에 붙는다(대사 전체가 아니라 소리가 나야 할 컷에). 트랙끼리 공유
 /// (기준 샷 소유)라 어느 트랙에서 편집하든 같이 바뀐다.
@@ -75,6 +133,19 @@ class _SfxEditorState extends State<_SfxEditor> {
           const SizedBox(height: 14),
           const Divider(height: 1),
           const SizedBox(height: 14),
+          // ── AI로 생성(선택) ── 묘사·길이·충실도·생성 버튼은 **한 덩어리**다.
+          // 예전엔 묘사·설정이 위, 생성 버튼이 divider 건너 아래에 있어 따로 노는 것처럼 보였다.
+          Row(
+            children: const [
+              Icon(Icons.graphic_eq, size: 14, color: accent2),
+              SizedBox(width: 6),
+              Text(
+                'AI로 생성 (선택)',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           _SectionLabel('소리 묘사'),
           const SizedBox(height: 6),
           TextField(
@@ -99,64 +170,34 @@ class _SfxEditorState extends State<_SfxEditor> {
             style: TextStyle(fontSize: 11, color: Colors.white38),
           ),
           const SizedBox(height: 14),
-          // 길이(초) — 일레븐랩스 0.5~22초.
+          // 길이(0.5~22초)와 충실도(0~1)는 같은 성격의 손잡이라 한 줄에 나란히 둔다.
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _SectionLabel('길이'),
-              const Spacer(),
-              Text(
-                '${_dur.toStringAsFixed(1)}초',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: _SfxSlider(
+                  label: '길이',
+                  value: _dur,
+                  min: 0.5,
+                  max: 22,
+                  divisions: 215, // 0.1초 단위
+                  text: '${_dur.toStringAsFixed(1)}초',
+                  onChanged: (v) => setState(() => _dur = v),
+                  onChangeEnd: (v) => p.setSfxDuration(shot, v),
                 ),
               ),
-            ],
-          ),
-          Slider(
-            value: _dur,
-            min: 0.5,
-            max: 22,
-            divisions: 215, // 0.1초 단위
-            label: '${_dur.toStringAsFixed(1)}초',
-            onChanged: (v) => setState(() => _dur = v),
-            onChangeEnd: (v) => p.setSfxDuration(shot, v),
-          ),
-          // 프롬프트 충실도(0~1) — 높을수록 묘사에 충실, 낮을수록 다양.
-          Row(
-            children: [
-              const _SectionLabel('프롬프트 충실도'),
-              const Spacer(),
-              Text(
-                _infl.toStringAsFixed(2),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SfxSlider(
+                  label: '프롬프트 충실도',
+                  value: _infl,
+                  min: 0,
+                  max: 1,
+                  divisions: 20,
+                  text: _infl.toStringAsFixed(2),
+                  onChanged: (v) => setState(() => _infl = v),
+                  onChangeEnd: (v) => p.setSfxInfluence(shot, v),
                 ),
-              ),
-            ],
-          ),
-          Slider(
-            value: _infl,
-            min: 0,
-            max: 1,
-            divisions: 20,
-            label: _infl.toStringAsFixed(2),
-            onChanged: (v) => setState(() => _infl = v),
-            onChangeEnd: (v) => p.setSfxInfluence(shot, v),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-
-          const SizedBox(height: 12),
-          Row(
-            children: const [
-              Icon(Icons.graphic_eq, size: 14, color: accent2),
-              SizedBox(width: 6),
-              Text(
-                'AI로 생성 (선택)',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ],
           ),

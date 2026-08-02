@@ -1,6 +1,6 @@
 part of '../inspector_panel.dart';
 
-/// 트랙 탭 — **지금 보고 있는 트랙**의 설정: 재생 배속 · 기본 성우 · 무비 내보내기.
+/// 트랙 탭 — **지금 보고 있는 트랙**의 메모와 설정: 해상도 · 배속 · 기본 성우 · 무비 내보내기.
 /// (트랙 이름·백엔드·삭제·전환은 캔버스의 트랙 줄 머리말에서. 여기선 그 트랙의 설정만 다룬다.)
 ///
 /// 예전엔 씬의 모든 트랙 카드를 아래로 쭉 쌓았다 — 트랙이 늘수록 어느 게 지금 것인지
@@ -28,6 +28,11 @@ class _TrackTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // 트랙 메모 — 다른 탭과 마찬가지로 최상단, 같은 모양.
+          _ShotNote(
+              key: ValueKey('track_note_${track.id}'),
+              controller: p.trackNoteCtrl(track.id)),
+          const SizedBox(height: 16),
           const Text(
             '해상도·기본 성우·배속은 **트랙마다 따로**입니다 — 트랙별로 다른 조건으로 뽑아 비교하세요.\n'
             '내보내기는 그 트랙의 영상에 대사 음성·효과음·배경음을 합쳐 하나의 mp4로 굽습니다.',
