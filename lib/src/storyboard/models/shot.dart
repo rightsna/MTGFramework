@@ -1,4 +1,5 @@
 import 'sfx.dart';
+import 'text_overlay.dart';
 
 /// 영상 생성 방식 — 네 갈래(명시적 상태). 끝 프레임이 필요한 건 FE2V 하나뿐이다.
 ///  - [fe2v]: 시작·끝 두 장을 고정하고 그 사이를 AI로 생성(기본). 끝 그림이 정해진다.
@@ -49,6 +50,7 @@ class Shot {
   static const kStillEffect = 'stillEffect';
   static const kNote = 'note';
   static const kSfx = 'sfx'; // Sfx? (null=명시적 없음)
+  static const kTextOverlay = 'textOverlay'; // TextOverlay? (null=명시적 없음)
   static const kVideoNote = 'videoNote';
 
   String id;
@@ -71,6 +73,10 @@ class Shot {
   /// 비트가 아니라 샷에 붙는다 — 한 대사를 여러 샷이 덮을 때 소리가 나야 할 자리는
   /// 대사 전체가 아니라 특정 컷이라서.
   Sfx? sfx;
+
+  /// 이 샷에 **구워 넣는 글씨**(0 또는 1). null = 없음.
+  /// 타이틀 카드·썸네일 프레임이 이걸 쓴다 — 내보낼 때 프레임에 구워진다.
+  TextOverlay? textOverlay;
 
   // ── 언제나 이 샷(트랙) 소유 — 오버라이드/상속 대상이 아니다 ──
   double? videoActualSeconds; // 뽑힌 영상의 실제 길이(초). 없으면 아직 안 뽑음
@@ -102,6 +108,7 @@ class Shot {
     this.note = '',
     this.videoNote = '',
     this.sfx,
+    this.textOverlay,
     this.baseId,
     Map<String, Object?>? overrides,
   }) : overrides = overrides ?? {};
@@ -140,6 +147,14 @@ class Shot {
   Sfx? resolvedSfx(Shot? b) => !isDerived
       ? sfx
       : (overrides.containsKey(kSfx) ? overrides[kSfx] as Sfx? : b?.sfx);
+
+  /// 이 샷 자리에 구워질 글씨 — 기준 샷 것을 상속하되, 파생에서 손대면 그것.
+  /// (언어별 트랙이 같은 카드에 각자 문구를 얹을 수 있어야 해서 오버라이드 대상이다.)
+  TextOverlay? resolvedTextOverlay(Shot? b) => !isDerived
+      ? textOverlay
+      : (overrides.containsKey(kTextOverlay)
+          ? overrides[kTextOverlay] as TextOverlay?
+          : b?.textOverlay);
 
   /// 이 샷 자리에 **걸리는 영상** — 자기 트랙에서 뽑았으면 그것, 없으면 기준 샷 것 상속.
   /// 영상은 오버라이드가 아니라 트랙별 소유라 [overrides]를 거치지 않는다(위 주석 참고).
@@ -201,6 +216,7 @@ class Shot {
         'note': videoNote,
       },
       'sfx': sfx?.toJson(), // null = 효과음 없음
+      'textOverlay': textOverlay?.toJson(), // null = 얹는 글씨 없음
       'note': note,
     };
   }
@@ -216,6 +232,7 @@ class Shot {
         kVideoMode => (v as VideoMode).name,
         kStillEffect => (v as StillEffect).name,
         kSfx => (v as Sfx?)?.toJson(),
+        kTextOverlay => (v as TextOverlay?)?.toJson(),
         _ => v, // String / double / bool / List<String> / null
       };
     }
@@ -241,6 +258,7 @@ class Shot {
     final end = (j['endScene'] as Map?)?.cast<String, dynamic>();
     final video = (j['video'] as Map?)?.cast<String, dynamic>();
     final sfxJson = (j['sfx'] as Map?)?.cast<String, dynamic>();
+    final overlayJson = (j['textOverlay'] as Map?)?.cast<String, dynamic>();
     return Shot(
       id: j['id'] as String,
       title: (j['title'] as String?) ?? '',
@@ -261,6 +279,7 @@ class Shot {
       note: (j['note'] as String?) ?? '',
       videoNote: (video?['note'] as String?) ?? '',
       sfx: sfxJson == null ? null : Sfx.fromJson(sfxJson, dir),
+      textOverlay: overlayJson == null ? null : TextOverlay.fromJson(overlayJson),
     );
   }
 
@@ -286,6 +305,9 @@ class Shot {
         case kSfx:
           final m = (e.value as Map?)?.cast<String, dynamic>();
           out[e.key] = m == null ? null : Sfx.fromJson(m, dir);
+        case kTextOverlay:
+          final m = (e.value as Map?)?.cast<String, dynamic>();
+          out[e.key] = m == null ? null : TextOverlay.fromJson(m);
         default:
           out[e.key] = e.value; // String / bool / null
       }

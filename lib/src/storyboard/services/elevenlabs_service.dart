@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
 
 /// 일레븐랩스 TTS 클라이언트(외부 API). 대사 텍스트 → 음성(mp3) + 길이(초).
 /// ForgeCloud service-api(자체 서버)와 별개로, 클라에서 직접 호출한다.
@@ -55,6 +56,38 @@ class ElevenLabsService {
   double _estimate(String text) =>
       (text.trim().length * 0.09).clamp(1.0, 60.0);
 
+  /// **강제 정렬**(forced-alignment) — 이미 만들어 둔 음성([audio])과 그 대본([text])을
+  /// 보내면 단어마다 실제 발화 시각을 돌려준다. 음성을 다시 뽑지 않으므로 TTS 크레딧이 안 든다.
+  ///
+  /// 자막 큐를 글자수 비례로 나누면 반드시 어긋난다 — 보이스마다 줄 끝에서 쉬는 길이가
+  /// 다른데 그 쉼이 계산에 안 들어간다(실측 2026-08-01, Sian). 그래서 **실제 발화**로
+  /// 큐를 다시 잡는 데 쓴다([VoiceTiming.cuesFromWords]).
+  Future<List<AlignedWord>> forcedAlignment({
+    required Uint8List audio,
+    required String text,
+    String filename = 'voice.mp3',
+  }) async {
+    final req = http.MultipartRequest(
+        'POST', Uri.parse('$_base/forced-alignment'))
+      ..headers.addAll(_headers)
+      ..fields['text'] = text
+      ..files.add(http.MultipartFile.fromBytes('file', audio,
+          filename: filename, contentType: MediaType('audio', 'mpeg')));
+    final r = await http.Response.fromStream(await req.send());
+    if (r.statusCode != 200) {
+      throw Exception('일레븐랩스 ${r.statusCode}: ${utf8.decode(r.bodyBytes)}');
+    }
+    final j = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    return [
+      for (final w in (j['words'] as List? ?? const []))
+        AlignedWord(
+          text: (w['text'] as String?) ?? '',
+          start: ((w['start'] as num?) ?? 0).toDouble(),
+          end: ((w['end'] as num?) ?? 0).toDouble(),
+        ),
+    ];
+  }
+
   /// 효과음 생성(sound-generation). 소리 묘사([text]) → 음향(mp3, 바이너리).
   /// [durationSeconds]는 0.5~22초(null이면 서버가 알아서 정함), [promptInfluence]는 0~1.
   /// 대사(TTS)와 달리 정렬/길이 정보가 없다 — 길이는 저장 후 파일에서 실측한다.
@@ -96,6 +129,22 @@ class ElevenLabsService {
         ),
     ];
   }
+}
+
+/// 강제 정렬 결과의 단어 하나 — 실제 발화 구간(초).
+class AlignedWord {
+  const AlignedWord({
+    required this.text,
+    required this.start,
+    required this.end,
+  });
+
+  final String text;
+  final double start;
+  final double end;
+
+  /// 공백만 있는 항목(정렬 응답에는 낱말 사이 공백도 한 줄로 온다).
+  bool get isBlank => text.trim().isEmpty;
 }
 
 /// 일레븐랩스 보이스 하나(목록용).

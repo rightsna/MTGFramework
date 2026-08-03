@@ -2,7 +2,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
+import '../models/caption.dart' show CaptionPosition;
 import '../models/shot.dart' show StillEffect;
+import '../models/text_overlay.dart';
 
 /// 생성된 영상 파일을 다루는 로컬 도구 — ffmpeg/ffprobe 래퍼.
 /// 지금 하는 일은 **트림(앞뒤 자르기)** 하나뿐이다: FE2V 결과에 가끔 섞이는 이상한 프레임을
@@ -167,6 +169,7 @@ class VideoEdit {
     required int width,
     required int height,
     double fps = 24,
+    TextOverlay? overlay, // 프레임에 구워 넣을 글씨(타이틀 카드·썸네일)
   }) async {
     final ffmpeg = toolPath('ffmpeg');
     if (ffmpeg == null) throw Exception(missingHint);
@@ -184,23 +187,112 @@ class VideoEdit {
         _kenBurns(w, h, frames, fps, '1.12-0.12*on/$frames'),
     };
 
-    final r = await Process.run(ffmpeg, [
-      '-y',
-      '-loop', '1',
-      '-i', image,
-      '-t', '$sec',
-      '-r', '$fps',
-      '-vf', vf,
-      '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
-      '-an',
-      outPath,
-    ]);
-    if (r.exitCode != 0) {
-      final f = File(outPath);
-      if (await f.exists()) await f.delete();
-      throw Exception(
-          'ffmpeg: ${(r.stderr as String).trim().split('\n').last}');
+    // 글씨는 **켄번스 뒤에** 얹는다 — 앞에 얹으면 글씨까지 같이 확대돼 흔들린다.
+    final capDir = overlay == null || !overlay.hasText
+        ? null
+        : Directory.systemTemp.createTempSync('mtg_overlay');
+    try {
+      final r = await Process.run(ffmpeg, [
+        '-y',
+        '-loop', '1',
+        '-i', image,
+        '-t', '$sec',
+        '-r', '$fps',
+        '-vf', capDir == null
+            ? vf
+            : '$vf,${_overlayFilter(overlay!, w, h, capDir.path)}',
+        '-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast',
+        '-pix_fmt', 'yuv420p',
+        '-an',
+        outPath,
+      ]);
+      if (r.exitCode != 0) {
+        final f = File(outPath);
+        if (await f.exists()) await f.delete();
+        throw Exception(
+            'ffmpeg: ${(r.stderr as String).trim().split('\n').last}');
+      }
+    } finally {
+      if (capDir != null && capDir.existsSync()) {
+        capDir.deleteSync(recursive: true);
+      }
     }
+  }
+
+  /// 글씨 한 장을 프레임에 굽는 필터 체인 — 어둠(scrim) → 타이포(ASS/libass).
+  ///
+  /// 타이포를 libass에 맡기는 이유: 한글 폰트 폴백·어절 단위 줄바꿈·외곽선을 전부 해 준다.
+  /// `drawtext`로 하면 그 셋을 직접 구현해야 하고, 자막이 이미 이 길로 구워지므로
+  /// **모양을 맞추려면 같은 렌더러**를 써야 한다.
+  static String _overlayFilter(
+      TextOverlay o, int w, int h, String dirPath) {
+    final parts = <String>[];
+    // ① 어둠 — 글씨가 붙는 쪽 끝에서 시작해 부드럽게 사라진다. 사각형이면 경계선이 보인다.
+    if (o.scrim > 0.001) {
+      // 화면의 40%까지 걸쳐 사라진다(1.6제곱이라 초반이 진하고 끝이 길게 옅어진다).
+      final k = o.scrim.clamp(0.0, 1.0);
+      final t = switch (o.position) {
+        CaptionPosition.top => 'max(0\\,1-Y/(H*0.40))',
+        CaptionPosition.bottom => 'max(0\\,1-(H-Y)/(H*0.40))',
+        CaptionPosition.middle => '0', // 가운데 글씨엔 안 깐다(화면 전체를 덮게 된다)
+      };
+      if (t != '0') {
+        final dim = "(1-$k*pow($t\\,1.6))";
+        parts.add('format=rgb24,'
+            "geq=r='r(X\\,Y)*$dim':g='g(X\\,Y)*$dim':b='b(X\\,Y)*$dim'");
+      }
+    }
+    // ② 타이포 — 자막과 같은 ASS 경로.
+    final ass = '$dirPath/overlay.ass';
+    File(ass).writeAsStringSync(_overlayAss(o, w, h));
+    parts.add('subtitles=$ass');
+    return parts.join(',');
+  }
+
+  /// 얹는 글씨의 ASS. 자막과 달리 **구간이 하나**고 클립 내내 떠 있다.
+  static String _overlayAss(TextOverlay o, int w, int h) {
+    final align = switch (o.position) {
+      CaptionPosition.top => 8,
+      CaptionPosition.middle => 5,
+      _ => 2,
+    };
+    final size = (h * o.sizeRatio).round().clamp(12, 300);
+    final outline = (size * o.outlineRatio).round().clamp(0, 40);
+    final marginV = (h * 0.075).round();
+    final marginH = (w * 0.073).round(); // 좌우 여백 — 이 폭 안에서 어절 단위로 접힌다
+    final color = _assColor(o.color);
+    final text = o.text
+        .trim()
+        .replaceAll('\\', '\\\\')
+        .replaceAll('\n', '\\N')
+        .replaceAll('{', '(')
+        .replaceAll('}', ')');
+    return '''
+[Script Info]
+ScriptType: v4.00+
+PlayResX: $w
+PlayResY: $h
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Card,Arial,$size,$color,&H000000FF,&H00141416,&H00000000,1,0,0,0,100,100,0,0,1,$outline,0,$align,$marginH,$marginH,$marginV,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,9:59:59.99,Card,,0,0,0,,$text
+''';
+  }
+
+  /// `RRGGBB` → ASS 색(`&H00BBGGRR`). 못 읽으면 흰색.
+  static String _assColor(String rrggbb) {
+    final hex = rrggbb.replaceAll('#', '').trim();
+    final v = int.tryParse(hex, radix: 16);
+    if (hex.length != 6 || v == null) return '&H00FFFFFF';
+    final r = (v >> 16) & 0xFF, g = (v >> 8) & 0xFF, b = v & 0xFF;
+    String two(int x) => x.toRadixString(16).padLeft(2, '0').toUpperCase();
+    return '&H00${two(b)}${two(g)}${two(r)}';
   }
 
   /// 켄번스 필터 체인 — 큰 캔버스로 먼저 덮어(줌 시 화질·잔떨림 완화) zoompan으로 w×h 출력.

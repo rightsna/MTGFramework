@@ -9,28 +9,14 @@
 //       --scene 4 --track 2 --speed 1.2 --out ~/Downloads/scene4.mp4
 //
 // Flutter 없이 도는 게 핵심이라(플러그인 = GUI 전용) 여기서 import하는 건 전부 순수 Dart다.
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:framework/src/storyboard/models/story_scene.dart';
 import 'package:framework/src/storyboard/models/video_track.dart';
+import 'package:framework/src/storyboard/services/cli_support.dart';
 import 'package:framework/src/storyboard/services/scene_export.dart';
 import 'package:framework/src/storyboard/services/storyboard_store.dart';
 import 'package:framework/src/storyboard/services/video_edit.dart';
-
-/// 프로젝트 루트 — **앱이 실제로 쓰는 폴더**를 그대로 따라간다.
-/// 앱은 루트를 바꿀 수 있고(외장 디스크·동기화 폴더) 그 값을 `project_root.txt` 에 적어 둔다.
-/// 그걸 안 읽으면 루트를 옮긴 순간 CLI만 옛 폴더를 보게 되어 "프로젝트가 없다"고 나온다.
-String defaultRoot() {
-  final home = Platform.environment['HOME'] ?? '';
-  final pref = File(
-      '$home/Library/Application Support/com.mtg.storyboardMaker/project_root.txt');
-  if (pref.existsSync()) {
-    final saved = pref.readAsStringSync().trim();
-    if (saved.isNotEmpty && Directory(saved).existsSync()) return saved;
-  }
-  return '$home/Documents/StoryboardMaker'; // 설정 전이면 앱 기본값과 같은 자리
-}
 
 const _usage = '''
 스토리보드 무비 내보내기 (GUI 내보내기와 같은 엔진)
@@ -50,19 +36,19 @@ Future<void> main(List<String> argv) async {
 }
 
 Future<int> _run(List<String> argv) async {
-  final args = _parse(argv);
+  final args = CliSupport.parse(argv);
   if (args.containsKey('help') || args.containsKey('h')) {
     stdout.write(_usage);
     return 0;
   }
   final asJson = args.containsKey('json');
-  final root = args['root'] ?? defaultRoot();
+  final root = args['root'] ?? CliSupport.defaultRoot();
 
   try {
     final projectArg = args['project'];
     // --list 단독 = 프로젝트 목록.
     if (args.containsKey('list') && projectArg == null) {
-      _emit(asJson, _projectsJson(root), _projectsText(root));
+      CliSupport.emit(asJson, _projectsJson(root), _projectsText(root));
       return 0;
     }
     if (projectArg == null) {
@@ -70,25 +56,25 @@ Future<int> _run(List<String> argv) async {
       return 2;
     }
 
-    final dir = _resolveProjectDir(root, projectArg);
+    final dir = CliSupport.resolveProjectDir(root, projectArg);
     final scenes = await StoryboardStore(dir).load();
-    if (scenes.isEmpty) throw _CliError('씬이 없습니다: $dir');
+    if (scenes.isEmpty) throw CliError('씬이 없습니다: $dir');
 
     // --project --list = 그 프로젝트의 씬·트랙 현황(무엇이 뽑을 준비가 됐는지).
     if (args.containsKey('list')) {
-      _emit(asJson, _scenesJson(dir, scenes), _scenesText(dir, scenes));
+      CliSupport.emit(asJson, _scenesJson(dir, scenes), _scenesText(dir, scenes));
       return 0;
     }
 
-    final scene = _pickScene(scenes, args['scene']);
-    final track = _pickTrack(scene, args['track']);
+    final scene = CliSupport.pickScene(scenes, args['scene']);
+    final track = CliSupport.pickTrack(scene, args['track']);
     final speed = args['speed'] == null
         ? null
         : (double.tryParse(args['speed']!) ??
-            (throw _CliError('--speed 는 숫자여야 합니다: ${args['speed']}')));
+            (throw CliError('--speed 는 숫자여야 합니다: ${args['speed']}')));
     final out = _resolveOut(args['out'], scene, track);
 
-    if (!VideoEdit.available) throw _CliError(VideoEdit.missingHint);
+    if (!VideoEdit.available) throw CliError(VideoEdit.missingHint);
 
     final res = await SceneExporter.exportTrack(
       scene: scene,
@@ -101,7 +87,7 @@ Future<int> _run(List<String> argv) async {
     // 내보내며 스틸컷을 구웠으면 씬에 남긴다(GUI도 같은 규칙) — 다음엔 다시 안 굽는다.
     if (res.changed) await StoryboardStore(dir).save(scenes);
 
-    _emit(
+    CliSupport.emit(
       asJson,
       {
         'ok': true,
@@ -118,33 +104,25 @@ Future<int> _run(List<String> argv) async {
     );
     return 0;
   } on NothingToExportException catch (e) {
-    _fail(asJson, e.message);
+    CliSupport.fail(asJson, e.message);
     return 1;
-  } on _CliError catch (e) {
-    _fail(asJson, e.message);
+  } on CliError catch (e) {
+    CliSupport.fail(asJson, e.message);
     return 2;
   } catch (e) {
-    _fail(asJson, '$e');
+    CliSupport.fail(asJson, '$e');
     return 1;
   }
 }
 
 // ───────── 목록 ─────────
 
-List<Map<String, dynamic>> _projects(String root) {
-  final f = File('$root/projects.json');
-  if (!f.existsSync()) throw _CliError('프로젝트 목록이 없습니다: ${f.path}');
-  return (jsonDecode(f.readAsStringSync()) as List)
-      .map((e) => (e as Map).cast<String, dynamic>())
-      .toList();
-}
-
 Map<String, dynamic> _projectsJson(String root) =>
-    {'root': root, 'projects': _projects(root)};
+    {'root': root, 'projects': CliSupport.projects(root)};
 
 String _projectsText(String root) {
   final b = StringBuffer('프로젝트 ($root)\n');
-  for (final p in _projects(root)) {
+  for (final p in CliSupport.projects(root)) {
     b.writeln('  ${p['name']}   [${p['id']}]');
   }
   return b.toString();
@@ -204,61 +182,7 @@ String _scenesText(String dir, List<StoryScene> scenes) {
 }
 
 // ───────── 인자 해석 ─────────
-
-/// `--project`: 폴더 경로면 그대로, 아니면 projects.json에서 이름/ id로 찾는다(부분 일치 허용).
-String _resolveProjectDir(String root, String arg) {
-  if (arg.contains('/') && Directory(arg).existsSync()) return arg;
-  final list = _projects(root);
-  final hits = [
-    for (final p in list)
-      if (p['id'] == arg ||
-          p['name'] == arg ||
-          (p['name'] as String).contains(arg))
-        p,
-  ];
-  if (hits.isEmpty) {
-    throw _CliError('그런 프로젝트가 없습니다: $arg\n'
-        '있는 것: ${list.map((p) => p['name']).join(' · ')}');
-  }
-  if (hits.length > 1) {
-    throw _CliError('프로젝트가 여러 개 걸립니다: '
-        '${hits.map((p) => p['name']).join(' · ')} — 더 정확히 적어 주세요');
-  }
-  return '$root/${hits.first['id']}';
-}
-
-/// `--scene`: 번호(1부터) · id · 제목(부분 일치). 생략하면 첫 씬.
-StoryScene _pickScene(List<StoryScene> scenes, String? arg) {
-  if (arg == null) return scenes.first;
-  final n = int.tryParse(arg);
-  if (n != null) {
-    if (n < 1 || n > scenes.length) {
-      throw _CliError('씬 번호는 1~${scenes.length} 입니다 (받은 값: $n)');
-    }
-    return scenes[n - 1];
-  }
-  for (final s in scenes) {
-    if (s.id == arg || s.title == arg || s.title.contains(arg)) return s;
-  }
-  throw _CliError('그런 씬이 없습니다: $arg');
-}
-
-/// `--track`: 번호(1부터) · 이름(부분 일치). 생략하면 기준 트랙.
-VideoTrack _pickTrack(StoryScene scene, String? arg) {
-  if (arg == null) return scene.baseTrack;
-  final n = int.tryParse(arg);
-  if (n != null) {
-    if (n < 1 || n > scene.tracks.length) {
-      throw _CliError('트랙 번호는 1~${scene.tracks.length} 입니다 (받은 값: $n)');
-    }
-    return scene.tracks[n - 1];
-  }
-  final r = SceneResolver(scene);
-  for (final t in scene.tracks) {
-    if (t.id == arg || r.trackLabel(t).contains(arg)) return t;
-  }
-  throw _CliError('그런 트랙이 없습니다: $arg');
-}
+// (프로젝트·씬·트랙 찾기와 인자 파서는 CliSupport에 있다 — storyboard-voice와 공유한다.)
 
 /// `--out`: 없으면 ~/Downloads 에 GUI와 같은 이름으로. 폴더를 주면 그 안에 같은 이름으로.
 String _resolveOut(String? arg, StoryScene scene, VideoTrack track) {
@@ -270,41 +194,4 @@ String _resolveOut(String? arg, StoryScene scene, VideoTrack track) {
   final parent = Directory(p).parent;
   if (!parent.existsSync()) parent.createSync(recursive: true);
   return p;
-}
-
-/// `--키 값` / `--키=값` / `--플래그` 만 받는 최소 파서(외부 패키지 없이).
-Map<String, String?> _parse(List<String> argv) {
-  final out = <String, String?>{};
-  for (var i = 0; i < argv.length; i++) {
-    final a = argv[i];
-    if (!a.startsWith('-')) continue;
-    final key = a.replaceFirst(RegExp(r'^-+'), '');
-    if (key.contains('=')) {
-      final k = key.substring(0, key.indexOf('='));
-      out[k] = key.substring(key.indexOf('=') + 1);
-      continue;
-    }
-    final next = i + 1 < argv.length ? argv[i + 1] : null;
-    if (next != null && !next.startsWith('-')) {
-      out[key] = next;
-      i++;
-    } else {
-      out[key] = null; // 플래그
-    }
-  }
-  return out;
-}
-
-// ───────── 출력 ─────────
-
-void _emit(bool asJson, Object json, String text) =>
-    stdout.writeln(asJson ? jsonEncode(json) : text.trimRight());
-
-void _fail(bool asJson, String message) => asJson
-    ? stdout.writeln(jsonEncode({'ok': false, 'error': message}))
-    : stderr.writeln('실패: $message');
-
-class _CliError implements Exception {
-  _CliError(this.message);
-  final String message;
 }

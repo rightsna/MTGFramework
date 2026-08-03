@@ -1,0 +1,18 @@
+#!/bin/bash
+# 스토리보드 음성·자막 CLI의 **고정 입구**. bin/storyboard_voice.dart를 그대로 실행한다.
+#
+# 이 래퍼가 있는 이유는 하나다 — `dart run`이 stdout에 "Running build hooks..."를 개행 없이
+# 흘려서 `--json` 출력 맨 앞에 붙어 파싱이 깨진다. 여기서 그것만 걷어낸다.
+#
+#   tool/storyboard-voice --project 상담소 --scene all --captions
+#   tool/storyboard-voice --project 마일스머서1_숏폼 --scene 4 --voice
+#
+# Dart 소스를 고치면 다음 실행에 바로 반영된다(컴파일된 사본을 두지 않는 이유).
+set -eu -o pipefail  # CLI 종료코드가 sed에 먹히지 않게
+
+DIR=$(cd "$(dirname "$0")/.." && pwd)
+DART=${DART:-$HOME/fvm/default/bin/dart}
+[ -x "$DART" ] || DART=dart
+
+"$DART" run "$DIR/bin/storyboard_voice.dart" "$@" \
+  | sed -e 's/Running build hooks\.\.\.//g' -e '/^$/d'

@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart' hide Caption;
 
 import '../models/character.dart';
 import '../models/shot.dart';
+import '../models/text_overlay.dart';
 import '../models/dialogue.dart';
 import '../models/dialogue_beat.dart';
 import '../models/sfx.dart';
@@ -2714,8 +2715,39 @@ class StoryboardProvider extends ChangeNotifier {
     if (shotStillEffect(shot) == effect) return;
     _setShotField(
         shot, Shot.kStillEffect, effect, () => shot.stillEffect = effect);
+    _invalidateStill(shot); // 구워 둔 스틸은 옛 효과로 만들어진 것이다
     await save();
     notifyListeners();
+  }
+
+  /// 이 샷 자리에 구워질 글씨(타이틀 카드·썸네일). 없애려면 null.
+  Future<void> setTextOverlay(Shot shot, TextOverlay? overlay) async {
+    _setShotField(shot, Shot.kTextOverlay, overlay,
+        () => shot.textOverlay = overlay);
+    _invalidateStill(shot); // 글씨는 프레임에 구워지므로 클립을 다시 구워야 한다
+    await save();
+    notifyListeners();
+  }
+
+  /// 이 샷 자리의 글씨 — 상속/오버라이드 해석.
+  TextOverlay? textOverlayOf(Shot s) => s.resolvedTextOverlay(baseShotOf(s));
+
+  /// **구워 둔 스틸컷을 낡은 것으로 표시**한다 — 다음 내보내기에서 다시 굽는다.
+  /// 스틸은 시작 프레임·길이·효과·글씨만으로 정해지는 로컬 산출물이라 다시 구우면 그만이다.
+  /// (AI로 뽑은 영상은 건드리지 않는다 — 크레딧이 나간 결과물을 말없이 버리면 안 된다.)
+  void _invalidateStill(Shot shot) {
+    if (shotVideoMode(shot) != VideoMode.still) return;
+    if (shot.videoPath == null) return;
+    final stale = File(shot.videoPath!);
+    shot.videoPath = null;
+    shot.videoActualSeconds = null;
+    stale.exists().then((yes) {
+      if (!yes) return;
+      stale.delete().catchError((Object e) {
+        debugPrint('[still] 낡은 클립 삭제 실패(참조는 이미 끊음): $e');
+        return stale;
+      });
+    });
   }
 
   /// **앞 샷 끝 프레임으로 시작 프레임 만들기** — 컷을 이어 붙이는 한 번짜리 동작이다.

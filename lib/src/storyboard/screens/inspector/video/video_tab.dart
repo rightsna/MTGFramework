@@ -176,6 +176,12 @@ class _VideoTab extends StatelessWidget {
           // 효과음 — **샷 단위**다. 소리가 나야 할 자리는 대사 전체가 아니라 이 컷이라
           // 영상 바로 아래에 둔다(비트 탭에서 옮겨 왔다).
           _SfxEditor(key: ValueKey('sfx_${c.id}'), shot: c),
+          const SizedBox(height: 16),
+          // 얹는 글씨 — 이것도 **샷 단위**다(타이틀 카드·썸네일 프레임).
+          // 스틸컷에서만 굽는다: AI로 뽑은 영상에 글씨를 얹으려면 영상을 다시 인코딩해야 하는데,
+          // 그건 지금 필요한 자리(편 맨 앞 정지 카드)가 아니다.
+          if (isStill)
+            _TextOverlayEditor(key: ValueKey('overlay_${c.id}'), shot: c),
         ],
       ),
     );

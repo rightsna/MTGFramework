@@ -5,6 +5,7 @@ import '../models/dialogue_beat.dart';
 import '../models/sfx.dart';
 import '../models/shot.dart';
 import '../models/story_scene.dart';
+import '../models/text_overlay.dart';
 import '../models/video_track.dart';
 import 'movie_settings.dart'; // VideoRes
 import 'video_edit.dart';
@@ -68,6 +69,13 @@ class SceneResolver {
   /// 효과음은 **샷 단위**다(비트가 아니라). 기준 샷 것을 상속하되 파생이 손대면 그것.
   Sfx? sfxOf(Shot s) => s.resolvedSfx(baseShotOf(s));
   String? sfxPathOf(Shot s) => sfxOf(s)?.path;
+
+  /// 이 샷 자리에 **구워질 글씨**(타이틀 카드·썸네일). 문구가 비었으면 null로 본다 —
+  /// 빈 글씨를 굽겠다고 ffmpeg에 필터를 태울 이유가 없다.
+  TextOverlay? textOverlayOf(Shot s) {
+    final o = s.resolvedTextOverlay(baseShotOf(s));
+    return (o != null && o.hasText) ? o : null;
+  }
   Caption? captionOf(DialogueBeat b) => b.resolvedCaption(baseBeatOf(b));
 
   double shotVideoSeconds(Shot s) => s.resolvedVideoSeconds(baseShotOf(s));
@@ -379,6 +387,7 @@ class SceneExporter {
       effect: r.shotStillEffect(shot),
       width: r.videoResOf(shot).width, // 트랙 단위 해상도
       height: r.videoResOf(shot).height,
+      overlay: r.textOverlayOf(shot), // 타이틀 카드·썸네일 글씨(있으면 프레임에 굽는다)
     );
     final f = File(out);
     await onFileWritten?.call(f);
