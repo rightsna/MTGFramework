@@ -490,7 +490,10 @@ Dialogue: 0,0:00:00.00,9:59:59.99,Card,,0,0,0,,$text
     if (cap == null || !cap.hasText) return null;
     final align = switch (cap.position) { 'top' => 8, 'middle' => 5, _ => 2 };
     final fontSize = (h * 0.055).round().clamp(18, 96);
-    final marginV = (h * 0.045).round();
+    // 화면 높이의 20%를 띄운다. 숏폼 플랫폼이 화면 아래쪽에 자기 UI(좋아요·설명·프로필)를 겹쳐
+    // 그리기 때문에, 예전 값(4.5%)으로는 자막이 그 아래 깔려 **재생 화면에서 안 읽혔다**
+    // (2026-08-03 유튜브 숏츠 실측). 세로 영상 기준으로 20%면 UI 위로 확실히 뜬다.
+    final marginV = (h * 0.20).round();
     // 미리보기처럼 글씨 뒤에 반투명 검은 박스를 깐다(BorderStyle=3). 박스 색은 OutlineColour,
     // Outline 값이 글씨 둘레 여백. ASS 알파는 00=불투명 → 미리보기 60% 불투명(0x99) ≈ &H66.
     final boxPad = (fontSize * 0.22).round().clamp(2, 14);
