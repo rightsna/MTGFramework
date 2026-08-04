@@ -62,13 +62,20 @@ class ApiService {
       reachable = r.statusCode == 200;
     } catch (_) {}
     if (!reachable) return ApiStatus.offline();
+    // 영상 엔진은 서버가 고른다(VIDEO_ENGINE) — LTX 박스엔 video-ltx 만, H3 박스엔 video-h3 만
+    // 설치돼 있다. 한쪽만 보면 H3 서버에서 "영상 안 됨"으로 잘못 뜬다. 둘 중 하나면 준비된 것.
     bool videoReady = false;
-    try {
-      final r = await http
-          .get(Uri.parse('$_base/workflow/video-ltx'), headers: _ngrok)
-          .timeout(const Duration(seconds: 3));
-      videoReady = r.statusCode == 200;
-    } catch (_) {}
+    for (final wf in const ['video-ltx', 'video-h3']) {
+      try {
+        final r = await http
+            .get(Uri.parse('$_base/workflow/$wf'), headers: _ngrok)
+            .timeout(const Duration(seconds: 3));
+        if (r.statusCode == 200) {
+          videoReady = true;
+          break;
+        }
+      } catch (_) {}
+    }
     bool audioReady = false;
     try {
       final r = await http
