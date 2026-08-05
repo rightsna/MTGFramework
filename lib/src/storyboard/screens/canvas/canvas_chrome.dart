@@ -12,7 +12,8 @@ class _SceneTitleBar extends StatelessWidget {
     final p = StoryboardScope.of(context);
     final sc = p.selectedScene;
     if (sc == null) return const SizedBox.shrink();
-    final n = p.scenes.indexOf(sc) + 1;
+    // 번호는 **0부터** — 씬 목록·비트·샷과 같은 규칙.
+    final n = p.scenes.indexOf(sc);
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
       decoration: const BoxDecoration(

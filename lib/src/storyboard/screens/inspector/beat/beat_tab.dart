@@ -42,7 +42,8 @@ class _BeatTab extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                '비트 ${p.dialogues.indexOf(beat) + 1}',
+                // 번호는 **0부터**(씬 JSON 배열 위치와 같은 수) — beat_card 와 같은 규칙.
+                '비트 ${p.dialogues.indexOf(beat)}',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,

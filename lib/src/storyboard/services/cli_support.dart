@@ -80,15 +80,16 @@ class CliSupport {
     return '$root/${hits.first['id']}';
   }
 
-  /// `--scene`: 번호(1부터) · id · 제목(부분 일치). 생략하면 첫 씬.
+  /// `--scene`: 번호(**0부터**) · id · 제목(부분 일치). 생략하면 첫 씬.
   static StoryScene pickScene(List<StoryScene> scenes, String? arg) {
     if (arg == null) return scenes.first;
+    // 번호는 **0부터** — 앱 화면·파일명(`scene<N>.json`)과 같은 수여야 헷갈리지 않는다.
     final n = int.tryParse(arg);
     if (n != null) {
-      if (n < 1 || n > scenes.length) {
-        throw CliError('씬 번호는 1~${scenes.length} 입니다 (받은 값: $n)');
+      if (n < 0 || n >= scenes.length) {
+        throw CliError('씬 번호는 0~${scenes.length - 1} 입니다 (받은 값: $n)');
       }
-      return scenes[n - 1];
+      return scenes[n];
     }
     for (final s in scenes) {
       if (s.id == arg || s.title == arg || s.title.contains(arg)) return s;

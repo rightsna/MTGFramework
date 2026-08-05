@@ -75,7 +75,9 @@ class _ShotCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('비트 ${index + 1}',
+                      // 번호는 **0부터** — 씬 JSON의 배열 위치와 같은 수다. 화면에서 본
+                      // 번호로 파일을 바로 찾을 수 있어야 해서 1부터로 밀지 않는다.
+                      Text('비트 $index',
                           style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 11,
@@ -146,7 +148,7 @@ class _ShotCard extends StatelessWidget {
       }
       for (var i = 0; i < beat.shots.length; i++) {
         final shot = beat.shots[i];
-        final t = shot.title.trim().isEmpty ? '샷 ${i + 1}' : shot.title.trim();
+        final t = shot.title.trim().isEmpty ? '샷 $i' : shot.title.trim();
         // 장면 메모와 영상 메모는 별개다 — 있는 것만 각각 한 줄씩.
         final sn = p.shotNoteCtrl(shot.id).text.trim();
         if (sn.isNotEmpty) {
@@ -516,7 +518,8 @@ class _ShotThumbState extends State<_ShotThumb>
                   color: const Color(0xCC000000),
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text('${index + 1}',
+                // 번호는 **0부터** — 비트·씬과 같은 규칙(JSON 배열 위치와 같은 수).
+                child: Text('$index',
                     style: const TextStyle(
                         fontSize: 9, fontWeight: FontWeight.w800)),
               ),
@@ -549,7 +552,7 @@ class _ShotThumbState extends State<_ShotThumb>
                       context,
                       title: '샷 삭제',
                       body:
-                          '"${shot.title.trim().isEmpty ? '샷 ${index + 1}' : shot.title.trim()}" 을 삭제합니다.\n'
+                          '"${shot.title.trim().isEmpty ? '샷 $index' : shot.title.trim()}" 을 삭제합니다.\n'
                           '모든 트랙에서 같이 사라집니다. 되돌릴 수 없습니다.',
                     )) {
                       p.removeShot(beat, shot);

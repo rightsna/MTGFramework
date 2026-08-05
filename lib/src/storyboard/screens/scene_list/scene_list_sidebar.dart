@@ -46,7 +46,8 @@ class SceneListSidebar extends StatelessWidget {
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     itemCount: scenes.length,
-                    itemBuilder: (context, i) => _SceneTile(scene: scenes[i]),
+                    itemBuilder: (context, i) =>
+                        _SceneTile(scene: scenes[i], index: i),
                   ),
           ),
           // (씬 제목 편집은 우측 '씬' 탭으로 옮겼다.)
@@ -136,9 +137,13 @@ class _SceneOpButton extends StatelessWidget {
 
 /// 씬 목록 아이템 하나. 이 씬에서 뭔가 생성 중이면 테두리가 **청록색으로 깜빡인다**.
 class _SceneTile extends StatefulWidget {
-  const _SceneTile({required this.scene});
+  const _SceneTile({required this.scene, required this.index});
 
   final StoryScene scene;
+
+  /// 목록에서 몇 번째인가 — **0부터**. 비트·샷 번호와 같은 규칙이고,
+  /// 씬 파일(`scene<N>.json`)의 N 은 이 값 +1 이다.
+  final int index;
 
   @override
   State<_SceneTile> createState() => _SceneTileState();
@@ -194,6 +199,17 @@ class _SceneTileState extends State<_SceneTile>
       child: ListTile(
         dense: true,
         onTap: () => p.selectScene(scene.id),
+        // 씬 번호 배지 — 샷 썸네일의 번호와 같은 생김새로 맞춘다.
+        leading: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xCC000000),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text('${widget.index}',
+              style: const TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w800)),
+        ),
         title: Text(title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

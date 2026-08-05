@@ -15,6 +15,7 @@
 // Flutter 없이 도는 게 핵심이라 여기서 import하는 건 전부 순수 Dart다.
 import 'dart:io';
 
+import 'package:framework/src/storyboard/models/dialogue.dart';
 import 'package:framework/src/storyboard/models/dialogue_beat.dart';
 import 'package:framework/src/storyboard/services/cli_support.dart';
 import 'package:framework/src/storyboard/services/elevenlabs_service.dart';
@@ -26,7 +27,7 @@ const _usage = '''
 대사 음성 생성 · 자막 큐 재계산 (GUI와 같은 엔진)
 
   --project <이름|id>       프로젝트(이름 일부만 써도 된다) 또는 폴더 경로
-  --scene <번호|id|제목|all> 씬 지정(1부터). 생략하면 1, `all`이면 전 씬
+  --scene <번호|id|제목|all> 씬 지정(0부터). 생략하면 0, `all`이면 전 씬
   --track <번호|이름>       트랙 지정(1부터). 생략하면 1(기준 트랙)
 
   --voice                   대사 음성을 만든다(이미 있는 비트는 건너뛴다)
@@ -92,7 +93,10 @@ Future<int> _run(List<String> argv) async {
           'scene': scene.title.isEmpty ? scene.id : scene.title,
           'beat': beat.id,
         };
-        final text = (beat.dialogue?.text ?? '').trim();
+        // 대본은 기준 트랙에만 있다 — 파생 트랙(번역본) 비트는 overrides['text'] 이거나
+        // 손 안 댔으면 기준 비트 것이다. 여기서 beat.dialogue.text 를 직접 보면 파생 트랙이
+        // 통째로 "대사 없음" 으로 걸러진다(= 번역 트랙 음성을 CLI 로 못 뽑는다).
+        final text = (beat.resolvedScript(r.baseBeatOf(beat))?.text ?? '').trim();
         if (text.isEmpty) {
           row['skip'] = '대사 없음';
           report.add(row);
@@ -117,7 +121,10 @@ Future<int> _run(List<String> argv) async {
             );
             final f = File('$dir/${beat.id}_voice.mp3');
             await f.writeAsBytes(res.bytes);
-            beat.dialogue!
+            // 파생 트랙 비트는 대본을 기준 트랙에서 물려받으므로, 음성이 아직 없으면
+            // dialogue 자체가 null 이다(그릇은 음성을 담을 때 생긴다). 비트를 새로 만들고
+            // 첫 음성을 붙이는 경우가 그것 — 여기서 만들어 주지 않으면 널 참조로 죽는다.
+            (beat.dialogue ??= Dialogue())
               ..voicePath = f.path
               ..voiceSeconds = res.seconds;
             changed = true;

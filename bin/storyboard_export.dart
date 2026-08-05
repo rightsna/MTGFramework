@@ -23,7 +23,7 @@ const _usage = '''
 
   --list                    프로젝트 목록. --project와 같이 쓰면 그 프로젝트의 씬·트랙 현황
   --project <이름|id>       프로젝트(이름 일부만 써도 된다) 또는 폴더 경로
-  --scene <번호|id|제목>    씬 지정(1부터). 생략하면 1
+  --scene <번호|id|제목>    씬 지정(0부터). 생략하면 0
   --track <번호|이름>       트랙 지정(1부터). 생략하면 1(기준 트랙)
   --out <경로.mp4>          저장 위치. 생략하면 ~/Downloads/<씬 제목> - <트랙 이름>.mp4
   --speed <1.0~2.0>         이번 내보내기만 이 배속으로(트랙 설정은 안 건드린다)
@@ -165,7 +165,8 @@ String _scenesText(String dir, List<StoryScene> scenes) {
   for (var i = 0; i < scenes.length; i++) {
     final sc = scenes[i];
     final r = SceneResolver(sc);
-    b.writeln('씬 ${i + 1}. ${sc.title.isEmpty ? sc.id : sc.title}'
+    // 번호는 **0부터** — 앱 화면·`--scene` 인자·파일명(`scene<N>.json`)과 같은 수다.
+    b.writeln('씬 $i. ${sc.title.isEmpty ? sc.id : sc.title}'
         '  (비트 ${sc.beats.length} · 샷 ${sc.shotCount}'
         '${SceneResolver.hasFile(sc.bgmPath) ? ' · 배경음' : ''})');
     for (var t = 0; t < sc.tracks.length; t++) {

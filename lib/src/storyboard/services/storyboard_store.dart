@@ -4,8 +4,10 @@ import 'dart:io';
 import '../models/character.dart';
 import '../models/story_scene.dart';
 
-/// Persists one project's storyboard as **per-scene files**: `scene1.json`,
-/// `scene2.json`, … (파일 번호 = 씬 순서). 한 파일만 열어도 그 씬의 구성이 다 읽힌다.
+/// Persists one project's storyboard as **per-scene files**: `scene0.json`,
+/// `scene1.json`, … (파일 번호 = 씬 순서). 한 파일만 열어도 그 씬의 구성이 다 읽힌다.
+///
+/// 번호는 **0부터**다 — 화면에 보이는 씬·비트·샷 번호와 같은 수여야 파일을 바로 찾는다.
 /// 미디어(png/mp4/mp3)는 같은 프로젝트 폴더에 파일명으로 저장되고, JSON은 그 파일명만 참조한다.
 class StoryboardStore {
   final String dirPath;
@@ -41,14 +43,14 @@ class StoryboardStore {
     if (!await dir.exists()) await dir.create(recursive: true);
     const enc = JsonEncoder.withIndent('  ');
     for (var i = 0; i < scenes.length; i++) {
-      await File('$dirPath/scene${i + 1}.json')
+      await File('$dirPath/scene$i.json')
           .writeAsString(enc.convert(scenes[i].toJson()));
     }
-    // 씬 수가 줄었으면 남는 scene(N+1).json… 을 정리한다.
+    // 씬 수가 줄었으면 남는 scene(N)…(0부터라 쓰는 번호는 0..length-1) 을 정리한다.
     await for (final e in dir.list()) {
       if (e is! File) continue;
       final m = _sceneFile.firstMatch(e.uri.pathSegments.last);
-      if (m != null && int.parse(m.group(1)!) > scenes.length) {
+      if (m != null && int.parse(m.group(1)!) >= scenes.length) {
         await e.delete();
       }
     }
