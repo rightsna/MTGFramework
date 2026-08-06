@@ -88,6 +88,28 @@ void main() {
       expect(VoiceTiming.linesOf('첫 줄\n\n  \n둘째 줄'), ['첫 줄', '둘째 줄']);
     });
 
+    // 비트 길이는 영상·대사·자막 중 **가장 긴 것**으로 정한다. 자막 쪽 자([captionTextSeconds])는
+    // 미리보기 진행 판단과 내보내기 세그먼트 길이가 함께 쓰므로 여기서 못 박는다.
+    test('자막 길이는 마지막 글씨 구간의 끝 — 중간 공백은 세고, 뒤 공백은 안 센다', () {
+      expect(
+        captionTextSeconds(const [
+          (seconds: 1.0, text: '가'),
+          (seconds: 2.0, text: ''), // 중간 공백 — 뒤에 글씨가 또 나오므로 센다
+          (seconds: 1.5, text: '나'),
+        ]),
+        closeTo(4.5, 0.001),
+      );
+      expect(
+        captionTextSeconds(const [
+          (seconds: 1.0, text: '가'),
+          (seconds: 9.0, text: '  '), // 뒤에 붙은 공백 — 안 센다
+        ]),
+        closeTo(1.0, 0.001),
+      );
+      expect(captionTextSeconds(const []), 0.0);
+      expect(captionTextSeconds(const [(seconds: 3.0, text: '')]), 0.0);
+    });
+
     test('비트에 써 넣을 때 위치는 기존 값을 지킨다', () {
       final beat = DialogueBeat(
         id: 'b1',

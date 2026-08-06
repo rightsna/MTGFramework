@@ -28,6 +28,21 @@ class CaptionCue {
       );
 }
 
+/// 자막이 실제로 **글씨를 띄우는** 길이(초) — 마지막 글씨 구간이 끝나는 시각.
+/// 뒤에 붙은 빈 구간은 안 센다(아무것도 안 보이는 시간까지 자리를 잡을 이유가 없다).
+///
+/// 비트가 몇 초짜리인지는 **영상·대사·자막 중 가장 긴 것**으로 정한다. 미리보기(재생 진행
+/// 판단)와 내보내기(비트 세그먼트 길이)가 그 판단에 **같은 자**를 쓰도록 여기 한 곳에 둔다.
+double captionTextSeconds(Iterable<({double seconds, String text})> cues) {
+  var acc = 0.0;
+  var end = 0.0;
+  for (final c in cues) {
+    acc += c.seconds;
+    if (c.text.trim().isNotEmpty) end = acc;
+  }
+  return end;
+}
+
 /// 한 비트의 자막 = 구간 목록 + 위치.
 class Caption {
   List<CaptionCue> cues;
@@ -40,6 +55,10 @@ class Caption {
 
   /// 자막 전체 길이(초) = 구간 길이 합.
   double get totalSeconds => cues.fold(0.0, (a, c) => a + c.seconds);
+
+  /// 글씨가 보이는 데까지의 길이(초) — 비트 길이를 정할 때 쓰는 값. [captionTextSeconds] 참고.
+  double get textSeconds =>
+      captionTextSeconds(cues.map((c) => (seconds: c.seconds, text: c.text)));
 
   Map<String, dynamic> toJson() => {
         'position': position.name,

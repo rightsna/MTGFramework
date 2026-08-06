@@ -83,6 +83,56 @@ void main() {
     expect(info!.duration, closeTo(1.0, 0.2), reason: '2초 → 2배속이면 1초');
   }, skip: has ? null : 'ffmpeg 없음');
 
+  test('자막이 영상보다 길면 비트가 자막 끝까지 늘어난다 — 뒤 자막이 잘리지 않게', () async {
+    final clip = await makeClip(2.0);
+    final out = '${tmp.path}/long_cap.mp4';
+    await VideoEdit.exportScene(
+      beats: [
+        ExportBeat(
+          clips: [clip],
+          caption: const ExportCaption(
+            cues: [
+              (seconds: 2.0, text: '앞 자막'),
+              (seconds: 3.0, text: '뒤 자막'), // 영상(2초)이 끝난 뒤에도 3초 더
+            ],
+            position: 'bottom',
+          ),
+        ),
+      ],
+      width: 128,
+      height: 128,
+      outPath: out,
+    );
+    final info = await VideoEdit.probe(out);
+    expect(info!.duration, closeTo(5.0, 0.3),
+        reason: '비트 길이는 영상·대사·자막 중 가장 긴 것(=자막 5초)');
+  }, skip: has ? null : 'ffmpeg 없음');
+
+  test('자막 뒤의 빈 구간은 길이를 늘리지 않는다 — 안 보이는 시간까지 자리 잡을 이유가 없다',
+      () async {
+    final clip = await makeClip(2.0);
+    final out = '${tmp.path}/trail_blank.mp4';
+    await VideoEdit.exportScene(
+      beats: [
+        ExportBeat(
+          clips: [clip],
+          caption: const ExportCaption(
+            cues: [
+              (seconds: 1.0, text: '자막'),
+              (seconds: 9.0, text: ''), // 뒤에 붙은 공백 — 세지 않는다
+            ],
+            position: 'bottom',
+          ),
+        ),
+      ],
+      width: 128,
+      height: 128,
+      outPath: out,
+    );
+    final info = await VideoEdit.probe(out);
+    expect(info!.duration, closeTo(2.0, 0.3), reason: '영상 2초 그대로');
+  }, skip: has ? null : 'ffmpeg 없음');
+
   test('자막이 전부 공백이면 그냥 통과(자막 없이 산출)', () async {
     final clip = await makeClip(1.0);
     final out = '${tmp.path}/out2.mp4';

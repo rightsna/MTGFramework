@@ -28,7 +28,7 @@ void main() {
   setUp(() async {
     dir = Directory.systemTemp.createTempSync('chain');
     p = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300)); // _load
+    await p.ready; // 첫 읽기가 끝난 뒤에 만진다(시간으로 재면 바쁜 기계에서 어긋난다)
     p.addScene();
     p.addDialogue();
   });

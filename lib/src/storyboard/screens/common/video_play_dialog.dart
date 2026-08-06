@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:video_player/video_player.dart';
 
+import '../../models/caption.dart' show captionTextSeconds;
 import '../ui.dart' show accent2;
 
 /// 재생 목록의 한 항목 — 영상 + 그 샷이 속한 비트의 음성(있으면).
@@ -131,10 +132,12 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     _itemElapsed += delta * _speed;
     if (_isStillItem) {
       setState(() {}); // 진행바
-      _maybeAdvance();
     } else if (_activeCaption() != before) {
       setState(() {});
     }
+    // 진행 판단은 **매 프레임** 본다. 영상이 끝나면 그 컨트롤러는 더 이상 알려 주지 않으므로,
+    // 남은 대사·자막을 기다리는 동안 깨워 줄 게 이 시계밖에 없다(안 그러면 그 자리에 멈춘다).
+    _maybeAdvance();
   }
 
   /// 지금(_beatElapsed) 보여줄 자막 텍스트. 공백 구간이거나 범위 밖이면 null.
@@ -210,10 +213,12 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     final old = _ctrl;
     _ctrl = null;
     _error = null;
+    // 이 자리의 시계는 항상 0에서 — 첫 await 전에 돌려놔야, 여는 동안 도는 시계가
+    // 앞 항목의 흘러간 시간을 이 자리 것으로 착각해 곧바로 넘겨 버리지 않는다.
+    _itemElapsed = Duration.zero;
     old?.removeListener(_onTick);
     await old?.dispose();
     if (!mounted) return;
-    _itemElapsed = Duration.zero; // 이 자리의 시계는 항상 0에서
     setState(() {});
     if (_items.isEmpty) return;
 
@@ -358,6 +363,14 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     return v != null && v.isInitialized && v.duration > Duration.zero;
   }
 
+  /// 이 비트의 자막이 다 지나갔는지 — 자막도 **길이를 정하는 축**이다(영상·대사와 나란히).
+  /// 자막이 없으면 항상 참. 뒤쪽 빈 구간은 안 센다([captionTextSeconds]).
+  bool get _capEnded {
+    final end = captionTextSeconds(_cues);
+    if (end <= 0) return true;
+    return _beatElapsed.inMilliseconds / 1000.0 >= end;
+  }
+
   /// 다음 항목이 **같은 비트**인지(같은 대사가 여러 샷으로 이어지는 중).
   bool get _sameBeatNext =>
       _index + 1 < _items.length &&
@@ -381,7 +394,8 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
     _maybeAdvance();
   }
 
-  /// 자동 진행 판단 — **대사와 화면 중 긴 쪽**까지 재생한다.
+  /// 자동 진행 판단 — 이 비트에 걸린 **화면·대사·자막 중 가장 늦게 끝나는 것**까지 재생한다.
+  /// 셋 중 하나만 있어도 그것만큼은 온전히 보여 준다(영상이 없다고 그 자리를 건너뛰지 않는다).
   /// 영상 컨트롤러(=_onTick)와 시계(=_onTicker) 둘 다 여기로 들어온다.
   void _maybeAdvance() {
     if (!mounted) return;
@@ -393,33 +407,22 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
       _open().whenComplete(() => _advancing = false);
     }
 
-    if (_hasVoiceNow) {
-      // 대사와 영상 중 **더 긴 쪽**까지 재생한다(어느 쪽도 잘리지 않는다).
-      if (_ended) {
-        if (_sameBeatNext) {
-          // 비트 안 다음 샷으로 — 영상을 이어서(음성은 유지). 대사가 짧아도 영상은 끝까지 본다.
-          go(_index + 1);
-        } else if (_voiceEnded) {
-          // 마지막 샷: 영상도 대사도 끝났다 = 둘 중 긴 쪽까지 끝 → 다음 비트로.
-          final ni = _nextBeatIndex;
-          if (ni != null) {
-            go(ni);
-          } else {
-            _stopAtEnd();
-          }
-        }
-        // else 마지막 샷 화면은 끝났지만 대사가 남음 → 대사가 더 길다 → 그대로 두고 기다린다.
-      }
-      // 화면이 아직 남았으면(대사가 먼저 끝나도) 그대로 둔다 — 화면이 더 길면 끝까지 본다.
+    if (!_ended) return; // 화면(영상 또는 세워 둔 프레임)이 아직 남았다
+
+    // 비트 안 다음 샷으로 — 대사·자막은 비트 단위라 그대로 이어진다(시계도 안 건드린다).
+    if (_sameBeatNext) {
+      go(_index + 1);
+      return;
+    }
+    // 비트의 마지막 샷: 화면은 끝났지만 대사나 자막이 남았으면 그 자리에서 기다린다.
+    if (_hasVoiceNow && !_voiceEnded) return;
+    if (!_capEnded) return;
+
+    final ni = _nextBeatIndex;
+    if (ni != null) {
+      go(ni);
     } else {
-      // 대사 없는 비트: 화면이 끝나면 다음으로.
-      if (_ended) {
-        if (_index < _items.length - 1) {
-          go(_index + 1);
-        } else {
-          _stopAtEnd();
-        }
-      }
+      _stopAtEnd();
     }
   }
 
@@ -456,8 +459,11 @@ class _VideoPlayDialogState extends State<_VideoPlayDialog>
 
   void _jump(int i) {
     if (i < 0 || i >= _items.length) return;
+    // 여는 동안은 진행 판단을 멈춘다(자동 진행과 같은 규칙) — 안 그러면 여는 사이에
+    // 시계가 먼저 판단해 버려 손으로 고른 자리를 지나칠 수 있다.
+    _advancing = true;
     _index = i;
-    _open();
+    _open().whenComplete(() => _advancing = false);
   }
 
   void _toggleAutoNext() {

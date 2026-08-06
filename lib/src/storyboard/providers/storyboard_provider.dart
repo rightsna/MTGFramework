@@ -774,10 +774,17 @@ class StoryboardProvider extends ChangeNotifier {
 
   // ───────── 로드/저장 ─────────
 
+  /// 첫 읽기(설정·씬·인물)가 끝나면 완료된다. 읽기를 한 프레임 뒤로 미룬 뒤로는 그게 언제
+  /// 끝나는지 밖에서 알 방법이 없었다 — 테스트가 고정 시간(300ms)을 자다 바쁜 기계에서 먼저
+  /// 깨면 아직 빈 목록을 보고 터졌다. 시간을 재지 말고 이걸 기다린다.
+  Future<void> get ready => _readyCompleter.future;
+  final Completer<void> _readyCompleter = Completer<void>();
+
   Future<void> _load() async {
     _settings = await _settingsStore.load();
     _settingsLoaded = true;
     await _readFromDisk(keepSelection: false);
+    if (!_readyCompleter.isCompleted) _readyCompleter.complete();
     // 서버 확인·job 이어받기·옛 영상 길이 채우기는 **첫 화면이 그려진 뒤로 미룬다** —
     // 셋 다 화면을 그리는 데 필요 없는데, 여는 순간 같이 돌면 첫 프레임과 자원을 다툰다.
     Future<void>.delayed(const Duration(milliseconds: 800), () {
@@ -2984,6 +2991,8 @@ class StoryboardProvider extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    // 읽기 도중에 닫혔어도 [ready]를 기다리는 쪽이 영영 매달리지 않게 풀어 준다.
+    if (!_readyCompleter.isCompleted) _readyCompleter.complete();
     _statusTimer?.cancel();
     _reconcileTimer?.cancel();
     for (final c in _sceneTitles.values) {

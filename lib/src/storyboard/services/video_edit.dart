@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:math' as math;
 
-import '../models/caption.dart' show CaptionPosition;
+import '../models/caption.dart' show CaptionPosition, captionTextSeconds;
 import '../models/shot.dart' show StillEffect;
 import '../models/text_overlay.dart';
 
@@ -566,7 +566,11 @@ Dialogue: 0,0:00:00.00,9:59:59.99,Card,,0,0,0,,$text
     }
     final dv = clipDur.fold(0.0, (a, d) => a + d); // 영상 길이 합
     final voiceDur = b.voice == null ? 0.0 : await _mediaDuration(b.voice!);
-    final beatDur = math.max(dv, voiceDur); // 긴 쪽 기준(원본 속도 기준)
+    // 자막도 길이를 정하는 데 낀다 — 영상·대사만 보고 자르면 뒤쪽 자막이 통째로 사라진다.
+    final capDur =
+        b.caption == null ? 0.0 : captionTextSeconds(b.caption!.cues);
+    // 영상·대사·자막 중 **가장 긴 것**이 이 비트의 길이다(원본 속도 기준).
+    final beatDur = math.max(dv, math.max(voiceDur, capDur));
     final durStr = beatDur.toStringAsFixed(3);
     // 배속을 걸면 결과 길이는 1/배속. 자르기(atrim/tpad)는 **원본 시간축**에서 하고,
     // 마지막에 영상 setpts·오디오 atempo로 함께 줄인다(자막도 원본 시간축에 굽고 같이 빨라진다).

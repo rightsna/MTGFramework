@@ -25,7 +25,7 @@ void main() {
   setUp(() async {
     dir = Directory.systemTemp.createTempSync('canvas');
     p = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300)); // _load
+    await p.ready; // 첫 읽기가 끝난 뒤에 만진다(시간으로 재면 바쁜 기계에서 어긋난다)
     p.addScene();
     p.addDialogue();
     await p.addShot(p.dialogues.single);
@@ -65,7 +65,8 @@ void main() {
     // 새 트랙은 기준 트랙과 같은 백엔드로 시작한다(강제로 다른 걸 물리지 않는다).
     expect(find.text('자체서버'), findsNWidgets(2));
     // 씬이 통째로 한 벌 더 깔린다 — 비트 카드도 대사 상자도 트랙마다 하나씩.
-    expect(find.text('비트 1'), findsNWidgets(2));
+    // (비트 번호는 씬 목록·샷과 같이 **0부터**다.)
+    expect(find.text('비트 0'), findsNWidgets(2));
     expect(find.text('대사 입력'), findsNWidgets(2));
     expect(find.text('영상 0/2'), findsNWidgets(2));
   });
@@ -110,6 +111,6 @@ void main() {
 
     expect(p.tracks.length, 1);
     expect(find.text('트랙 2'), findsNothing);
-    expect(find.text('비트 1'), findsOneWidget, reason: '남은 트랙 1은 그대로');
+    expect(find.text('비트 0'), findsOneWidget, reason: '남은 트랙 1은 그대로');
   });
 }

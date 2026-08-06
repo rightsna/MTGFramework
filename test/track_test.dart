@@ -30,7 +30,7 @@ void main() {
   setUp(() async {
     dir = Directory.systemTemp.createTempSync('track');
     p = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300)); // _load
+    await p.ready; // 첫 읽기가 끝난 뒤에 만진다(시간으로 재면 바쁜 기계에서 어긋난다)
     p.addScene();
     p.addDialogue();
     final beat = p.dialogues.single;
@@ -198,12 +198,13 @@ void main() {
     await p.save();
 
     // 파일에는 파생 샷의 상속 필드가 안 적힌다 — 기준 트랙 2곳 + (오버라이드는 파생에 1곳).
-    final raw = File('${dir.path}/scene1.json').readAsStringSync();
+    // 씬 파일 번호는 **0부터**다(화면에 보이는 번호와 같은 수).
+    final raw = File('${dir.path}/scene0.json').readAsStringSync();
     expect('카메라가 밀려든다'.allMatches(raw).length, 2,
         reason: '기준 트랙 샷 2개에만 적힌다(파생은 오버라이드만)');
 
     final p2 = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await p2.ready;
     final sc = p2.scenes.single;
     expect(sc.tracks.length, 2);
     expect(sc.tracks[1].name, 'Veo 3.1');
@@ -234,7 +235,7 @@ void main() {
 
     // 저장·재로딩해도 트랙별 실제 길이가 남는다.
     final p2 = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await p2.ready;
     final sc = p2.scenes.single;
     expect(sc.tracks[1].beats.single.shots.first.videoActualSeconds, 4.0);
     expect(sc.baseTrack.beats.single.shots.first.videoActualSeconds, 10.0);
@@ -287,7 +288,7 @@ void main() {
 
     // 저장·재로딩해도 트랙별 음성이 남고, 대본은 기준에서 상속된다.
     final p2 = StoryboardProvider(projectDirPath: dir.path);
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    await p2.ready;
     final sc = p2.scenes.single;
     final b1 = sc.tracks[1].beats.single;
     expect(p2.beatScript(b1)?.text, '그 밤에 무슨 일이 있었죠?');
