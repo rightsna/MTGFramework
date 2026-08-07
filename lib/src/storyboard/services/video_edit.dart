@@ -261,6 +261,9 @@ class VideoEdit {
     final marginV = (h * 0.075).round();
     final marginH = (w * 0.073).round(); // 좌우 여백 — 이 폭 안에서 어절 단위로 접힌다
     final color = _assColor(o.color);
+    final font = o.font.trim().isEmpty ? 'Arial' : o.font.trim();
+    final bold = o.bold ? 1 : 0;
+    final spacing = o.spacing;
     final text = o.text
         .trim()
         .replaceAll('\\', '\\\\')
@@ -277,7 +280,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Card,Arial,$size,$color,&H000000FF,&H00141416,&H00000000,1,0,0,0,100,100,0,0,1,$outline,0,$align,$marginH,$marginH,$marginV,1
+Style: Card,$font,$size,$color,&H000000FF,&H00141416,&H00000000,$bold,0,0,0,100,100,$spacing,0,1,$outline,0,$align,$marginH,$marginH,$marginV,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

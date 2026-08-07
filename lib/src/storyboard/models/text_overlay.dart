@@ -31,6 +31,16 @@ class TextOverlay {
   /// 사각형이면 경계선이 보인다(실측).
   double scrim;
 
+  /// 글꼴 이름. 비우면 엔진 기본(`Arial` — 한글은 시스템 폴백).
+  /// 굵은 고딕은 훅·썸네일에 맞지만 추모·헌사 카드에는 무겁다. 그때 명조를 준다.
+  String font;
+
+  /// 굵게. 기본은 `true`(훅 글씨의 원래 모양).
+  bool bold;
+
+  /// 자간(px). 굵기를 낮춘 글씨는 자간을 벌려야 성기게 읽힌다.
+  double spacing;
+
   TextOverlay({
     this.text = '',
     this.position = CaptionPosition.top,
@@ -38,6 +48,9 @@ class TextOverlay {
     this.sizeRatio = 0.06,
     this.outlineRatio = 0.10,
     this.scrim = 0.43,
+    this.font = '',
+    this.bold = true,
+    this.spacing = 0,
   });
 
   bool get hasText => text.trim().isNotEmpty;
@@ -49,6 +62,9 @@ class TextOverlay {
         sizeRatio: sizeRatio,
         outlineRatio: outlineRatio,
         scrim: scrim,
+        font: font,
+        bold: bold,
+        spacing: spacing,
       );
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +74,9 @@ class TextOverlay {
         'size': sizeRatio,
         'outline': outlineRatio,
         'scrim': scrim,
+        'font': font,
+        'bold': bold,
+        'spacing': spacing,
       };
 
   factory TextOverlay.fromJson(Map<String, dynamic> j) => TextOverlay(
@@ -70,5 +89,9 @@ class TextOverlay {
         sizeRatio: (j['size'] as num?)?.toDouble() ?? 0.06,
         outlineRatio: (j['outline'] as num?)?.toDouble() ?? 0.10,
         scrim: (j['scrim'] as num?)?.toDouble() ?? 0.43,
+        // 아래 셋은 나중에 생긴 값이라, 없으면 예전과 같은 모양으로 읽는다.
+        font: (j['font'] as String?) ?? '',
+        bold: (j['bold'] as bool?) ?? true,
+        spacing: (j['spacing'] as num?)?.toDouble() ?? 0,
       );
 }
